@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Autenticação — Sistema de Autenticação Intermediária
 
-## Getting Started
+Gateway de autenticação em Next.js (App Router) que centraliza **cadastro**,
+**login** e **geração de tokens** (JWT de acesso + atualização), para ser
+consumido por outras aplicações como camada intermediária de identidade.
 
-First, run the development server:
+## Arquitetura
+
+- **Cadastro/Login**: senha com hash `bcrypt` (`src/lib/senha.ts`).
+- **Tokens**: JWT assinado com `jose` (`src/lib/token.ts`)
+  - **Token de acesso**: curta duração (15 min), enviado no header
+    `Authorization: Bearer <token>` para chamar rotas protegidas.
+  - **Token de atualização**: longa duração (30 dias), com rotação a cada uso
+    e revogação persistida no banco (`TokenAtualizacao`), guardado também
+    como cookie `httpOnly`.
+- **Banco de dados**: Prisma + SQLite em desenvolvimento (`prisma/dev.db`),
+  pronto para trocar para Postgres em produção só alterando `DATABASE_URL`
+  e o `provider` do datasource.
+- **Proxy** (`src/proxy.ts`, equivalente ao antigo `middleware.ts` a partir do
+  Next.js 16): faz checagem otimista de sessão para proteger `/dashboard` e
+  redirecionar usuários já autenticados para longe de `/login` e `/cadastro`.
+
+## Rotas de API
+
+| Método | Rota                  | Descrição                                             |
+| ------ | --------------------- | ------------------------------------------------------ |
+| POST   | `/api/auth/cadastro`  | Cria um novo usuário                                    |
+| POST   | `/api/auth/login`     | Autentica e retorna `tokenAcesso` + `tokenAtualizacao`  |
+| POST   | `/api/auth/atualizar` | Rotaciona o token de atualização e emite novo acesso    |
+| POST   | `/api/auth/logout`    | Revoga o token de atualização atual                     |
+| GET    | `/api/auth/me`        | Retorna o usuário autenticado (rota protegida, exemplo) |
+
+## Como rodar
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abra [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Antes de rodar, copie `.env.example` para `.env` e defina segredos fortes
+para `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET` (ex.: `openssl rand -base64 32`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Banco de dados
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npx prisma migrate dev   # aplica as migrações
+npx prisma studio        # inspeciona os dados
+```
