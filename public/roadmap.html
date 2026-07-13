@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Roadmap — Sistema de Autenticação Intermediária</title>
+<style>
+  :root {
+    --paper: #f2f1ec;
+    --paper-raised: #ffffff;
+    --ink: #1e1d1a;
+    --ink-soft: #5b584f;
+    --line: #dedbd1;
+    --accent: #2f6b5c;
+    --accent-soft: #e3ece8;
+    --accent-ink: #1f4a3f;
+
+    --sev-high: #b5502d;
+    --sev-high-bg: #f6e4db;
+    --sev-mid: #8a6816;
+    --sev-mid-bg: #f5edd8;
+    --sev-low: #4c5b7a;
+    --sev-low-bg: #e6e9f0;
+
+    --font-display: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+    --font-body: -apple-system, "Segoe UI", system-ui, Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #17181a;
+      --paper-raised: #1f2123;
+      --ink: #ede9e0;
+      --ink-soft: #a6a296;
+      --line: #33352f;
+      --accent: #63b6a0;
+      --accent-soft: #1d3630;
+      --accent-ink: #96d4bf;
+
+      --sev-high: #e08b67;
+      --sev-high-bg: #3a2621;
+      --sev-mid: #d9b054;
+      --sev-mid-bg: #362d18;
+      --sev-low: #97a8cf;
+      --sev-low-bg: #232838;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #17181a;
+    --paper-raised: #1f2123;
+    --ink: #ede9e0;
+    --ink-soft: #a6a296;
+    --line: #33352f;
+    --accent: #63b6a0;
+    --accent-soft: #1d3630;
+    --accent-ink: #96d4bf;
+
+    --sev-high: #e08b67;
+    --sev-high-bg: #3a2621;
+    --sev-mid: #d9b054;
+    --sev-mid-bg: #362d18;
+    --sev-low: #97a8cf;
+    --sev-low-bg: #232838;
+  }
+  :root[data-theme="light"] {
+    --paper: #f2f1ec;
+    --paper-raised: #ffffff;
+    --ink: #1e1d1a;
+    --ink-soft: #5b584f;
+    --line: #dedbd1;
+    --accent: #2f6b5c;
+    --accent-soft: #e3ece8;
+    --accent-ink: #1f4a3f;
+
+    --sev-high: #b5502d;
+    --sev-high-bg: #f6e4db;
+    --sev-mid: #8a6816;
+    --sev-mid-bg: #f5edd8;
+    --sev-low: #4c5b7a;
+    --sev-low-bg: #e6e9f0;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent-ink); }
+  ::selection { background: var(--accent-soft); color: var(--accent-ink); }
+
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+  }
+
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 2.4rem;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .masthead p {
+    color: var(--ink-soft);
+    max-width: 56ch;
+    margin: 0;
+  }
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    margin: 2.5rem 0;
+  }
+  .stat {
+    background: var(--paper-raised);
+    padding: 1.1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .stat .n {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.7rem;
+    color: var(--ink);
+  }
+  .stat .l {
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+
+  section { margin-top: 3.2rem; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    margin-bottom: 1.2rem;
+  }
+  .section-head .eyebrow { white-space: nowrap; }
+  .section-head .rule {
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+  h2 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: 1.35rem;
+    margin: 0 0 1.2rem;
+  }
+
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.9rem;
+  }
+  .card {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    padding: 1rem 1.15rem;
+  }
+  .card h3 {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin: 0 0 0.65rem;
+  }
+  .card ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.42rem; }
+  .card li {
+    font-size: 0.92rem;
+    padding-left: 1.1rem;
+    position: relative;
+  }
+  .card li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.5em;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    transform: rotate(45deg);
+  }
+  .card code, .melhoria code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    padding: 0.05em 0.35em;
+    border-radius: 3px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+  }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); }
+  th, td {
+    text-align: left;
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  thead th {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    background: var(--paper-raised);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--paper-raised); }
+  td.num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-soft);
+    width: 2rem;
+  }
+  .pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 0.18em 0.55em;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .pill--alta { background: var(--sev-high-bg); color: var(--sev-high); }
+  .pill--media { background: var(--sev-mid-bg); color: var(--sev-mid); }
+  .pill--baixa { background: var(--sev-low-bg); color: var(--sev-low); }
+
+  .melhorias { display: flex; flex-direction: column; gap: 0.9rem; }
+  .melhoria {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    padding: 0.95rem 1.15rem;
+  }
+  .melhoria p { margin: 0.4rem 0 0; font-size: 0.92rem; color: var(--ink); }
+  .melhoria p.hint { color: var(--ink-soft); }
+
+  .callout {
+    margin-top: 3.2rem;
+    background: var(--accent-soft);
+    border: 1px solid var(--accent);
+    padding: 1.2rem 1.4rem;
+  }
+  .callout .eyebrow { color: var(--accent-ink); }
+  .callout p { margin: 0.5rem 0 0; color: var(--ink); }
+  .callout strong { color: var(--accent-ink); }
+
+  footer {
+    margin-top: 3.5rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+  }
+
+  @media (max-width: 620px) {
+    .stats { grid-template-columns: 1fr; }
+    .card-grid { grid-template-columns: 1fr; }
+    h1 { font-size: 1.9rem; }
+  }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <span class="eyebrow">Roadmap · Auth Gateway</span>
+    <h1>Sistema de Autenticação Intermediária</h1>
+    <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações. Estado atual do que foi entregue, o que falta e onde apertar o que já existe.</p>
+    <span class="meta">atualizado em 13 jul 2026</span>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><span class="n">19</span><span class="l">itens entregues</span></div>
+    <div class="stat"><span class="n">14</span><span class="l">pendentes</span></div>
+    <div class="stat"><span class="n">5</span><span class="l">melhorias no que existe</span></div>
+  </div>
+
+  <section id="feito">
+    <div class="section-head">
+      <span class="eyebrow">Concluído</span>
+      <span class="rule"></span>
+    </div>
+    <h2>O que já foi feito</h2>
+
+    <div class="card-grid">
+      <div class="card">
+        <h3>API · <code>src/app/api/auth</code></h3>
+        <ul>
+          <li><code>POST /cadastro</code> — cria usuário, senha hasheada, e-mail duplicado → 409</li>
+          <li><code>POST /login</code> — emite access token (15 min) + refresh token (30 dias)</li>
+          <li><code>POST /atualizar</code> — rotação de refresh token em transação</li>
+          <li><code>POST /logout</code> — revoga refresh token e limpa cookie</li>
+          <li><code>GET /me</code> — usuário autenticado via Bearer token</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Lib · <code>src/lib</code></h3>
+        <ul>
+          <li><code>token.ts</code> — JWT (jose) + hash SHA-256 do refresh token</li>
+          <li><code>senha.ts</code> — hash/verificação com bcryptjs</li>
+          <li><code>cookies.ts</code> — cookie httpOnly / secure / sameSite=lax</li>
+          <li><code>validacao.ts</code> — schemas Zod</li>
+          <li><code>clienteAuth.ts</code> — token em sessionStorage, refresh automático em 401</li>
+          <li><code>autenticar.ts</code> — extração/validação de Bearer token</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Dados</h3>
+        <ul>
+          <li>Prisma + SQLite — modelos <code>Usuario</code> e <code>TokenAtualizacao</code></li>
+          <li>Migração inicial aplicada</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Frontend</h3>
+        <ul>
+          <li>Páginas: home, <code>/login</code>, <code>/cadastro</code>, <code>/dashboard</code></li>
+          <li><code>proxy.ts</code> redireciona rotas protegidas / somente-visitante</li>
+        </ul>
+      </div>
+
+      <div class="card" style="grid-column: 1 / -1;">
+        <h3>Segurança já presente</h3>
+        <ul>
+          <li>Senha hasheada (bcrypt, 12 rounds)</li>
+          <li>Refresh token hasheado no banco — nunca gravado em texto puro</li>
+          <li>Rotação de refresh token a cada renovação</li>
+          <li>Cookie httpOnly para o refresh token</li>
+          <li>Access token de vida curta (15 min)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="pendente">
+    <div class="section-head">
+      <span class="eyebrow">Pendente</span>
+      <span class="rule"></span>
+    </div>
+    <h2>O que falta / pode fazer</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Item</th><th>Prioridade</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="num">01</td><td>Revisar página de cadastro (confirmar mesmo padrão do login)</td><td><span class="pill pill--alta">Alta</span></td></tr>
+          <tr><td class="num">02</td><td>Verificação de e-mail</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">03</td><td>Recuperação de senha ("esqueci minha senha")</td><td><span class="pill pill--alta">Alta</span></td></tr>
+          <tr><td class="num">04</td><td>Rate limiting / proteção contra força bruta (login, cadastro)</td><td><span class="pill pill--alta">Alta</span></td></tr>
+          <tr><td class="num">05</td><td>Endpoint "sair de todos os dispositivos"</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">06</td><td>Gestão de sessões múltiplas (listar/revogar individualmente)</td><td><span class="pill pill--baixa">Baixa</span></td></tr>
+          <tr><td class="num">07</td><td>Proteção CSRF explícita nas mutações sensíveis</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">08</td><td>Repensar armazenamento do access token (sessionStorage é vulnerável a XSS)</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">09</td><td>Job de limpeza de tokens expirados/revogados</td><td><span class="pill pill--baixa">Baixa</span></td></tr>
+          <tr><td class="num">10</td><td>Logs de auditoria (login sucesso/falha, IP, user-agent)</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">11</td><td>Testes automatizados das rotas de auth</td><td><span class="pill pill--alta">Alta</span></td></tr>
+          <tr><td class="num">12</td><td>Documentar geração de segredos JWT fortes para produção</td><td><span class="pill pill--baixa">Baixa</span></td></tr>
+          <tr><td class="num">13</td><td>2FA / MFA</td><td><span class="pill pill--baixa">Baixa</span></td></tr>
+          <tr><td class="num">14</td><td>RBAC (papéis/permissões) — necessário se for gateway para outras apps</td><td><span class="pill pill--media">Média</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="melhorias">
+    <div class="section-head">
+      <span class="eyebrow">Refinar</span>
+      <span class="rule"></span>
+    </div>
+    <h2>Melhorias no que já existe</h2>
+
+    <div class="melhorias">
+      <div class="melhoria">
+        <code>atualizar/route.ts</code>
+        <p>Garantir tratamento/log de erros inesperados do Prisma na transação de rotação de token.</p>
+      </div>
+      <div class="melhoria">
+        <code>clienteAuth.ts → obterUsuarioAtual</code>
+        <p>A recursão após o refresh pode entrar em loop se o refresh funcionar mas <code>/me</code> continuar falhando por outro motivo (ex. 500).</p>
+        <p class="hint">Limitar a 1 nova tentativa.</p>
+      </div>
+      <div class="melhoria">
+        <code>dashboard/page.tsx</code>
+        <p>Expõe o JWT de acesso na tela — ok para debug, remover antes de produção real.</p>
+      </div>
+      <div class="melhoria">
+        <code>login/route.ts</code>
+        <p>Mensagens de erro já evitam vazar se é e-mail ou senha errada — bom padrão, manter em outros pontos.</p>
+      </div>
+      <div class="melhoria">
+        <code>proxy.ts</code>
+        <p>Checagem é otimista (só valida assinatura, não revogação no banco).</p>
+        <p class="hint">Considerar validar contra o banco em rotas realmente sensíveis.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="callout">
+    <span class="eyebrow">Por onde começar</span>
+    <p><strong>Recuperação de senha</strong>, <strong>rate limiting</strong> e <strong>testes automatizados</strong> são os três itens de maior impacto antes de qualquer uso além de ambiente de desenvolvimento.</p>
+  </div>
+
+  <footer>roadmap gerado a partir do estado atual do repositório — auth-gateway</footer>
+
+</div>
+</body>
+</html>
