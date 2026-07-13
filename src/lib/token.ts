@@ -9,9 +9,11 @@ const SEGREDO_ACESSO = new TextEncoder().encode(
 const SEGREDO_ATUALIZACAO = new TextEncoder().encode(
   process.env.JWT_REFRESH_SECRET,
 );
+const SEGREDO_MFA = new TextEncoder().encode(process.env.JWT_MFA_SECRET);
 
 export const DURACAO_TOKEN_ACESSO = "15m";
 export const DURACAO_TOKEN_ATUALIZACAO_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
+export const DURACAO_TOKEN_DESAFIO_MFA = "5m";
 
 export type PayloadTokenAcesso = {
   sub: string;
@@ -23,9 +25,18 @@ export type PayloadTokenAtualizacao = {
   jti: string;
 };
 
-if (!process.env.JWT_ACCESS_SECRET || !process.env.JWT_REFRESH_SECRET) {
+export type PayloadDesafioMfa = {
+  sub: string;
+  tipo: "mfa_desafio";
+};
+
+if (
+  !process.env.JWT_ACCESS_SECRET ||
+  !process.env.JWT_REFRESH_SECRET ||
+  !process.env.JWT_MFA_SECRET
+) {
   throw new Error(
-    "As variáveis de ambiente JWT_ACCESS_SECRET e JWT_REFRESH_SECRET precisam estar definidas.",
+    "As variáveis de ambiente JWT_ACCESS_SECRET, JWT_REFRESH_SECRET e JWT_MFA_SECRET precisam estar definidas.",
   );
 }
 
@@ -69,6 +80,28 @@ export async function verificarTokenAtualizacao(token: string) {
       token,
       SEGREDO_ATUALIZACAO,
     );
+    return payload;
+  } catch (erro) {
+    if (erro instanceof errors.JOSEError) return null;
+    throw erro;
+  }
+}
+
+// Token de curta duração emitido após validar e-mail/senha quando o usuário
+// tem MFA ativado. Não serve como token de acesso nem de atualização: usa um
+// segredo próprio para evitar confusão entre os três tipos de token.
+export async function gerarTokenDesafioMfa(usuarioId: string) {
+  return new SignJWT({ sub: usuarioId, tipo: "mfa_desafio" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(DURACAO_TOKEN_DESAFIO_MFA)
+    .sign(SEGREDO_MFA);
+}
+
+export async function verificarTokenDesafioMfa(token: string) {
+  try {
+    const { payload } = await jwtVerify<PayloadDesafioMfa>(token, SEGREDO_MFA);
+    if (payload.tipo !== "mfa_desafio") return null;
     return payload;
   } catch (erro) {
     if (erro instanceof errors.JOSEError) return null;

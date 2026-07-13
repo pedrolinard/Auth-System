@@ -22,13 +22,20 @@ consumido por outras aplicações como camada intermediária de identidade.
 
 ## Rotas de API
 
-| Método | Rota                  | Descrição                                             |
-| ------ | --------------------- | ------------------------------------------------------ |
-| POST   | `/api/auth/cadastro`  | Cria um novo usuário                                    |
-| POST   | `/api/auth/login`     | Autentica e retorna `tokenAcesso` + `tokenAtualizacao`  |
-| POST   | `/api/auth/atualizar` | Rotaciona o token de atualização e emite novo acesso    |
-| POST   | `/api/auth/logout`    | Revoga o token de atualização atual                     |
-| GET    | `/api/auth/me`        | Retorna o usuário autenticado (rota protegida, exemplo) |
+| Método | Rota                       | Descrição                                                              |
+| ------ | -------------------------- | ------------------------------------------------------------------------ |
+| POST   | `/api/auth/cadastro`       | Cria um novo usuário                                                     |
+| POST   | `/api/auth/login`          | Autentica; retorna tokens ou `{ mfaObrigatorio: true }` se MFA ativado   |
+| POST   | `/api/auth/atualizar`      | Rotaciona o token de atualização e emite novo acesso                     |
+| POST   | `/api/auth/logout`         | Revoga o token de atualização atual                                      |
+| GET    | `/api/auth/me`             | Retorna o usuário autenticado (rota protegida, exemplo)                  |
+| GET    | `/api/auth/sessoes`        | Lista as sessões (tokens de atualização) ativas do usuário autenticado   |
+| DELETE | `/api/auth/sessoes/[id]`   | Revoga uma sessão específica do usuário autenticado                      |
+| POST   | `/api/auth/mfa/iniciar`    | Gera segredo TOTP + QR code para ativar MFA (rota protegida)             |
+| POST   | `/api/auth/mfa/confirmar`  | Confirma o código e ativa o MFA (rota protegida)                         |
+| POST   | `/api/auth/mfa/desativar`  | Desativa o MFA mediante código válido (rota protegida)                   |
+| POST   | `/api/auth/mfa/verificar`  | Conclui o login enviando `mfaToken` (do `/login`) + código de 6 dígitos  |
+| POST   | `/api/cron/limpar-tokens`  | Remove tokens expirados/revogados antigos; exige `Authorization: Bearer CRON_SECRET` |
 
 ## Como rodar
 
@@ -40,7 +47,7 @@ npm run dev
 Abra [http://localhost:3000](http://localhost:3000).
 
 Antes de rodar, copie `.env.example` para `.env` e defina segredos fortes
-para `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET` (ex.: `openssl rand -base64 32`).
+para `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET` e `CRON_SECRET`.
 
 ## Banco de dados
 
@@ -48,3 +55,45 @@ para `JWT_ACCESS_SECRET` e `JWT_REFRESH_SECRET` (ex.: `openssl rand -base64 32`)
 npx prisma migrate dev   # aplica as migrações
 npx prisma studio        # inspeciona os dados
 ```
+
+## Segurança em produção
+
+### Gerar segredos fortes
+
+Cada `*_SECRET` do `.env` precisa de um valor aleatório e único — nunca reuse
+o mesmo valor entre `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` e
+`JWT_MFA_SECRET`, pois eles isolam os três tipos de token entre si. Gere cada
+um separadamente (funciona em qualquer SO, sem depender do `openssl` estar
+instalado):
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Para o `CRON_SECRET` (mais curto, só precisa ser imprevisível):
+
+```bash
+node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+```
+
+### Verificação em duas etapas (MFA/TOTP)
+
+Fluxo: `POST /api/auth/mfa/iniciar` (autenticado) devolve um QR code — o
+usuário escaneia com Google Authenticator/Authy/1Password e confirma com um
+código em `POST /api/auth/mfa/confirmar`. A partir daí, `POST /api/auth/login`
+passa a responder `{ mfaObrigatorio: true, mfaToken }` em vez dos tokens
+normais; o cliente completa o login em `POST /api/auth/mfa/verificar` com
+`{ mfaToken, codigo }`.
+
+### Limpeza de tokens expirados
+
+A tabela `tokens_atualizacao` acumula um registro por login/renovação. Rode a
+limpeza periodicamente (cron do SO, Task Scheduler do Windows, Vercel Cron
+etc.) apontando para a rota protegida por `CRON_SECRET`:
+
+```bash
+npm run limpeza:tokens
+```
+
+O script lê `BASE_URL` e `CRON_SECRET` do `.env` (por padrão usa
+`http://localhost:3000`) e chama `POST /api/cron/limpar-tokens`.

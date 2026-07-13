@@ -309,12 +309,12 @@
     <span class="eyebrow">Roadmap · Auth Gateway</span>
     <h1>Sistema de Autenticação Intermediária</h1>
     <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações. Estado atual do que foi entregue, o que falta e onde apertar o que já existe.</p>
-    <span class="meta">atualizado em 13 jul 2026</span>
+    <span class="meta">atualizado em 13 jul 2026 · MFA, sessões e limpeza de tokens entregues</span>
   </header>
 
   <div class="stats">
-    <div class="stat"><span class="n">19</span><span class="l">itens entregues</span></div>
-    <div class="stat"><span class="n">14</span><span class="l">pendentes</span></div>
+    <div class="stat"><span class="n">23</span><span class="l">itens entregues</span></div>
+    <div class="stat"><span class="n">10</span><span class="l">pendentes</span></div>
     <div class="stat"><span class="n">5</span><span class="l">melhorias no que existe</span></div>
   </div>
 
@@ -330,7 +330,7 @@
         <h3>API · <code>src/app/api/auth</code></h3>
         <ul>
           <li><code>POST /cadastro</code> — cria usuário, senha hasheada, e-mail duplicado → 409</li>
-          <li><code>POST /login</code> — emite access token (15 min) + refresh token (30 dias)</li>
+          <li><code>POST /login</code> — emite tokens ou desafio MFA (<code>mfaObrigatorio</code>)</li>
           <li><code>POST /atualizar</code> — rotação de refresh token em transação</li>
           <li><code>POST /logout</code> — revoga refresh token e limpa cookie</li>
           <li><code>GET /me</code> — usuário autenticado via Bearer token</li>
@@ -338,13 +338,27 @@
       </div>
 
       <div class="card">
+        <h3>MFA &amp; sessões · <code>src/app/api/auth</code></h3>
+        <ul>
+          <li><code>POST /mfa/iniciar</code> — gera segredo TOTP + QR code</li>
+          <li><code>POST /mfa/confirmar</code> / <code>/desativar</code> — ativa/desativa por código</li>
+          <li><code>POST /mfa/verificar</code> — conclui o login com o código de 6 dígitos</li>
+          <li><code>GET /sessoes</code> · <code>DELETE /sessoes/[id]</code> — listar/revogar sessões</li>
+          <li><code>POST /api/cron/limpar-tokens</code> — limpeza protegida por <code>CRON_SECRET</code></li>
+        </ul>
+      </div>
+
+      <div class="card">
         <h3>Lib · <code>src/lib</code></h3>
         <ul>
-          <li><code>token.ts</code> — JWT (jose) + hash SHA-256 do refresh token</li>
+          <li><code>token.ts</code> — JWT (jose) + hash SHA-256 do refresh token + desafio MFA</li>
+          <li><code>mfa.ts</code> — segredo/QR TOTP (otpauth + qrcode) e verificação</li>
+          <li><code>sessao.ts</code> — emissão compartilhada de tokens (login e MFA)</li>
+          <li><code>limpezaTokens.ts</code> — remoção de tokens expirados/revogados antigos</li>
           <li><code>senha.ts</code> — hash/verificação com bcryptjs</li>
           <li><code>cookies.ts</code> — cookie httpOnly / secure / sameSite=lax</li>
           <li><code>validacao.ts</code> — schemas Zod</li>
-          <li><code>clienteAuth.ts</code> — token em sessionStorage, refresh automático em 401</li>
+          <li><code>clienteAuth.ts</code> — token em sessionStorage, refresh automático, sessões e MFA</li>
           <li><code>autenticar.ts</code> — extração/validação de Bearer token</li>
         </ul>
       </div>
@@ -353,14 +367,15 @@
         <h3>Dados</h3>
         <ul>
           <li>Prisma + SQLite — modelos <code>Usuario</code> e <code>TokenAtualizacao</code></li>
-          <li>Migração inicial aplicada</li>
+          <li><code>Usuario.mfaAtivado</code> / <code>mfaSecret</code> para verificação em duas etapas</li>
         </ul>
       </div>
 
       <div class="card">
         <h3>Frontend</h3>
         <ul>
-          <li>Páginas: home, <code>/login</code>, <code>/cadastro</code>, <code>/dashboard</code></li>
+          <li>Páginas: home, <code>/login</code> (2ª etapa MFA), <code>/cadastro</code>, <code>/dashboard</code></li>
+          <li>Dashboard com seção Segurança: sessões ativas + ativar/desativar MFA</li>
           <li><code>proxy.ts</code> redireciona rotas protegidas / somente-visitante</li>
         </ul>
       </div>
@@ -373,6 +388,10 @@
           <li>Rotação de refresh token a cada renovação</li>
           <li>Cookie httpOnly para o refresh token</li>
           <li>Access token de vida curta (15 min)</li>
+          <li>Verificação em duas etapas (TOTP) opcional por usuário</li>
+          <li>Gestão de sessões ativas (listar/revogar individualmente)</li>
+          <li>Job de limpeza de tokens expirados/revogados antigos</li>
+          <li>Segredos JWT gerados aleatoriamente e documentados (não mais placeholders)</li>
         </ul>
       </div>
     </div>
@@ -396,15 +415,11 @@
           <tr><td class="num">03</td><td>Recuperação de senha ("esqueci minha senha")</td><td><span class="pill pill--alta">Alta</span></td></tr>
           <tr><td class="num">04</td><td>Rate limiting / proteção contra força bruta (login, cadastro)</td><td><span class="pill pill--alta">Alta</span></td></tr>
           <tr><td class="num">05</td><td>Endpoint "sair de todos os dispositivos"</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">06</td><td>Gestão de sessões múltiplas (listar/revogar individualmente)</td><td><span class="pill pill--baixa">Baixa</span></td></tr>
-          <tr><td class="num">07</td><td>Proteção CSRF explícita nas mutações sensíveis</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">08</td><td>Repensar armazenamento do access token (sessionStorage é vulnerável a XSS)</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">09</td><td>Job de limpeza de tokens expirados/revogados</td><td><span class="pill pill--baixa">Baixa</span></td></tr>
-          <tr><td class="num">10</td><td>Logs de auditoria (login sucesso/falha, IP, user-agent)</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">11</td><td>Testes automatizados das rotas de auth</td><td><span class="pill pill--alta">Alta</span></td></tr>
-          <tr><td class="num">12</td><td>Documentar geração de segredos JWT fortes para produção</td><td><span class="pill pill--baixa">Baixa</span></td></tr>
-          <tr><td class="num">13</td><td>2FA / MFA</td><td><span class="pill pill--baixa">Baixa</span></td></tr>
-          <tr><td class="num">14</td><td>RBAC (papéis/permissões) — necessário se for gateway para outras apps</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">06</td><td>Proteção CSRF explícita nas mutações sensíveis</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">07</td><td>Repensar armazenamento do access token (sessionStorage é vulnerável a XSS)</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">08</td><td>Logs de auditoria (login sucesso/falha, IP, user-agent)</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">09</td><td>Testes automatizados das rotas de auth</td><td><span class="pill pill--alta">Alta</span></td></tr>
+          <tr><td class="num">10</td><td>RBAC (papéis/permissões) — necessário se for gateway para outras apps</td><td><span class="pill pill--media">Média</span></td></tr>
         </tbody>
       </table>
     </div>

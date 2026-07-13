@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verificarSenha } from "@/lib/senha";
-import { definirCookieAtualizacao } from "@/lib/cookies";
-import { gerarTokenAcesso, gerarTokenAtualizacao, hashToken } from "@/lib/token";
+import { criarSessao } from "@/lib/sessao";
+import { gerarTokenDesafioMfa } from "@/lib/token";
 import { esquemaLogin } from "@/lib/validacao";
 
 export async function POST(req: Request) {
@@ -29,28 +29,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const tokenAcesso = await gerarTokenAcesso({
-    sub: usuario.id,
-    email: usuario.email,
-  });
-  const {
-    token: tokenAtualizacao,
-    expiraEm,
-  } = await gerarTokenAtualizacao(usuario.id);
+  if (usuario.mfaAtivado) {
+    const mfaToken = await gerarTokenDesafioMfa(usuario.id);
+    return NextResponse.json({ mfaObrigatorio: true, mfaToken });
+  }
 
-  await prisma.tokenAtualizacao.create({
-    data: {
-      tokenHash: hashToken(tokenAtualizacao),
-      usuarioId: usuario.id,
-      expiraEm,
-    },
-  });
-
-  await definirCookieAtualizacao(tokenAtualizacao);
-
-  return NextResponse.json({
-    usuario: { id: usuario.id, nome: usuario.nome, email: usuario.email },
-    tokenAcesso,
-    tokenAtualizacao,
-  });
+  const sessao = await criarSessao(usuario);
+  return NextResponse.json(sessao);
 }

@@ -26,3 +26,16 @@ export const esquemaLogin = z.object({
 export const esquemaAtualizacao = z.object({
   tokenAtualizacao: z.string({ error: "Informe o token de atualização." }),
 });
+
+export const esquemaCodigoMfa = z.object({
+  codigo: z
+    .string({ error: "Informe o código de verificação." })
+    .regex(/^\d{6}$/, { error: "O código deve ter 6 dígitos." }),
+});
+
+export const esquemaVerificacaoMfa = z.object({
+  mfaToken: z.string({ error: "Informe o token de desafio." }),
+  codigo: z
+    .string({ error: "Informe o código de verificação." })
+    .regex(/^\d{6}$/, { error: "O código deve ter 6 dígitos." }),
+});

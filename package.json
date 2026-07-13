@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "limpeza:tokens": "node -r dotenv/config scripts/limpar-tokens.mjs dotenv_config_path=.env"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",
@@ -14,7 +15,9 @@
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.3",
     "next": "16.2.10",
+    "otpauth": "^9.5.1",
     "prisma": "^7.8.0",
+    "qrcode": "^1.5.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "server-only": "^0.0.1",
@@ -24,6 +27,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^17.4.2",
