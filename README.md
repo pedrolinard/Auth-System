@@ -1,4 +1,4 @@
-# Autenticação — Sistema de Autenticação Intermediária
+# Sistema de Autenticação 
 
 Gateway de autenticação em Next.js (App Router) que centraliza **cadastro**,
 **login** e **geração de tokens** (JWT de acesso + atualização), para ser
