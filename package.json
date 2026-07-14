@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "limpeza:tokens": "node -r dotenv/config scripts/limpar-tokens.mjs dotenv_config_path=.env"
+    "limpeza:tokens": "node -r dotenv/config scripts/limpar-tokens.mjs dotenv_config_path=.env",
+    "gerar:chaves-rs256": "node scripts/gerar-chaves-rs256.mjs"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.8.0",

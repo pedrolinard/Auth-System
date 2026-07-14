@@ -8,17 +8,47 @@ consumido por outras aplicações como camada intermediária de identidade.
 
 - **Cadastro/Login**: senha com hash `bcrypt` (`src/lib/senha.ts`).
 - **Tokens**: JWT assinado com `jose` (`src/lib/token.ts`)
-  - **Token de acesso**: curta duração (15 min), enviado no header
-    `Authorization: Bearer <token>` para chamar rotas protegidas.
-  - **Token de atualização**: longa duração (30 dias), com rotação a cada uso
-    e revogação persistida no banco (`TokenAtualizacao`), guardado também
-    como cookie `httpOnly`.
+  - **Token de acesso**: curta duração (15 min), assinado com **RS256** (par
+    de chaves — a privada só existe no Next.js; a pública pode ser
+    compartilhada com outros serviços, como o Django em `django/`, para eles
+    validarem o token sem precisar de um segredo compartilhado). Enviado no
+    header `Authorization: Bearer <token>` para chamar rotas protegidas.
+  - **Token de atualização**: longa duração (30 dias), assinado com HS256
+    (nunca sai do Next.js), com rotação a cada uso e revogação persistida no
+    banco (`TokenAtualizacao`), guardado também como cookie `httpOnly`.
 - **Banco de dados**: Prisma + SQLite em desenvolvimento (`prisma/dev.db`),
   pronto para trocar para Postgres em produção só alterando `DATABASE_URL`
   e o `provider` do datasource.
 - **Proxy** (`src/proxy.ts`, equivalente ao antigo `middleware.ts` a partir do
   Next.js 16): faz checagem otimista de sessão para proteger `/dashboard` e
   redirecionar usuários já autenticados para longe de `/login` e `/cadastro`.
+
+## Serviço de domínio (Django)
+
+`django/` é um serviço Django REST Framework de exemplo que **não tem login
+próprio** — ele só valida o token de acesso (RS256) emitido pelo Next.js e usa
+o claim `sub` (id do `Usuario`) como identidade do usuário
+(`django/comum/autenticacao.py`). O app `exemplo` (model `Item`) existe só
+para provar essa integração ponta a ponta; entidades de negócio reais seguem
+o mesmo padrão depois.
+
+- Alcançado de forma transparente via `next.config.ts` (`rewrites()`
+  encaminha `/api/dominio/*` para `DJANGO_SERVICE_URL`), então o browser
+  nunca fala com o Django diretamente — mesma origem, sem CORS.
+- Banco próprio (SQLite em dev, Postgres em produção), desacoplado do banco
+  do Next.js — não há FK real entre os dois serviços.
+
+Para rodar localmente:
+
+```bash
+cd django
+python -m venv venv
+./venv/Scripts/activate   # ou source venv/bin/activate no Linux/Mac
+pip install -r requirements.txt
+cp .env.example .env      # copie JWT_ACCESS_PUBLIC_KEY_B64 do .env da raiz
+python manage.py migrate
+python manage.py runserver 8000
+```
 
 ## Rotas de API
 
@@ -37,6 +67,10 @@ consumido por outras aplicações como camada intermediária de identidade.
 | POST   | `/api/auth/mfa/verificar`  | Conclui o login enviando `mfaToken` (do `/login`) + código de 6 dígitos  |
 | POST   | `/api/cron/limpar-tokens`  | Remove tokens expirados/revogados antigos; exige `Authorization: Bearer CRON_SECRET` |
 
+As rotas `/api/dominio/*` (ex.: `/api/dominio/itens`) não ficam em
+`src/app/api/` — são servidas pelo serviço Django (`django/exemplo/urls.py`)
+e só chegam até ele via rewrite (seção "Serviço de domínio" acima).
+
 ## Como rodar
 
 ```bash
@@ -46,8 +80,9 @@ npm run dev
 
 Abra [http://localhost:3000](http://localhost:3000).
 
-Antes de rodar, copie `.env.example` para `.env` e defina segredos fortes
-para `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET` e `CRON_SECRET`.
+Antes de rodar, copie `.env.example` para `.env`, gere o par de chaves RS256
+do token de acesso (`npm run gerar:chaves-rs256`) e defina segredos fortes
+para `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET` e `CRON_SECRET`.
 
 ## Banco de dados
 
@@ -60,11 +95,13 @@ npx prisma studio        # inspeciona os dados
 
 ### Gerar segredos fortes
 
-Cada `*_SECRET` do `.env` precisa de um valor aleatório e único — nunca reuse
-o mesmo valor entre `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET` e
-`JWT_MFA_SECRET`, pois eles isolam os três tipos de token entre si. Gere cada
-um separadamente (funciona em qualquer SO, sem depender do `openssl` estar
-instalado):
+O token de acesso usa um par de chaves RS256 (`npm run gerar:chaves-rs256`,
+que preenche `JWT_ACCESS_PRIVATE_KEY_B64`/`JWT_ACCESS_PUBLIC_KEY_B64`).
+
+Os demais `*_SECRET` do `.env` precisam de um valor aleatório e único — nunca
+reuse o mesmo valor entre `JWT_REFRESH_SECRET` e `JWT_MFA_SECRET`, pois eles
+isolam os tipos de token entre si. Gere cada um separadamente (funciona em
+qualquer SO, sem depender do `openssl` estar instalado):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
@@ -97,3 +134,12 @@ npm run limpeza:tokens
 
 O script lê `BASE_URL` e `CRON_SECRET` do `.env` (por padrão usa
 `http://localhost:3000`) e chama `POST /api/cron/limpar-tokens`.
+
+### Deploy do serviço Django (Vercel)
+
+Criar um segundo projeto Vercel com Root Directory `django/` — a detecção de
+Python/Fluid Compute reconhece o `requirements.txt` automaticamente. Nesse
+projeto, configurar `DJANGO_SECRET_KEY`, `DATABASE_URL` (Postgres dedicado),
+`DJANGO_ALLOWED_HOSTS` e `JWT_ACCESS_PUBLIC_KEY_B64` (copiado do projeto
+Next.js). No projeto Next.js, apontar `DJANGO_SERVICE_URL` para a URL de
+produção do projeto Django.

@@ -1,6 +1,6 @@
 # Roadmap — Sistema de Autenticação Intermediária
 
-> Gerado em 2026-07-13. Atualizado em 2026-07-13 (itens de prioridade baixa entregues). Cobre o que já foi implementado, o que falta fazer e melhorias sobre o que já existe.
+> Gerado em 2026-07-13. Atualizado em 2026-07-14 (serviço de domínio Django/DRF de exemplo, token de acesso migrado para RS256). Cobre o que já foi implementado, o que falta fazer e melhorias sobre o que já existe.
 
 ## ✅ Feito
 
@@ -28,6 +28,12 @@
 
 ### Dados
 - Prisma + SQLite (`Usuario`, `TokenAtualizacao`), com campos de MFA (`mfaAtivado`, `mfaSecret`)
+
+### Serviço de domínio (Django/DRF)
+- Token de acesso migrado de HS256 para **RS256** (`src/lib/token.ts`) — chave privada só no Next.js, pública compartilhável com outros serviços; refresh e desafio MFA continuam HS256 (nunca saem do Next.js)
+- `django/` — serviço Django REST Framework de exemplo, sem login próprio: `comum/autenticacao.py` valida o JWT (RS256, `algorithms` fixo) e usa o claim `sub` como identidade
+- App `exemplo` (model `Item`) prova a integração ponta a ponta: dados filtrados/gravados por `usuario_id` (o `sub` do token)
+- `next.config.ts` encaminha `/api/dominio/*` para o Django via rewrite (mesma origem, sem CORS); banco próprio (SQLite em dev, Postgres em produção), desacoplado do banco do Next.js
 
 ### Frontend
 - Páginas: home, `/login` (com segunda etapa de código MFA), `/cadastro`, `/dashboard` (protegida, com seções de Segurança: sessões ativas e MFA)
@@ -57,7 +63,8 @@
 | 7 | Repensar armazenamento do access token (sessionStorage é vulnerável a XSS) | Média |
 | 8 | Logs de auditoria (login sucesso/falha, IP, user-agent) | Média |
 | 9 | Testes automatizados (unitários/integração) das rotas de auth | Alta |
-| 10 | RBAC (papéis/permissões) — necessário se for gateway para outras apps | Média |
+| 10 | RBAC (papéis/permissões) — o gateway já tem um segundo consumidor real (`django/`); ainda não desenhado | Média |
+| 11 | Migrar Next.js de SQLite para Postgres em produção — mais relevante agora que existe um segundo serviço já pensado para Postgres | Baixa |
 
 ## 💡 Melhorias no que já existe
 

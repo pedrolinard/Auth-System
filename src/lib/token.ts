@@ -1,11 +1,32 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { SignJWT, jwtVerify, errors } from "jose";
+import { SignJWT, jwtVerify, errors, importPKCS8, importSPKI } from "jose";
 
-const SEGREDO_ACESSO = new TextEncoder().encode(
-  process.env.JWT_ACCESS_SECRET,
-);
+let chavePrivadaAcesso: Promise<CryptoKey> | null = null;
+function obterChavePrivadaAcesso() {
+  if (!chavePrivadaAcesso) {
+    const pem = Buffer.from(
+      process.env.JWT_ACCESS_PRIVATE_KEY_B64!,
+      "base64",
+    ).toString("utf8");
+    chavePrivadaAcesso = importPKCS8(pem, "RS256");
+  }
+  return chavePrivadaAcesso;
+}
+
+let chavePublicaAcesso: Promise<CryptoKey> | null = null;
+function obterChavePublicaAcesso() {
+  if (!chavePublicaAcesso) {
+    const pem = Buffer.from(
+      process.env.JWT_ACCESS_PUBLIC_KEY_B64!,
+      "base64",
+    ).toString("utf8");
+    chavePublicaAcesso = importSPKI(pem, "RS256");
+  }
+  return chavePublicaAcesso;
+}
+
 const SEGREDO_ATUALIZACAO = new TextEncoder().encode(
   process.env.JWT_REFRESH_SECRET,
 );
@@ -31,28 +52,29 @@ export type PayloadDesafioMfa = {
 };
 
 if (
-  !process.env.JWT_ACCESS_SECRET ||
+  !process.env.JWT_ACCESS_PRIVATE_KEY_B64 ||
+  !process.env.JWT_ACCESS_PUBLIC_KEY_B64 ||
   !process.env.JWT_REFRESH_SECRET ||
   !process.env.JWT_MFA_SECRET
 ) {
   throw new Error(
-    "As variáveis de ambiente JWT_ACCESS_SECRET, JWT_REFRESH_SECRET e JWT_MFA_SECRET precisam estar definidas.",
+    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET e JWT_MFA_SECRET precisam estar definidas.",
   );
 }
 
 export async function gerarTokenAcesso(payload: PayloadTokenAcesso) {
   return new SignJWT(payload)
-    .setProtectedHeader({ alg: "HS256" })
+    .setProtectedHeader({ alg: "RS256" })
     .setIssuedAt()
     .setExpirationTime(DURACAO_TOKEN_ACESSO)
-    .sign(SEGREDO_ACESSO);
+    .sign(await obterChavePrivadaAcesso());
 }
 
 export async function verificarTokenAcesso(token: string) {
   try {
     const { payload } = await jwtVerify<PayloadTokenAcesso>(
       token,
-      SEGREDO_ACESSO,
+      await obterChavePublicaAcesso(),
     );
     return payload;
   } catch (erro) {
