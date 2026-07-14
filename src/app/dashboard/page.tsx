@@ -383,23 +383,23 @@ function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
           {sessoes.map((sessao) => (
             <li
               key={sessao.id}
-              className="flex items-center justify-between gap-3 rounded-md bg-zinc-100 p-3 dark:bg-zinc-900"
+              className="flex flex-col gap-3 rounded-md bg-zinc-100 p-3 sm:flex-row sm:items-center sm:justify-between dark:bg-zinc-900"
             >
-              <div className="text-xs text-zinc-600 dark:text-zinc-400">
-                <p>
-                  Criada em {new Date(sessao.criadoEm).toLocaleString("pt-BR")}
+              <div className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>Criada em {new Date(sessao.criadoEm).toLocaleString("pt-BR")}</span>
                   {sessao.atual && (
-                    <span className="ml-2 rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-black dark:bg-white/10 dark:text-white">
+                    <span className="whitespace-nowrap rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-black dark:bg-white/10 dark:text-white">
                       sessão atual
                     </span>
                   )}
-                </p>
-                <p>Expira em {new Date(sessao.expiraEm).toLocaleString("pt-BR")}</p>
+                </div>
+                <span>Expira em {new Date(sessao.expiraEm).toLocaleString("pt-BR")}</span>
               </div>
               <button
                 onClick={() => aoRevogar(sessao)}
                 disabled={revogandoId === sessao.id}
-                className="shrink-0 rounded-full border border-black/[.08] px-4 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                className="shrink-0 self-start rounded-full border border-black/[.08] px-4 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] disabled:opacity-50 sm:self-auto dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
               >
                 {revogandoId === sessao.id ? "Revogando..." : "Revogar"}
               </button>
