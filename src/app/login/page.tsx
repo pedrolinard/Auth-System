@@ -135,6 +135,8 @@ export default function PaginaLogin() {
             name="email"
             type="email"
             required
+            autoFocus
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="rounded-md border border-black/[.08] px-3 py-2 text-sm dark:border-white/[.145] dark:bg-black"
@@ -151,6 +153,12 @@ export default function PaginaLogin() {
             onChange={setSenha}
             autoComplete="current-password"
           />
+          <Link
+            href="/esqueci-senha"
+            className="self-end text-xs text-zinc-600 underline dark:text-zinc-400"
+          >
+            Esqueci minha senha
+          </Link>
         </div>
 
         {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}

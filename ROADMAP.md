@@ -1,6 +1,6 @@
 # Roadmap — Sistema de Autenticação Intermediária
 
-> Gerado em 2026-07-13. Atualizado em 2026-07-14 (todos os itens de prioridade Média entregues: verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). Cobre o que já foi implementado, o que falta fazer e melhorias sobre o que já existe.
+> Gerado em 2026-07-13. Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.**
 
 ## ✅ Feito
 
@@ -15,11 +15,13 @@
 - `DELETE /sessoes` — **"sair de todos os dispositivos"**: revoga todas as sessões do usuário; protegido por CSRF
 - `POST /mfa/iniciar`, `/mfa/confirmar`, `/mfa/desativar`, `/mfa/verificar` — fluxo completo de verificação em duas etapas (TOTP); as três primeiras protegidas por CSRF
 - `POST /verificar-email` — confirma o e-mail a partir do token do link (`emailVerificado = true`)
+- `POST /esqueci-senha` — gera token de redefinição de senha (link logado no console), resposta genérica anti-enumeração
+- `POST /redefinir-senha` — redefine a senha a partir do token e revoga todas as sessões ativas do usuário
 - `GET /usuarios` — lista usuários, restrito a `papel = admin` (exemplo de RBAC)
 - `POST /api/cron/limpar-tokens` — remove tokens expirados/revogados antigos, protegido por `CRON_SECRET`
 
 ### Lib (`src/lib/`)
-- `token.ts` — geração/verificação de JWT (jose): acesso (RS256, inclui claim `papel`), atualização, desafio MFA e verificação de e-mail (cada um com segredo próprio), hash SHA-256 do refresh token
+- `token.ts` — geração/verificação de JWT (jose): acesso (RS256, inclui claim `papel`), atualização, desafio MFA, verificação de e-mail e redefinição de senha (cada um com segredo próprio), hash SHA-256 do refresh token
 - `senha.ts` — hash/verificação de senha (bcryptjs)
 - `mfa.ts` — geração de segredo TOTP, QR code (otpauth + qrcode) e verificação de código
 - `sessao.ts` — emissão compartilhada de tokenAcesso/tokenAtualizacao/csrfToken em cookies httpOnly (usada por login e conclusão de MFA)
@@ -27,8 +29,9 @@
 - `cookies.ts` — cookies httpOnly (atualização, acesso) + cookie CSRF não-httpOnly, todos `secure`/`sameSite=lax`
 - `csrf.ts` — geração e validação do token CSRF (double-submit cookie)
 - `auditoria.ts` — registro de eventos (login, cadastro, logout) com IP/user-agent, best-effort
-- `validacao.ts` — schemas Zod (cadastro, login, atualização, código MFA, verificação de e-mail)
-- `clienteAuth.ts` — cliente client-side: cookies httpOnly (sem sessionStorage), refresh automático em 401, header CSRF automático, sessões e MFA
+- `rateLimit.ts` — rate limiting por IP reaproveitando `LogAuditoria` (login, cadastro, recuperação de senha)
+- `validacao.ts` — schemas Zod (cadastro, login, atualização, código MFA, verificação de e-mail, esqueci/redefinir senha)
+- `clienteAuth.ts` — cliente client-side: cookies httpOnly (sem sessionStorage), refresh automático em 401, header CSRF automático, sessões, MFA e recuperação de senha
 - `autenticar.ts` — helper que aceita o token via cookie httpOnly ou Bearer nas rotas
 
 ### Dados
@@ -44,10 +47,15 @@
 - **Testes automatizados** (`pytest-django`): `comum/tests/test_autenticacao.py` (token válido/expirado/adulterado/confusão de algoritmo/via cookie/claim `papel`) e `tarefas/tests/test_views.py` (CRUD + isolamento por usuário + CSRF ponta a ponta) — 23 testes
 
 ### Frontend
-- Páginas: home, `/login` (com segunda etapa de código MFA), `/cadastro`, `/dashboard` (protegida, com seções de Segurança: sessões ativas e MFA), `/verificar-email`
+- Páginas: home, `/login` (com segunda etapa de código MFA e link "Esqueci minha senha"), `/cadastro`, `/dashboard` (protegida, com seções de Segurança: sessões ativas e MFA), `/verificar-email`, `/esqueci-senha`, `/redefinir-senha`
 - `/dashboard/projetos` e `/dashboard/projetos/[id]` — CRUD de projetos e tarefas consumindo o serviço Django via rewrite (`src/lib/clienteDominio.ts`)
 - `proxy.ts` faz checagem otimista de sessão via cookie e redireciona rotas protegidas/somente-visitante
 - Sem `sessionStorage` — access token e CSRF token viajam via cookie, o cliente não guarda nenhum token manualmente
+- `login`/`cadastro` com o mesmo padrão de formulário (`autoFocus`, `autoComplete`, `CampoSenha` compartilhado com mostrar/ocultar senha)
+
+### Testes automatizados (Next.js)
+- **Vitest contra servidor `next dev` real** (não mocka `next/headers`), database dedicada `autenticacao_test` na mesma instância Postgres, `tests/globalSetup.ts` sobe/derruba o servidor e aplica as migrations
+- 28 testes em `tests/api/*.test.ts`: cadastro, login, sessões, MFA (códigos TOTP reais), RBAC, recuperação de senha, verificação de e-mail, CSRF e rate limiting
 
 ### Segurança já presente
 - Senha hasheada (bcrypt)
@@ -63,17 +71,12 @@
 - Logs de auditoria (login sucesso/falha, cadastro, logout — IP e user-agent)
 - Job de limpeza de tokens expirados/revogados antigos
 - Segredos JWT gerados aleatoriamente (não mais placeholders) e documentados
+- Recuperação de senha (token stateless, 1h, revoga todas as sessões ao redefinir, resposta anti-enumeração)
+- Rate limiting por IP em login, cadastro e recuperação de senha (reaproveita `LogAuditoria`)
 
 ## 🔧 O que falta / pode fazer
 
-| # | Item | Prioridade |
-|---|------|------------|
-| 1 | Revisar página de cadastro (confirmar mesmo padrão do login) | Alta |
-| 2 | Recuperação de senha ("esqueci minha senha") | Alta |
-| 3 | Testes automatizados (unitários/integração) das rotas de auth do Next.js (o lado Django já tem, ver acima) | Alta |
-| 4 | Rate limiting / proteção contra força bruta (login, cadastro) | Alta |
-
-Todos os itens de prioridade Média já foram entregues (verificação de e-mail, RBAC mínimo, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — ver "✅ Feito" acima). Restam só os 4 itens de prioridade Alta.
+Nenhum item pendente no momento — todos os itens de prioridade Alta e Média identificados neste roadmap foram entregues (ver "✅ Feito" acima). Itens fora de escopo intencional (rate limiting distribuído/Redis, captcha, envio real de e-mail) seguem documentados no `README.md`.
 
 ## 💡 Melhorias no que já existe
 

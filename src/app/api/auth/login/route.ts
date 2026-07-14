@@ -1,12 +1,31 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { criarSessao } from "@/lib/sessao";
 import { gerarTokenDesafioMfa } from "@/lib/token";
 import { esquemaLogin } from "@/lib/validacao";
 
+const MAX_TENTATIVAS_LOGIN = 5;
+const JANELA_LOGIN_MS = 15 * 60 * 1000;
+
 export async function POST(req: Request) {
+  const ip = obterIp(req);
+  if (
+    await limiteExcedido({
+      ip,
+      evento: "login_falha",
+      maximo: MAX_TENTATIVAS_LOGIN,
+      janelaMs: JANELA_LOGIN_MS,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
   const corpo = await req.json().catch(() => null);
   const dadosValidados = esquemaLogin.safeParse(corpo);
 

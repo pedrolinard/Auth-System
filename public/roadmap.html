@@ -326,13 +326,13 @@
   <header class="masthead">
     <span class="eyebrow">Roadmap · Auth Gateway</span>
     <h1>Sistema de Autenticação Intermediária</h1>
-    <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações — com um serviço de domínio em Django/DRF (Postgres compartilhado) por trás, e todos os itens de prioridade Média entregues (RBAC, CSRF, cookies httpOnly, auditoria, verificação de e-mail, sair de todos os dispositivos). Estado atual do que foi entregue, o que falta e onde apertar o que já existe.</p>
-    <span class="meta">atualizado em 14 jul 2026 · todos os itens de prioridade Média entregues</span>
+    <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações — com um serviço de domínio em Django/DRF (Postgres compartilhado) por trás. Todos os itens de prioridade Alta e Média entregues (recuperação de senha, rate limiting, testes automatizados do Next.js, RBAC, CSRF, cookies httpOnly, auditoria, verificação de e-mail, sair de todos os dispositivos). Estado atual do que foi entregue e onde apertar o que já existe.</p>
+    <span class="meta">atualizado em 14 jul 2026 · nenhum item pendente</span>
   </header>
 
   <div class="stats">
-    <div class="stat"><span class="n">58</span><span class="l">itens entregues</span></div>
-    <div class="stat"><span class="n">4</span><span class="l">pendentes</span></div>
+    <div class="stat"><span class="n">62</span><span class="l">itens entregues</span></div>
+    <div class="stat"><span class="n">0</span><span class="l">pendentes</span></div>
     <div class="stat"><span class="n">5/5</span><span class="l">melhorias concluídas</span></div>
   </div>
 
@@ -353,6 +353,8 @@
           <li><code>POST /logout</code> — revoga refresh token e limpa cookies, protegida por CSRF, audita</li>
           <li><code>GET /me</code> — usuário autenticado via cookie httpOnly ou Bearer (inclui <code>papel</code>, <code>emailVerificado</code>)</li>
           <li><code>POST /verificar-email</code> · <code>GET /usuarios</code> (admin) — verificação de e-mail e exemplo de RBAC</li>
+          <li><code>POST /esqueci-senha</code> — gera token de redefinição (link logado no console), resposta genérica anti-enumeração</li>
+          <li><code>POST /redefinir-senha</code> — redefine a senha a partir do token, revoga todas as sessões ativas</li>
         </ul>
       </div>
 
@@ -371,12 +373,13 @@
       <div class="card">
         <h3>Lib · <code>src/lib</code></h3>
         <ul>
-          <li><code>token.ts</code> — JWT (jose): acesso (RS256, claim <code>papel</code>), atualização, desafio MFA e verificação de e-mail</li>
+          <li><code>token.ts</code> — JWT (jose): acesso (RS256, claim <code>papel</code>), atualização, desafio MFA, verificação de e-mail e redefinição de senha</li>
           <li><code>mfa.ts</code> — segredo/QR TOTP (otpauth + qrcode) e verificação</li>
           <li><code>sessao.ts</code> — emissão de tokenAcesso/tokenAtualizacao/csrfToken em cookies httpOnly</li>
           <li><code>cookies.ts</code> — cookies httpOnly (acesso, atualização) + CSRF não-httpOnly</li>
           <li><code>csrf.ts</code> — geração/validação do token CSRF (double-submit cookie)</li>
           <li><code>auditoria.ts</code> — registro de eventos com IP/user-agent, best-effort</li>
+          <li><code>rateLimit.ts</code> — rate limiting por IP reaproveitando <code>LogAuditoria</code> (login, cadastro, recuperação de senha)</li>
           <li><code>senha.ts</code> — hash/verificação com bcryptjs</li>
           <li><code>validacao.ts</code> — schemas Zod</li>
           <li><code>clienteAuth.ts</code> — sem sessionStorage, cookies httpOnly + header CSRF automático</li>
@@ -396,11 +399,22 @@
       <div class="card">
         <h3>Frontend</h3>
         <ul>
-          <li>Páginas: home, <code>/login</code> (2ª etapa MFA), <code>/cadastro</code>, <code>/dashboard</code>, <code>/verificar-email</code></li>
+          <li>Páginas: home, <code>/login</code> (2ª etapa MFA + link "Esqueci minha senha"), <code>/cadastro</code>, <code>/dashboard</code>, <code>/verificar-email</code>, <code>/esqueci-senha</code>, <code>/redefinir-senha</code></li>
           <li>Dashboard com seção Segurança: sessões ativas (individual + todas de uma vez) + ativar/desativar MFA + indicador de e-mail verificado</li>
           <li><code>/dashboard/projetos</code> e <code>/dashboard/projetos/[id]</code> — CRUD de projetos e tarefas (Django)</li>
           <li><code>proxy.ts</code> redireciona rotas protegidas / somente-visitante</li>
           <li>Sem <code>sessionStorage</code> — nenhum token guardado manualmente pelo cliente</li>
+          <li><code>login</code>/<code>cadastro</code> com o mesmo padrão de formulário (<code>autoFocus</code>, <code>autoComplete</code>, <code>CampoSenha</code> compartilhado)</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Testes automatizados · <code>tests/</code> (Next.js)</h3>
+        <ul>
+          <li><strong>Vitest contra servidor <code>next dev</code> real</strong> — não mocka <code>next/headers</code>/cookies</li>
+          <li>Database dedicada <code>autenticacao_test</code>, mesma instância Postgres local</li>
+          <li><code>tests/globalSetup.ts</code> sobe/derruba o servidor e aplica migrations</li>
+          <li>28 testes: cadastro, login, sessões, MFA (TOTP real), RBAC, recuperação de senha, verificação de e-mail, CSRF, rate limiting</li>
         </ul>
       </div>
 
@@ -434,6 +448,8 @@
           <li>Job de limpeza de tokens expirados/revogados antigos</li>
           <li>Segredos JWT gerados aleatoriamente e documentados (não mais placeholders)</li>
           <li>Serviço Django valida algoritmo fixo (RS256) — bloqueia ataque de confusão de algoritmo</li>
+          <li>Recuperação de senha (token stateless 1h, revoga todas as sessões ao redefinir, resposta anti-enumeração)</li>
+          <li>Rate limiting por IP em login, cadastro e recuperação de senha (reaproveita <code>LogAuditoria</code>)</li>
         </ul>
       </div>
     </div>
@@ -445,20 +461,7 @@
       <span class="rule"></span>
     </div>
     <h2>O que falta / pode fazer</h2>
-
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>#</th><th>Item</th><th>Prioridade</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="num">01</td><td>Revisar página de cadastro (confirmar mesmo padrão do login)</td><td><span class="pill pill--alta">Alta</span></td></tr>
-          <tr><td class="num">02</td><td>Recuperação de senha ("esqueci minha senha")</td><td><span class="pill pill--alta">Alta</span></td></tr>
-          <tr><td class="num">03</td><td>Testes automatizados das rotas de auth do <strong>Next.js</strong> (o lado Django já tem, ver acima)</td><td><span class="pill pill--alta">Alta</span></td></tr>
-          <tr><td class="num">04</td><td>Rate limiting / proteção contra força bruta (login, cadastro)</td><td><span class="pill pill--alta">Alta</span></td></tr>
-        </tbody>
-      </table>
-    </div>
+    <p style="color: var(--ink-soft);">Nenhum item pendente no momento — todos os itens de prioridade Alta e Média identificados neste roadmap foram entregues (ver seção "Concluído" acima). Itens fora de escopo intencional (rate limiting distribuído/Redis, captcha, envio real de e-mail) seguem documentados no <code>README.md</code>.</p>
   </section>
 
   <section id="melhorias">
@@ -498,8 +501,8 @@
   </section>
 
   <div class="callout">
-    <span class="eyebrow">Por onde começar</span>
-    <p>Restam só 4 itens, todos de prioridade <strong>Alta</strong>: <strong>recuperação de senha</strong>, <strong>rate limiting</strong> e <strong>testes automatizados do Next.js</strong> (o lado Django já tem) são os de maior impacto antes de qualquer uso além de ambiente de desenvolvimento.</p>
+    <span class="eyebrow">Estado atual</span>
+    <p>Todos os itens de prioridade <strong>Alta</strong> e <strong>Média</strong> identificados neste roadmap foram entregues. Os itens fora de escopo restantes (rate limiting distribuído, captcha, envio real de e-mail) são melhorias intencionalmente adiadas, documentadas no <code>README.md</code>.</p>
   </div>
 
   <footer>roadmap gerado a partir do estado atual do repositório — auth-gateway · atualizado em 14 jul 2026</footer>

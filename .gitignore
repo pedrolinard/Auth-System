@@ -15,7 +15,11 @@
 
 # next.js
 /.next/
+/.next-test/
 /out/
+
+# testes (Vitest)
+/coverage-vitest
 
 # production
 /build

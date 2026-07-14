@@ -30,6 +30,27 @@ export async function cadastrar(dados: {
   return corpo;
 }
 
+export async function solicitarRecuperacaoSenha(email: string) {
+  const resposta = await fetch("/api/auth/esqueci-senha", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao solicitar recuperação.");
+  return corpo;
+}
+
+export async function redefinirSenha(token: string, novaSenha: string) {
+  const resposta = await fetch("/api/auth/redefinir-senha", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, novaSenha }),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao redefinir senha.");
+}
+
 export async function verificarEmail(token: string) {
   const resposta = await fetch("/api/auth/verificar-email", {
     method: "POST",

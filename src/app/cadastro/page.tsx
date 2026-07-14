@@ -50,6 +50,8 @@ export default function PaginaCadastro() {
             id="nome"
             name="nome"
             required
+            autoFocus
+            autoComplete="name"
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             className="rounded-md border border-black/[.08] px-3 py-2 text-sm dark:border-white/[.145] dark:bg-black"
@@ -65,6 +67,7 @@ export default function PaginaCadastro() {
             name="email"
             type="email"
             required
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="rounded-md border border-black/[.08] px-3 py-2 text-sm dark:border-white/[.145] dark:bg-black"

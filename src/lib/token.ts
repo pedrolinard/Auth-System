@@ -34,12 +34,16 @@ const SEGREDO_MFA = new TextEncoder().encode(process.env.JWT_MFA_SECRET);
 const SEGREDO_VERIFICACAO_EMAIL = new TextEncoder().encode(
   process.env.JWT_VERIFICACAO_EMAIL_SECRET,
 );
+const SEGREDO_REDEFINICAO_SENHA = new TextEncoder().encode(
+  process.env.JWT_REDEFINICAO_SENHA_SECRET,
+);
 
 export const DURACAO_TOKEN_ACESSO = "15m";
 export const DURACAO_TOKEN_ACESSO_SEGUNDOS = 15 * 60;
 export const DURACAO_TOKEN_ATUALIZACAO_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 export const DURACAO_TOKEN_DESAFIO_MFA = "5m";
 export const DURACAO_TOKEN_VERIFICACAO_EMAIL = "1d";
+export const DURACAO_TOKEN_REDEFINICAO_SENHA = "1h";
 
 export type Papel = "usuario" | "admin";
 
@@ -64,15 +68,21 @@ export type PayloadVerificacaoEmail = {
   tipo: "verificacao_email";
 };
 
+export type PayloadRedefinicaoSenha = {
+  sub: string;
+  tipo: "redefinicao_senha";
+};
+
 if (
   !process.env.JWT_ACCESS_PRIVATE_KEY_B64 ||
   !process.env.JWT_ACCESS_PUBLIC_KEY_B64 ||
   !process.env.JWT_REFRESH_SECRET ||
   !process.env.JWT_MFA_SECRET ||
-  !process.env.JWT_VERIFICACAO_EMAIL_SECRET
+  !process.env.JWT_VERIFICACAO_EMAIL_SECRET ||
+  !process.env.JWT_REDEFINICAO_SENHA_SECRET
 ) {
   throw new Error(
-    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET, JWT_MFA_SECRET e JWT_VERIFICACAO_EMAIL_SECRET precisam estar definidas.",
+    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET, JWT_MFA_SECRET, JWT_VERIFICACAO_EMAIL_SECRET e JWT_REDEFINICAO_SENHA_SECRET precisam estar definidas.",
   );
 }
 
@@ -168,6 +178,31 @@ export async function verificarTokenVerificacaoEmail(token: string) {
       SEGREDO_VERIFICACAO_EMAIL,
     );
     if (payload.tipo !== "verificacao_email") return null;
+    return payload;
+  } catch (erro) {
+    if (erro instanceof errors.JOSEError) return null;
+    throw erro;
+  }
+}
+
+// Token de redefinição de senha: mesmo padrão stateless, mas mais curto
+// (1h) por ser sensível — um link de redefinição vivo por muito tempo é uma
+// janela de ataque maior que um link de verificação de e-mail.
+export async function gerarTokenRedefinicaoSenha(usuarioId: string) {
+  return new SignJWT({ sub: usuarioId, tipo: "redefinicao_senha" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(DURACAO_TOKEN_REDEFINICAO_SENHA)
+    .sign(SEGREDO_REDEFINICAO_SENHA);
+}
+
+export async function verificarTokenRedefinicaoSenha(token: string) {
+  try {
+    const { payload } = await jwtVerify<PayloadRedefinicaoSenha>(
+      token,
+      SEGREDO_REDEFINICAO_SENHA,
+    );
+    if (payload.tipo !== "redefinicao_senha") return null;
     return payload;
   } catch (erro) {
     if (erro instanceof errors.JOSEError) return null;

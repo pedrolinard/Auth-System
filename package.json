@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "limpeza:tokens": "node -r dotenv/config scripts/limpar-tokens.mjs dotenv_config_path=.env",
-    "gerar:chaves-rs256": "node scripts/gerar-chaves-rs256.mjs"
+    "gerar:chaves-rs256": "node scripts/gerar-chaves-rs256.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
@@ -37,6 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

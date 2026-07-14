@@ -1,5 +1,11 @@
 import * as z from "zod";
 
+const esquemaSenhaForte = z
+  .string({ error: "Informe a senha." })
+  .min(8, { error: "A senha deve ter pelo menos 8 caracteres." })
+  .regex(/[a-zA-Z]/, { error: "A senha deve conter pelo menos uma letra." })
+  .regex(/[0-9]/, { error: "A senha deve conter pelo menos um número." });
+
 export const esquemaCadastro = z.object({
   nome: z
     .string({ error: "Informe o nome." })
@@ -9,11 +15,7 @@ export const esquemaCadastro = z.object({
     .email({ error: "Informe um e-mail válido." })
     .trim()
     .toLowerCase(),
-  senha: z
-    .string({ error: "Informe a senha." })
-    .min(8, { error: "A senha deve ter pelo menos 8 caracteres." })
-    .regex(/[a-zA-Z]/, { error: "A senha deve conter pelo menos uma letra." })
-    .regex(/[0-9]/, { error: "A senha deve conter pelo menos um número." }),
+  senha: esquemaSenhaForte,
 });
 
 export const esquemaLogin = z.object({
@@ -42,4 +44,13 @@ export const esquemaVerificacaoMfa = z.object({
 
 export const esquemaVerificacaoEmail = z.object({
   token: z.string({ error: "Informe o token de verificação." }),
+});
+
+export const esquemaEsqueciSenha = z.object({
+  email: z.email({ error: "Informe um e-mail válido." }).trim().toLowerCase(),
+});
+
+export const esquemaRedefinirSenha = z.object({
+  token: z.string({ error: "Informe o token de redefinição." }),
+  novaSenha: esquemaSenhaForte,
 });

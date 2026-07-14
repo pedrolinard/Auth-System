@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
+import { obterIp } from "@/lib/rateLimit";
 
 export async function registrarEvento(dados: {
   req: Request;
@@ -9,10 +10,7 @@ export async function registrarEvento(dados: {
   email?: string;
 }) {
   try {
-    const ip =
-      dados.req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-      dados.req.headers.get("x-real-ip") ??
-      null;
+    const ip = obterIp(dados.req);
     const userAgent = dados.req.headers.get("user-agent");
 
     await prisma.logAuditoria.create({

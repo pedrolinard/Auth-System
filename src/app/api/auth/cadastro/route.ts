@@ -2,11 +2,31 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { gerarHashSenha } from "@/lib/senha";
 import { gerarTokenVerificacaoEmail } from "@/lib/token";
 import { esquemaCadastro } from "@/lib/validacao";
 
+const MAX_TENTATIVAS_CADASTRO = 5;
+const JANELA_CADASTRO_MS = 60 * 60 * 1000;
+
 export async function POST(req: Request) {
+  const ip = obterIp(req);
+  if (
+    await limiteExcedido({
+      ip,
+      evento: "cadastro_tentativa",
+      maximo: MAX_TENTATIVAS_CADASTRO,
+      janelaMs: JANELA_CADASTRO_MS,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+  await registrarEvento({ req, evento: "cadastro_tentativa" });
+
   const corpo = await req.json().catch(() => null);
   const dadosValidados = esquemaCadastro.safeParse(corpo);
 

@@ -28,6 +28,9 @@ consumido por outras aplicações como camada intermediária de identidade.
   admins.
 - **Logs de auditoria**: `LogAuditoria` (`src/lib/auditoria.ts`) registra
   login (sucesso/falha), cadastro e logout com IP e user-agent.
+- **Rate limiting**: `src/lib/rateLimit.ts` reaproveita o `LogAuditoria` (sem
+  tabela nova) para bloquear com `429` login (5 tentativas erradas/15 min),
+  cadastro e recuperação de senha (5 tentativas/hora) do mesmo IP.
 - **Banco de dados**: Prisma + Postgres local (`autenticacao`), na mesma
   instância compartilhada com o serviço Django (`django/`), cada um com sua
   própria database (ver seção "Serviço de domínio" abaixo).
@@ -78,6 +81,28 @@ expirado, assinatura adulterada, confusão de algoritmo HS256/RS256, token via
 cookie vs. header, claim `papel`) e `tarefas/tests/test_views.py` (CRUD,
 isolamento de dados por usuário, e a proteção CSRF de ponta a ponta).
 
+### Testes automatizados (Next.js)
+
+```bash
+npm run test
+```
+
+Roda com **Vitest contra um servidor `next dev` real** (não mocka
+`next/headers`/cookies) — decisão consciente: os bugs reais encontrados nesta
+sessão (cache do Turbopack corrompido, 403 em vez de 401 por falta de
+`authenticate_header`, `permission_classes` sobrescrevendo o default) só
+apareceriam testando o ciclo completo de request/response, não com mocks.
+
+- `tests/globalSetup.ts` sobe `next dev -p 3100` apontando para uma database
+  **dedicada e isolada** (`autenticacao_test`, mesma instância Postgres
+  local), aplicando as migrations antes da suíte e derrubando a árvore de
+  processos no teardown (`taskkill /t /f` no Windows).
+- Crie a database antes da primeira execução: `CREATE DATABASE
+  autenticacao_test;`.
+- 28 testes em `tests/api/*.test.ts` cobrindo cadastro, login, sessões, MFA
+  (com códigos TOTP reais via `otpauth`), RBAC, recuperação de senha,
+  verificação de e-mail, CSRF e rate limiting.
+
 ## Rotas de API
 
 | Método | Rota                       | Descrição                                                              |
@@ -95,6 +120,8 @@ isolamento de dados por usuário, e a proteção CSRF de ponta a ponta).
 | POST   | `/api/auth/mfa/desativar`  | Desativa o MFA mediante código válido (rota protegida)                   |
 | POST   | `/api/auth/mfa/verificar`  | Conclui o login enviando `mfaToken` (do `/login`) + código de 6 dígitos  |
 | POST   | `/api/auth/verificar-email`| Confirma o e-mail a partir do token do link (`emailVerificado = true`)   |
+| POST   | `/api/auth/esqueci-senha`  | Gera o token de redefinição de senha (link logado no console em dev)    |
+| POST   | `/api/auth/redefinir-senha`| Redefine a senha a partir do token; revoga todas as sessões ativas      |
 | GET    | `/api/auth/usuarios`       | Lista usuários — restrito a `papel = admin` (exemplo de RBAC)            |
 | POST   | `/api/cron/limpar-tokens`  | Remove tokens expirados/revogados antigos; exige `Authorization: Bearer CRON_SECRET` |
 
@@ -114,8 +141,8 @@ Abra [http://localhost:3000](http://localhost:3000).
 
 Antes de rodar, copie `.env.example` para `.env`, gere o par de chaves RS256
 do token de acesso (`npm run gerar:chaves-rs256`) e defina segredos fortes
-para `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`, `JWT_VERIFICACAO_EMAIL_SECRET` e
-`CRON_SECRET`.
+para `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`, `JWT_VERIFICACAO_EMAIL_SECRET`,
+`JWT_REDEFINICAO_SENHA_SECRET` e `CRON_SECRET`.
 
 ## Banco de dados
 
@@ -141,8 +168,9 @@ O token de acesso usa um par de chaves RS256 (`npm run gerar:chaves-rs256`,
 que preenche `JWT_ACCESS_PRIVATE_KEY_B64`/`JWT_ACCESS_PUBLIC_KEY_B64`).
 
 Os demais `*_SECRET` do `.env` precisam de um valor aleatório e único — nunca
-reuse o mesmo valor entre `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET` e
-`JWT_VERIFICACAO_EMAIL_SECRET`, pois eles isolam os tipos de token entre si.
+reuse o mesmo valor entre `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`,
+`JWT_VERIFICACAO_EMAIL_SECRET` e `JWT_REDEFINICAO_SENHA_SECRET`, pois eles
+isolam os tipos de token entre si.
 Gere cada um separadamente (funciona em qualquer SO, sem depender do
 `openssl` estar instalado):
 
@@ -195,6 +223,30 @@ que revoga só uma. Como o token de acesso é um JWT stateless de vida curta
 já tinham até ele expirar naturalmente — só a **renovação** (refresh) é
 bloqueada imediatamente. Esse é o trade-off inerente a JWT sem blocklist, não
 uma falha da funcionalidade.
+
+### Recuperação de senha
+
+Mesmo padrão stateless dos demais tokens (token JWT com segredo próprio,
+`JWT_REDEFINICAO_SENHA_SECRET`, expira em **1h**, sem coluna nova no banco):
+`POST /api/auth/esqueci-senha` (`/esqueci-senha` na UI) gera o token e **loga
+o link no console** do servidor (mesmo placeholder da verificação de e-mail
+até plugar um provedor real) — **sempre responde com sucesso genérico**,
+exista ou não o e-mail, pra não vazar quais contas existem.
+`POST /api/auth/redefinir-senha` (`/redefinir-senha?token=...` na UI) valida
+o token, atualiza a senha e **revoga todas as sessões ativas** do usuário (a
+senha pode ter sido comprometida, então todo acesso existente cai).
+
+### Rate limiting / proteção contra força bruta
+
+`src/lib/rateLimit.ts` reaproveita `LogAuditoria` (sem tabela nova): conta
+quantos eventos de um tipo vieram do mesmo IP (extraído de
+`X-Forwarded-For`/`X-Real-IP`) dentro de uma janela de tempo e responde `429`
+antes mesmo de processar a requisição. Aplicado em login (5 tentativas
+erradas/15 min), cadastro e recuperação de senha (5 tentativas/hora cada).
+**Atenção**: `X-Forwarded-For` só é confiável atrás de um proxy que
+efetivamente o sobrescreve (Vercel faz isso em produção) — sem um proxy
+confiável na frente, é possível forjar o header pra burlar o limite ou pra
+derrubar outra pessoa nele. Trade-off documentado, não escondido.
 
 ### Proteção CSRF explícita
 
