@@ -268,10 +268,28 @@
   .melhoria {
     background: var(--paper-raised);
     border: 1px solid var(--line);
+    border-left: 3px solid var(--ink-soft);
     padding: 0.95rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
   }
   .melhoria p { margin: 0.4rem 0 0; font-size: 0.92rem; color: var(--ink); }
   .melhoria p.hint { color: var(--ink-soft); }
+  .melhoria-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+  .melhoria.feito { border-left-color: var(--accent); }
+  .melhoria.feito p:first-of-type { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--ink-soft) 55%, transparent); }
+  .badge {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.15em 0.5em;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .badge--feito { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge--mantido { background: var(--sev-low-bg); color: var(--sev-low); }
 
   .callout {
     margin-top: 3.2rem;
@@ -308,14 +326,14 @@
   <header class="masthead">
     <span class="eyebrow">Roadmap · Auth Gateway</span>
     <h1>Sistema de Autenticação Intermediária</h1>
-    <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações. Estado atual do que foi entregue, o que falta e onde apertar o que já existe.</p>
-    <span class="meta">atualizado em 13 jul 2026 · MFA, sessões e limpeza de tokens entregues</span>
+    <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações — agora com um serviço de domínio em Django/DRF (Postgres compartilhado) por trás dele. Estado atual do que foi entregue, o que falta e onde apertar o que já existe.</p>
+    <span class="meta">atualizado em 14 jul 2026 · serviço de domínio Django (Postgres, Projeto/Tarefa, testes, telas) entregue</span>
   </header>
 
   <div class="stats">
-    <div class="stat"><span class="n">23</span><span class="l">itens entregues</span></div>
+    <div class="stat"><span class="n">42</span><span class="l">itens entregues</span></div>
     <div class="stat"><span class="n">10</span><span class="l">pendentes</span></div>
-    <div class="stat"><span class="n">5</span><span class="l">melhorias no que existe</span></div>
+    <div class="stat"><span class="n">4/5</span><span class="l">melhorias concluídas</span></div>
   </div>
 
   <section id="feito">
@@ -366,8 +384,9 @@
       <div class="card">
         <h3>Dados</h3>
         <ul>
-          <li>Prisma + SQLite — modelos <code>Usuario</code> e <code>TokenAtualizacao</code></li>
+          <li>Prisma + <strong>Postgres local</strong> — modelos <code>Usuario</code> e <code>TokenAtualizacao</code></li>
           <li><code>Usuario.mfaAtivado</code> / <code>mfaSecret</code> para verificação em duas etapas</li>
+          <li>Migrado de SQLite sem perda de dados existentes</li>
         </ul>
       </div>
 
@@ -376,7 +395,20 @@
         <ul>
           <li>Páginas: home, <code>/login</code> (2ª etapa MFA), <code>/cadastro</code>, <code>/dashboard</code></li>
           <li>Dashboard com seção Segurança: sessões ativas + ativar/desativar MFA</li>
+          <li><code>/dashboard/projetos</code> e <code>/dashboard/projetos/[id]</code> — CRUD de projetos e tarefas (Django)</li>
           <li><code>proxy.ts</code> redireciona rotas protegidas / somente-visitante</li>
+        </ul>
+      </div>
+
+      <div class="card" style="grid-column: 1 / -1;">
+        <h3>Serviço de domínio · <code>django/</code></h3>
+        <ul>
+          <li>Token de acesso migrado de HS256 para <strong>RS256</strong> — chave privada só no Next.js, pública compartilhada</li>
+          <li><code>comum/autenticacao.py</code> — classe DRF que valida o JWT (<code>algorithms=["RS256"]</code> fixo) e usa o claim <code>sub</code> como identidade, sem model de usuário próprio</li>
+          <li>App <code>tarefas</code> com entidades reais: <code>Projeto</code> e <code>Tarefa</code> (status, prazo, isolados por usuário)</li>
+          <li><code>next.config.ts</code> encaminha <code>/api/dominio/*</code> para o Django via rewrite — mesma origem, sem CORS</li>
+          <li><strong>Postgres compartilhado</strong> com o Next.js (mesma instância local), database própria <code>autenticacao_dominio</code></li>
+          <li>13 testes automatizados (<code>pytest-django</code>) — JWT válido/expirado/adulterado/confusão de algoritmo + CRUD/isolamento por usuário</li>
         </ul>
       </div>
 
@@ -385,13 +417,14 @@
         <ul>
           <li>Senha hasheada (bcrypt, 12 rounds)</li>
           <li>Refresh token hasheado no banco — nunca gravado em texto puro</li>
-          <li>Rotação de refresh token a cada renovação</li>
+          <li>Rotação de refresh token a cada renovação, com erros inesperados tratados/logados</li>
           <li>Cookie httpOnly para o refresh token</li>
-          <li>Access token de vida curta (15 min)</li>
+          <li>Access token de vida curta (15 min), assinado com RS256</li>
           <li>Verificação em duas etapas (TOTP) opcional por usuário</li>
           <li>Gestão de sessões ativas (listar/revogar individualmente)</li>
           <li>Job de limpeza de tokens expirados/revogados antigos</li>
           <li>Segredos JWT gerados aleatoriamente e documentados (não mais placeholders)</li>
+          <li>Serviço Django valida algoritmo fixo (RS256) — bloqueia ataque de confusão de algoritmo</li>
         </ul>
       </div>
     </div>
@@ -418,8 +451,8 @@
           <tr><td class="num">06</td><td>Proteção CSRF explícita nas mutações sensíveis</td><td><span class="pill pill--media">Média</span></td></tr>
           <tr><td class="num">07</td><td>Repensar armazenamento do access token (sessionStorage é vulnerável a XSS)</td><td><span class="pill pill--media">Média</span></td></tr>
           <tr><td class="num">08</td><td>Logs de auditoria (login sucesso/falha, IP, user-agent)</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">09</td><td>Testes automatizados das rotas de auth</td><td><span class="pill pill--alta">Alta</span></td></tr>
-          <tr><td class="num">10</td><td>RBAC (papéis/permissões) — necessário se for gateway para outras apps</td><td><span class="pill pill--media">Média</span></td></tr>
+          <tr><td class="num">09</td><td>Testes automatizados das rotas de auth do <strong>Next.js</strong> (o lado Django já tem, ver acima)</td><td><span class="pill pill--alta">Alta</span></td></tr>
+          <tr><td class="num">10</td><td>RBAC (papéis/permissões) — o gateway já tem um segundo consumidor real (<code>django/</code>); ainda não desenhado</td><td><span class="pill pill--media">Média</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -433,37 +466,40 @@
     <h2>Melhorias no que já existe</h2>
 
     <div class="melhorias">
-      <div class="melhoria">
-        <code>atualizar/route.ts</code>
+      <div class="melhoria feito">
+        <div class="melhoria-head"><code>atualizar/route.ts</code><span class="badge badge--feito">✓ Feito</span></div>
         <p>Garantir tratamento/log de erros inesperados do Prisma na transação de rotação de token.</p>
+        <p class="hint">Envolvido em try/catch — erro agora é logado (<code>console.error</code>) e retorna 500 tratado.</p>
       </div>
-      <div class="melhoria">
-        <code>clienteAuth.ts → obterUsuarioAtual</code>
+      <div class="melhoria feito">
+        <div class="melhoria-head"><code>clienteAuth.ts → obterUsuarioAtual</code><span class="badge badge--feito">✓ Feito</span></div>
         <p>A recursão após o refresh pode entrar em loop se o refresh funcionar mas <code>/me</code> continuar falhando por outro motivo (ex. 500).</p>
-        <p class="hint">Limitar a 1 nova tentativa.</p>
+        <p class="hint">Limitado a 1 nova tentativa via parâmetro <code>tentouRenovar</code>.</p>
       </div>
-      <div class="melhoria">
-        <code>dashboard/page.tsx</code>
+      <div class="melhoria feito">
+        <div class="melhoria-head"><code>dashboard/page.tsx</code><span class="badge badge--feito">✓ Feito</span></div>
         <p>Expõe o JWT de acesso na tela — ok para debug, remover antes de produção real.</p>
+        <p class="hint">Bloco removido.</p>
       </div>
-      <div class="melhoria">
-        <code>login/route.ts</code>
+      <div class="melhoria feito">
+        <div class="melhoria-head"><code>login/route.ts</code><span class="badge badge--feito">✓ Feito</span></div>
         <p>Mensagens de erro já evitam vazar se é e-mail ou senha errada — bom padrão, manter em outros pontos.</p>
+        <p class="hint">Revisado — já seguia o padrão correto, nenhuma mudança necessária.</p>
       </div>
       <div class="melhoria">
-        <code>proxy.ts</code>
+        <div class="melhoria-head"><code>proxy.ts</code><span class="badge badge--mantido">Mantido como está</span></div>
         <p>Checagem é otimista (só valida assinatura, não revogação no banco).</p>
-        <p class="hint">Considerar validar contra o banco em rotas realmente sensíveis.</p>
+        <p class="hint">Decisão consciente: a doc oficial do Next.js 16 recomenda não usar o Proxy como solução completa de autorização/sessão — a validação real já acontece nas rotas de API, onde os dados de fato são lidos/gravados. Adicionar consulta ao banco a cada carregamento de página iria contra essa recomendação.</p>
       </div>
     </div>
   </section>
 
   <div class="callout">
     <span class="eyebrow">Por onde começar</span>
-    <p><strong>Recuperação de senha</strong>, <strong>rate limiting</strong> e <strong>testes automatizados</strong> são os três itens de maior impacto antes de qualquer uso além de ambiente de desenvolvimento.</p>
+    <p><strong>Recuperação de senha</strong>, <strong>rate limiting</strong> e <strong>testes automatizados do Next.js</strong> (o lado Django já tem) são os três itens de maior impacto antes de qualquer uso além de ambiente de desenvolvimento.</p>
   </div>
 
-  <footer>roadmap gerado a partir do estado atual do repositório — auth-gateway</footer>
+  <footer>roadmap gerado a partir do estado atual do repositório — auth-gateway · atualizado em 14 jul 2026</footer>
 
 </div>
 </body>
