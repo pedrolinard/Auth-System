@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { entrar, verificarMfaLogin } from "@/lib/clienteAuth";
+import { CampoSenha } from "@/components/CampoSenha";
 
 export default function PaginaLogin() {
   const router = useRouter();
@@ -144,14 +145,11 @@ export default function PaginaLogin() {
           <label htmlFor="senha" className="text-sm text-zinc-600 dark:text-zinc-400">
             Senha
           </label>
-          <input
+          <CampoSenha
             id="senha"
-            name="senha"
-            type="password"
-            required
             value={senha}
-            onChange={(e) => setSenha(e.target.value)}
-            className="rounded-md border border-black/[.08] px-3 py-2 text-sm dark:border-white/[.145] dark:bg-black"
+            onChange={setSenha}
+            autoComplete="current-password"
           />
         </div>
 
