@@ -1,11 +1,31 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { registrarEvento } from "@/lib/auditoria";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
 import { verificarCodigoMfa } from "@/lib/mfa";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaVerificacaoMfa } from "@/lib/validacao";
 
+const MAX_TENTATIVAS_MFA = 5;
+const JANELA_MFA_MS = 5 * 60 * 1000;
+
 export async function POST(req: Request) {
+  const ip = obterIp(req);
+  if (
+    await limiteExcedido({
+      ip,
+      evento: "mfa_codigo_falha",
+      maximo: MAX_TENTATIVAS_MFA,
+      janelaMs: JANELA_MFA_MS,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
   const corpo = await req.json().catch(() => null);
   const dadosValidados = esquemaVerificacaoMfa.safeParse(corpo);
   if (!dadosValidados.success) {
@@ -37,6 +57,7 @@ export async function POST(req: Request) {
 
   const codigoValido = verificarCodigoMfa(usuario.mfaSecret, usuario.email, codigo);
   if (!codigoValido) {
+    await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
   }
 

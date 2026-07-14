@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { verificarCodigoMfa } from "@/lib/mfa";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
+
+const MAX_TENTATIVAS_MFA = 5;
+const JANELA_MFA_MS = 5 * 60 * 1000;
 
 export async function POST(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
@@ -14,6 +19,21 @@ export async function POST(req: Request) {
   const payload = await autenticarRequisicao(req);
   if (!payload) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  }
+
+  const ip = obterIp(req);
+  if (
+    await limiteExcedido({
+      ip,
+      evento: "mfa_codigo_falha",
+      maximo: MAX_TENTATIVAS_MFA,
+      janelaMs: JANELA_MFA_MS,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
   }
 
   const corpo = await req.json().catch(() => null);
@@ -41,6 +61,7 @@ export async function POST(req: Request) {
     dadosValidados.data.codigo,
   );
   if (!codigoValido) {
+    await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
   }
 

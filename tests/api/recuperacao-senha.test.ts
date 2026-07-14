@@ -5,6 +5,7 @@ import {
   apagarUsuariosTeste,
   BASE_URL,
   criarUsuarioTeste,
+  ipAleatorio,
   loginTeste,
 } from "../helpers";
 
@@ -18,15 +19,16 @@ describe("Recuperação de senha", () => {
   it("POST /esqueci-senha sempre responde com sucesso genérico (existindo ou não o e-mail)", async () => {
     const usuario = await criarUsuarioTeste("recuperar-existe");
     emailsCriados.push(usuario.email);
+    const ip = ipAleatorio();
 
     const respostaExistente = await fetch(`${BASE_URL}/api/auth/esqueci-senha`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
       body: JSON.stringify({ email: usuario.email }),
     });
     const respostaInexistente = await fetch(`${BASE_URL}/api/auth/esqueci-senha`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
       body: JSON.stringify({ email: "nao-existe-de-verdade@teste.local" }),
     });
 
@@ -40,9 +42,10 @@ describe("Recuperação de senha", () => {
   it("redefine a senha com um token válido e revoga as sessões antigas", async () => {
     const usuario = await criarUsuarioTeste("redefinir-ok");
     emailsCriados.push(usuario.email);
+    const ip = ipAleatorio();
 
     // Sessão ativa ANTES da redefinição — deve cair depois.
-    const sessaoAntiga = await loginTeste(usuario.email, usuario.senha);
+    const sessaoAntiga = await loginTeste(usuario.email, usuario.senha, ip);
 
     const token = await gerarTokenRedefinicaoSenha(
       (await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } })).id,
@@ -51,7 +54,7 @@ describe("Recuperação de senha", () => {
 
     const respostaRedefinir = await fetch(`${BASE_URL}/api/auth/redefinir-senha`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
       body: JSON.stringify({ token, novaSenha }),
     });
     expect(respostaRedefinir.status).toBe(200);
@@ -66,14 +69,14 @@ describe("Recuperação de senha", () => {
     // Senha antiga não funciona mais; a nova funciona.
     const loginComSenhaAntiga = await fetch(`${BASE_URL}/api/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
       body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
     });
     expect(loginComSenhaAntiga.status).toBe(401);
 
     const loginComSenhaNova = await fetch(`${BASE_URL}/api/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
       body: JSON.stringify({ email: usuario.email, senha: novaSenha }),
     });
     expect(loginComSenhaNova.status).toBe(200);
@@ -82,7 +85,7 @@ describe("Recuperação de senha", () => {
   it("rejeita token inválido com 401", async () => {
     const resposta = await fetch(`${BASE_URL}/api/auth/redefinir-senha`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
       body: JSON.stringify({ token: "token-invalido", novaSenha: "OutraSenha123!" }),
     });
     expect(resposta.status).toBe(401);

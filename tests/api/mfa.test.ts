@@ -4,6 +4,7 @@ import {
   apagarUsuariosTeste,
   BASE_URL,
   criarUsuarioTeste,
+  ipAleatorio,
   loginTeste,
 } from "../helpers";
 
@@ -19,10 +20,18 @@ function gerarCodigoTotp(segredoBase32: string): string {
   return totp.generate();
 }
 
-async function chamar(caminho: string, headers: Record<string, string>, corpo?: object) {
+// As rotas de MFA têm rate limit por IP (mfa_codigo_falha) — cada teste usa
+// um IP falso próprio pra não interferir com outros testes que também
+// batem nessas rotas em paralelo (mesmo princípio de tests/helpers.ts).
+async function chamar(
+  caminho: string,
+  headers: Record<string, string>,
+  corpo?: object,
+  ip: string = ipAleatorio(),
+) {
   return fetch(`${BASE_URL}${caminho}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
+    headers: { "Content-Type": "application/json", "X-Forwarded-For": ip, ...headers },
     body: corpo ? JSON.stringify(corpo) : undefined,
   });
 }

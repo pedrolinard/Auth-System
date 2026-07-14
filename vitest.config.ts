@@ -18,7 +18,11 @@ export default defineConfig({
   test: {
     environment: "node",
     globalSetup: ["tests/globalSetup.ts"],
-    testTimeout: 20000,
+    // 30s (não 20s): algumas rotas só compilam no primeiro hit do Turbopack,
+    // e qual teste bate nelas primeiro varia por execução (arquivos rodam em
+    // paralelo) — um valor baixo demais causa timeouts esporádicos que não
+    // são um bug real, só a rota ainda não compilada.
+    testTimeout: 30000,
     hookTimeout: 60000,
     // O próprio processo do Vitest também precisa apontar pra database de
     // teste, já que os arquivos de teste importam @/lib/db diretamente para
