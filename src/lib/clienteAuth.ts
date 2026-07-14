@@ -76,6 +76,16 @@ export async function verificarEmail(token: string) {
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao verificar e-mail.");
 }
 
+export async function reenviarVerificacaoEmail() {
+  const resposta = await fetch("/api/auth/reenviar-verificacao", {
+    method: "POST",
+    headers: cabecalhoCsrf(),
+    credentials: "include",
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao reenviar e-mail."));
+}
+
 export async function entrar(dados: { email: string; senha: string }) {
   const resposta = await fetch("/api/auth/login", {
     method: "POST",

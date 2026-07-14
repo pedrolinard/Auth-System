@@ -9,6 +9,7 @@ import {
   iniciarMfa,
   listarSessoes,
   obterUsuarioAtual,
+  reenviarVerificacaoEmail,
   revogarSessao,
   revogarTodasSessoes,
   sair,
@@ -29,6 +30,9 @@ export default function PaginaDashboard() {
   const router = useRouter();
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [reenviando, setReenviando] = useState(false);
+  const [reenviado, setReenviado] = useState(false);
+  const [erroReenvio, setErroReenvio] = useState<string | null>(null);
 
   const carregarUsuario = useCallback(async () => {
     const usuarioAtual = await obterUsuarioAtual();
@@ -50,6 +54,19 @@ export default function PaginaDashboard() {
   async function aoSair() {
     await sair();
     router.replace("/login");
+  }
+
+  async function aoReenviarVerificacao() {
+    setErroReenvio(null);
+    setReenviando(true);
+    try {
+      await reenviarVerificacaoEmail();
+      setReenviado(true);
+    } catch (erroCapturado) {
+      setErroReenvio(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setReenviando(false);
+    }
   }
 
   if (carregando) {
@@ -81,6 +98,27 @@ export default function PaginaDashboard() {
         >
           {usuario.emailVerificado ? "E-mail verificado" : "E-mail não verificado"}
         </p>
+
+        {!usuario.emailVerificado && (
+          <div className="flex flex-col gap-1">
+            {reenviado ? (
+              <p className="text-sm text-green-600 dark:text-green-400">
+                Link de verificação enviado. Confira sua caixa de entrada.
+              </p>
+            ) : (
+              <button
+                onClick={aoReenviarVerificacao}
+                disabled={reenviando}
+                className="self-start text-sm text-zinc-600 underline disabled:opacity-50 dark:text-zinc-400"
+              >
+                {reenviando ? "Enviando..." : "Reenviar e-mail de verificação"}
+              </button>
+            )}
+            {erroReenvio && (
+              <p className="text-sm text-red-600 dark:text-red-400">{erroReenvio}</p>
+            )}
+          </div>
+        )}
 
         <div className="mt-2 flex flex-wrap gap-2">
           <Link
