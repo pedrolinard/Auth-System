@@ -82,13 +82,21 @@ export default function PaginaDashboard() {
           {usuario.emailVerificado ? "E-mail verificado" : "E-mail não verificado"}
         </p>
 
-        <div className="mt-2 flex gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           <Link
             href="/dashboard/projetos"
             className="self-start rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
           >
             Meus projetos
           </Link>
+          {usuario.papel === "admin" && (
+            <Link
+              href="/dashboard/usuarios"
+              className="self-start rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+            >
+              Usuários
+            </Link>
+          )}
           <button
             onClick={aoSair}
             className="self-start rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"

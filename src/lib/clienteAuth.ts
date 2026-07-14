@@ -153,6 +153,21 @@ export async function listarSessoes(): Promise<Sessao[]> {
   return corpo.sessoes;
 }
 
+export type UsuarioAdmin = {
+  id: string;
+  nome: string;
+  email: string;
+  papel: "usuario" | "admin";
+  criadoEm: string;
+};
+
+export async function listarUsuarios(): Promise<UsuarioAdmin[]> {
+  const resposta = await fetch("/api/auth/usuarios", { credentials: "include" });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao carregar usuários.");
+  return corpo.usuarios;
+}
+
 export async function revogarSessao(id: string) {
   const resposta = await fetch(`/api/auth/sessoes/${id}`, {
     method: "DELETE",
