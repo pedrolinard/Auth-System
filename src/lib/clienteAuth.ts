@@ -15,6 +15,21 @@ export function cabecalhoCsrf(): HeadersInit {
   return token ? { "X-CSRF-Token": token } : {};
 }
 
+// As rotas devolvem `detalhes` (saída de Zod `.flatten()`) junto do erro
+// genérico quando a validação falha — sem isso, toda falha de senha/e-mail/
+// nome aparecia como "Dados inválidos." sem dizer qual campo nem por quê.
+type CorpoErro = {
+  erro?: string;
+  detalhes?: { fieldErrors?: Record<string, string[]> };
+};
+
+function mensagemErro(corpo: CorpoErro, padrao: string): string {
+  const primeiroCampoComErro = Object.values(corpo.detalhes?.fieldErrors ?? {}).find(
+    (mensagens) => mensagens.length > 0,
+  );
+  return primeiroCampoComErro?.[0] ?? corpo.erro ?? padrao;
+}
+
 export async function cadastrar(dados: {
   nome: string;
   email: string;
@@ -26,7 +41,7 @@ export async function cadastrar(dados: {
     body: JSON.stringify(dados),
   });
   const corpo = await resposta.json();
-  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha no cadastro.");
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha no cadastro."));
   return corpo;
 }
 
@@ -37,7 +52,7 @@ export async function solicitarRecuperacaoSenha(email: string) {
     body: JSON.stringify({ email }),
   });
   const corpo = await resposta.json();
-  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao solicitar recuperação.");
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao solicitar recuperação."));
   return corpo;
 }
 
@@ -48,7 +63,7 @@ export async function redefinirSenha(token: string, novaSenha: string) {
     body: JSON.stringify({ token, novaSenha }),
   });
   const corpo = await resposta.json();
-  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao redefinir senha.");
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao redefinir senha."));
 }
 
 export async function verificarEmail(token: string) {
