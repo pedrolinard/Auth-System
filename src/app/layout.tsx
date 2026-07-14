@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Autenticação",
-  description: "Sistema de autenticação intermediária",
+  description: "Sistema de autenticação",
 };
 
 export const viewport: Viewport = {
