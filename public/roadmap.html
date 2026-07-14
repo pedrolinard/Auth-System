@@ -327,7 +327,7 @@
     <span class="eyebrow">Roadmap · Auth Gateway</span>
     <h1>Sistema de Autenticação Intermediária</h1>
     <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações — com um serviço de domínio em Django/DRF (Postgres compartilhado) por trás. Todos os itens de prioridade Alta e Média entregues (recuperação de senha, rate limiting, testes automatizados do Next.js, RBAC, CSRF, cookies httpOnly, auditoria, verificação de e-mail, sair de todos os dispositivos). Estado atual do que foi entregue e onde apertar o que já existe.</p>
-    <span class="meta">atualizado em 14 jul 2026 · nenhum item pendente</span>
+    <span class="meta">atualizado em 14 jul 2026 · nenhum item pendente · em produção na Vercel</span>
   </header>
 
   <div class="stats">
@@ -393,6 +393,17 @@
           <li>Prisma + <strong>Postgres local</strong> — <code>Usuario</code>, <code>TokenAtualizacao</code>, <code>LogAuditoria</code></li>
           <li><code>Usuario.mfaAtivado</code> / <code>mfaSecret</code> / <code>emailVerificado</code> / <code>papel</code> (enum <code>Papel</code>)</li>
           <li>Migrado de SQLite sem perda de dados existentes</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <h3>Deploy em produção · Vercel</h3>
+        <ul>
+          <li>Dois projetos independentes, cada um com Postgres próprio via Marketplace (Neon)</li>
+          <li><code>auth-gateway</code> (Next.js) — <a href="https://auth-gateway-kappa.vercel.app">auth-gateway-kappa.vercel.app</a></li>
+          <li><code>auth-gateway-django</code> (Django) — <a href="https://auth-gateway-django.vercel.app">auth-gateway-django.vercel.app</a></li>
+          <li>Segredos gerados exclusivamente para produção, isolados do <code>.env</code> local</li>
+          <li>Fluxo completo testado em produção: cadastro → login → rewrite autenticado até o Django</li>
         </ul>
       </div>
 

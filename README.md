@@ -272,11 +272,46 @@ npm run limpeza:tokens
 O script lê `BASE_URL` e `CRON_SECRET` do `.env` (por padrão usa
 `http://localhost:3000`) e chama `POST /api/cron/limpar-tokens`.
 
-### Deploy do serviço Django (Vercel)
+### Deploy (Vercel)
 
-Criar um segundo projeto Vercel com Root Directory `django/` — a detecção de
-Python/Fluid Compute reconhece o `requirements.txt` automaticamente. Nesse
-projeto, configurar `DJANGO_SECRET_KEY`, `DATABASE_URL` (Postgres dedicado),
-`DJANGO_ALLOWED_HOSTS` e `JWT_ACCESS_PUBLIC_KEY_B64` (copiado do projeto
-Next.js). No projeto Next.js, apontar `DJANGO_SERVICE_URL` para a URL de
-produção do projeto Django.
+O sistema está em produção como dois projetos Vercel separados, cada um com
+seu próprio Postgres provisionado via Marketplace (Neon, plano free) e
+segredos próprios (gerados exclusivamente para produção, diferentes dos do
+`.env` local):
+
+| Projeto | Root Directory | URL |
+| ------- | --------------- | --- |
+| `auth-gateway` (Next.js) | `.` | https://auth-gateway-kappa.vercel.app |
+| `auth-gateway-django` (Django) | `django/` | https://auth-gateway-django.vercel.app |
+
+O projeto Django detecta Python/Fluid Compute automaticamente a partir do
+`requirements.txt`; `django/vercel.json` declara `config/wsgi.py` como
+entrypoint da function (necessário porque `manage.py` não está na raiz do
+projeto Vercel). Variáveis configuradas em cada projeto:
+
+- **`auth-gateway`**: `JWT_ACCESS_PRIVATE_KEY_B64`, `JWT_ACCESS_PUBLIC_KEY_B64`,
+  `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`, `JWT_VERIFICACAO_EMAIL_SECRET`,
+  `JWT_REDEFINICAO_SENHA_SECRET`, `CRON_SECRET`, `BASE_URL`,
+  `DJANGO_SERVICE_URL` (aponta para a URL de produção do projeto Django),
+  além de `DATABASE_URL` (injetada automaticamente pela integração Neon).
+- **`auth-gateway-django`**: `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`
+  (`.vercel.app` — ajustar se um domínio próprio for configurado),
+  `JWT_ACCESS_PUBLIC_KEY_B64` (mesma chave pública do projeto Next.js, para
+  validar o mesmo token), além de `DATABASE_URL` própria (Neon separado do
+  Next.js — sem FK entre os dois bancos, só o claim `sub` do JWT).
+
+Para reproduzir ou atualizar o deploy manualmente:
+
+```bash
+npx vercel link --project auth-gateway         # raiz do repo
+npx vercel install neon                         # provisiona/conecta o Postgres
+npx vercel env add <NOME_DA_VARIAVEL> production
+npx vercel env pull .env.production.local --environment=production
+npx prisma migrate deploy                       # com a DATABASE_URL de produção
+npx vercel deploy --prod
+
+cd django
+npx vercel link --project auth-gateway-django
+npx vercel install neon
+# repetir env add/pull + manage.py migrate + vercel deploy --prod
+```

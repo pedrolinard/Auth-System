@@ -1,6 +1,6 @@
 # Roadmap — Sistema de Autenticação Intermediária
 
-> Gerado em 2026-07-13. Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.**
+> Gerado em 2026-07-13. Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.** Sistema em produção na Vercel desde 2026-07-14 (ver seção "Deploy em produção" abaixo).
 
 ## ✅ Feito
 
@@ -36,6 +36,13 @@
 
 ### Dados
 - Prisma + **Postgres local** (`Usuario`, `TokenAtualizacao`, `LogAuditoria`), com campos de MFA (`mfaAtivado`, `mfaSecret`), `emailVerificado` e `papel` (enum `Papel`) — migrado de SQLite, dados existentes preservados
+
+### Deploy em produção (Vercel)
+- Dois projetos Vercel independentes, cada um com Postgres próprio via Marketplace (Neon): `auth-gateway` (Next.js, https://auth-gateway-kappa.vercel.app) e `auth-gateway-django` (Django, https://auth-gateway-django.vercel.app)
+- Segredos de produção (chaves RS256, JWT secrets, `CRON_SECRET`, `DJANGO_SECRET_KEY`) gerados exclusivamente para produção — isolados do `.env` local
+- `django/vercel.json` declara `config/wsgi.py` como entrypoint da function
+- `DJANGO_SERVICE_URL` no projeto Next.js aponta para o projeto Django, testado ponta a ponta em produção (cadastro → login → rewrite autenticado até o Django)
+- Detalhes completos e como reproduzir o deploy: seção "Deploy (Vercel)" do `README.md`
 
 ### Serviço de domínio (Django/DRF)
 - Token de acesso migrado de HS256 para **RS256** (`src/lib/token.ts`) — chave privada só no Next.js, pública compartilhável com outros serviços; refresh e desafio MFA continuam HS256 (nunca saem do Next.js)
