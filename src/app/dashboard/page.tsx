@@ -9,7 +9,6 @@ import {
   iniciarMfa,
   limparTokenAcesso,
   listarSessoes,
-  obterTokenAcesso,
   obterUsuarioAtual,
   revogarSessao,
   sair,
@@ -71,15 +70,6 @@ export default function PaginaDashboard() {
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Conta criada em {new Date(usuario.criadoEm).toLocaleString("pt-BR")}
         </p>
-
-        <div className="mt-2 rounded-md bg-zinc-100 p-3 dark:bg-zinc-900">
-          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            Token de acesso atual (JWT)
-          </p>
-          <p className="mt-1 break-all font-mono text-xs text-zinc-700 dark:text-zinc-300">
-            {obterTokenAcesso()}
-          </p>
-        </div>
 
         <div className="mt-2 flex gap-2">
           <Link

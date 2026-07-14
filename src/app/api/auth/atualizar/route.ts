@@ -55,19 +55,27 @@ export async function POST(req: Request) {
   const { token: novoTokenAtualizacao, expiraEm: novaExpiracao } =
     await gerarTokenAtualizacao(registroToken.usuarioId);
 
-  await prisma.$transaction([
-    prisma.tokenAtualizacao.update({
-      where: { id: registroToken.id },
-      data: { revogadoEm: new Date() },
-    }),
-    prisma.tokenAtualizacao.create({
-      data: {
-        tokenHash: hashToken(novoTokenAtualizacao),
-        usuarioId: registroToken.usuarioId,
-        expiraEm: novaExpiracao,
-      },
-    }),
-  ]);
+  try {
+    await prisma.$transaction([
+      prisma.tokenAtualizacao.update({
+        where: { id: registroToken.id },
+        data: { revogadoEm: new Date() },
+      }),
+      prisma.tokenAtualizacao.create({
+        data: {
+          tokenHash: hashToken(novoTokenAtualizacao),
+          usuarioId: registroToken.usuarioId,
+          expiraEm: novaExpiracao,
+        },
+      }),
+    ]);
+  } catch (erro) {
+    console.error("Falha ao rotacionar token de atualização:", erro);
+    return NextResponse.json(
+      { erro: "Não foi possível renovar a sessão. Tente novamente." },
+      { status: 500 },
+    );
+  }
 
   const novoTokenAcesso = await gerarTokenAcesso({
     sub: registroToken.usuario.id,

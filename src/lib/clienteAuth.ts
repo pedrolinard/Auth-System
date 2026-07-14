@@ -71,7 +71,7 @@ export async function sair() {
   limparTokenAcesso();
 }
 
-export async function obterUsuarioAtual() {
+export async function obterUsuarioAtual(tentouRenovar = false) {
   const token = obterTokenAcesso();
   if (!token) return null;
 
@@ -79,10 +79,10 @@ export async function obterUsuarioAtual() {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (resposta.status === 401) {
+  if (resposta.status === 401 && !tentouRenovar) {
     const renovado = await tentarAtualizarToken();
     if (!renovado) return null;
-    return obterUsuarioAtual();
+    return obterUsuarioAtual(true);
   }
 
   if (!resposta.ok) return null;
