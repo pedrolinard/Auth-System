@@ -51,3 +51,11 @@ class AutenticacaoJWT(BaseAuthentication):
             raise AuthenticationFailed("Token sem claim 'sub'.")
 
         return (UsuarioRemoto(id=sub, email=payload.get("email")), token)
+
+    def authenticate_header(self, request):
+        # Sem isso, o DRF rebaixa credenciais ausentes/inválidas de 401 para
+        # 403 (por não ter um header WWW-Authenticate para oferecer). O
+        # cliente Next.js (clienteDominio.ts) só tenta renovar o token em
+        # respostas 401, então esse header é o que faz o fluxo de renovação
+        # automática funcionar de verdade.
+        return "Bearer"

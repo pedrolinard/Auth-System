@@ -13,6 +13,19 @@ def cliente_autenticado(usuario_id):
     return client
 
 
+def test_requisicao_sem_credenciais_retorna_401_nao_403():
+    # Regressão: sem authenticate_header() em AutenticacaoJWT, o DRF rebaixa
+    # 401 para 403 em credenciais ausentes/inválidas — e o cliente Next.js
+    # (clienteDominio.ts) só tenta renovar o token em respostas 401, então um
+    # 403 aqui deixa a tela de projetos travada para sempre num usuário com
+    # o access token vencido/ainda não carregado (aba nova, por exemplo).
+    client = APIClient()
+    resposta = client.get("/api/dominio/projetos")
+
+    assert resposta.status_code == 401
+    assert resposta["WWW-Authenticate"] == "Bearer"
+
+
 def test_criar_e_listar_projeto():
     client = cliente_autenticado("usuario-a")
 
