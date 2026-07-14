@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   confirmarMfa,
   desativarMfa,
@@ -80,12 +81,20 @@ export default function PaginaDashboard() {
           </p>
         </div>
 
-        <button
-          onClick={aoSair}
-          className="mt-2 self-start rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-        >
-          Sair
-        </button>
+        <div className="mt-2 flex gap-2">
+          <Link
+            href="/dashboard/projetos"
+            className="self-start rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
+          >
+            Meus projetos
+          </Link>
+          <button
+            onClick={aoSair}
+            className="self-start rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            Sair
+          </button>
+        </div>
       </div>
 
       <SecaoMfa

@@ -4,5 +4,7 @@ PyJWT==2.10.1
 cryptography==43.0.3
 python-dotenv==1.2.2
 dj-database-url==2.3.0
-# Driver do Postgres para produção (dev local usa SQLite, ver DATABASE_URL no .env.example)
-psycopg[binary]==3.2.*
+# Driver do Postgres (dev e produção — banco compartilhado local, ver DATABASE_URL no .env.example)
+psycopg[binary]==3.3.4
+pytest==8.4.2
+pytest-django==4.12.0

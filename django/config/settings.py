@@ -56,7 +56,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'exemplo',
+    'tarefas',
 ]
 
 REST_FRAMEWORK = {
@@ -100,10 +100,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-# Banco próprio, desacoplado do banco do gateway Next.js (Prisma/SQLite) — não
-# há FK real entre os dois, só o claim 'sub' do JWT como referência opaca.
-# Em dev usa SQLite local (mesmo padrão do lado Next.js); em produção, troque
-# DATABASE_URL para uma URL do Postgres.
+# Postgres local, mesma instância compartilhada com o gateway Next.js, mas em
+# uma database própria (autenticacao_dominio) — não há FK real entre os dois
+# serviços, só o claim 'sub' do JWT como referência opaca de usuário.
 
 DATABASES = {
     'default': dj_database_url.parse(

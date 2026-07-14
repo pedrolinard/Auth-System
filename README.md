@@ -16,27 +16,31 @@ consumido por outras aplicações como camada intermediária de identidade.
   - **Token de atualização**: longa duração (30 dias), assinado com HS256
     (nunca sai do Next.js), com rotação a cada uso e revogação persistida no
     banco (`TokenAtualizacao`), guardado também como cookie `httpOnly`.
-- **Banco de dados**: Prisma + SQLite em desenvolvimento (`prisma/dev.db`),
-  pronto para trocar para Postgres em produção só alterando `DATABASE_URL`
-  e o `provider` do datasource.
+- **Banco de dados**: Prisma + Postgres local (`autenticacao`), na mesma
+  instância compartilhada com o serviço Django (`django/`), cada um com sua
+  própria database (ver seção "Serviço de domínio" abaixo).
 - **Proxy** (`src/proxy.ts`, equivalente ao antigo `middleware.ts` a partir do
   Next.js 16): faz checagem otimista de sessão para proteger `/dashboard` e
   redirecionar usuários já autenticados para longe de `/login` e `/cadastro`.
 
 ## Serviço de domínio (Django)
 
-`django/` é um serviço Django REST Framework de exemplo que **não tem login
-próprio** — ele só valida o token de acesso (RS256) emitido pelo Next.js e usa
-o claim `sub` (id do `Usuario`) como identidade do usuário
-(`django/comum/autenticacao.py`). O app `exemplo` (model `Item`) existe só
-para provar essa integração ponta a ponta; entidades de negócio reais seguem
-o mesmo padrão depois.
+`django/` é um serviço Django REST Framework para as entidades de negócio
+(hoje: **projetos e tarefas**, app `tarefas`) que **não tem login próprio** —
+ele só valida o token de acesso (RS256) emitido pelo Next.js e usa o claim
+`sub` (id do `Usuario`) como identidade do usuário
+(`django/comum/autenticacao.py`).
 
 - Alcançado de forma transparente via `next.config.ts` (`rewrites()`
   encaminha `/api/dominio/*` para `DJANGO_SERVICE_URL`), então o browser
   nunca fala com o Django diretamente — mesma origem, sem CORS.
-- Banco próprio (SQLite em dev, Postgres em produção), desacoplado do banco
-  do Next.js — não há FK real entre os dois serviços.
+- Postgres **local compartilhado** com o Next.js (mesma instância), em uma
+  database própria (`autenticacao_dominio`) — não há FK real entre os dois
+  serviços, só o claim `sub` como referência opaca de usuário.
+- Telas no Next.js em `/dashboard/projetos` (listar/criar/excluir projetos) e
+  `/dashboard/projetos/[id]` (listar/criar tarefas, mudar status, excluir) —
+  `src/lib/clienteDominio.ts` centraliza as chamadas, mesmo padrão de
+  `clienteAuth.ts`.
 
 Para rodar localmente:
 
@@ -49,6 +53,17 @@ cp .env.example .env      # copie JWT_ACCESS_PUBLIC_KEY_B64 do .env da raiz
 python manage.py migrate
 python manage.py runserver 8000
 ```
+
+### Testes automatizados (Django)
+
+```bash
+cd django
+./venv/Scripts/python.exe -m pytest    # ou apenas `pytest` com o venv ativado
+```
+
+Cobre `comum/tests/test_autenticacao.py` (validação do JWT: token válido,
+expirado, assinatura adulterada, confusão de algoritmo HS256/RS256) e
+`tarefas/tests/test_views.py` (CRUD e isolamento de dados por usuário).
 
 ## Rotas de API
 
@@ -67,9 +82,10 @@ python manage.py runserver 8000
 | POST   | `/api/auth/mfa/verificar`  | Conclui o login enviando `mfaToken` (do `/login`) + código de 6 dígitos  |
 | POST   | `/api/cron/limpar-tokens`  | Remove tokens expirados/revogados antigos; exige `Authorization: Bearer CRON_SECRET` |
 
-As rotas `/api/dominio/*` (ex.: `/api/dominio/itens`) não ficam em
-`src/app/api/` — são servidas pelo serviço Django (`django/exemplo/urls.py`)
-e só chegam até ele via rewrite (seção "Serviço de domínio" acima).
+As rotas `/api/dominio/*` (`/api/dominio/projetos`, `/api/dominio/tarefas`)
+não ficam em `src/app/api/` — são servidas pelo serviço Django
+(`django/tarefas/urls.py`) e só chegam até ele via rewrite (seção "Serviço de
+domínio" acima).
 
 ## Como rodar
 
@@ -86,8 +102,17 @@ para `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET` e `CRON_SECRET`.
 
 ## Banco de dados
 
+Postgres local (instalado via `choco install postgresql` ou equivalente),
+com duas databases na mesma instância: `autenticacao` (Next.js/Prisma) e
+`autenticacao_dominio` (Django). Crie ambas antes do primeiro `migrate`:
+
+```sql
+CREATE DATABASE autenticacao;
+CREATE DATABASE autenticacao_dominio;
+```
+
 ```bash
-npx prisma migrate dev   # aplica as migrações
+npx prisma migrate dev   # aplica as migrações do lado Next.js
 npx prisma studio        # inspeciona os dados
 ```
 
