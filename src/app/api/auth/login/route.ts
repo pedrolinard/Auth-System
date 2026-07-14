@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { registrarEvento } from "@/lib/auditoria";
 import { verificarSenha } from "@/lib/senha";
 import { criarSessao } from "@/lib/sessao";
 import { gerarTokenDesafioMfa } from "@/lib/token";
@@ -23,11 +24,14 @@ export async function POST(req: Request) {
     usuario && (await verificarSenha(senha, usuario.senhaHash));
 
   if (!credenciaisValidas) {
+    await registrarEvento({ req, evento: "login_falha", email });
     return NextResponse.json(
       { erro: "E-mail ou senha inválidos." },
       { status: 401 },
     );
   }
+
+  await registrarEvento({ req, evento: "login_sucesso", usuarioId: usuario.id, email });
 
   if (usuario.mfaAtivado) {
     const mfaToken = await gerarTokenDesafioMfa(usuario.id);

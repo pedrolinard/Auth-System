@@ -119,3 +119,61 @@ def test_deletar_tarefa_e_projeto():
     resposta = client.delete(f"/api/dominio/projetos/{projeto.id}")
     assert resposta.status_code == 204
     assert not Projeto.objects.filter(id=projeto.id).exists()
+
+
+# CSRF (double-submit cookie, comum/autenticacao.py::ProtegidoContraCsrf) —
+# relevante desde que o access token virou cookie httpOnly: sem essa
+# proteção, um site atacante conseguiria forjar mutações aqui só com o
+# cookie ambiente do navegador.
+
+
+def test_post_sem_cookie_csrf_e_permitido():
+    # Sem cookie csrfToken não há sessão baseada em cookie em jogo (ex.:
+    # cliente via Bearer/curl) — a checagem é pulada.
+    client = cliente_autenticado("usuario-a")
+    resposta = client.post("/api/dominio/projetos", {"nome": "Sem CSRF"})
+    assert resposta.status_code == 201
+
+
+def test_post_com_cookie_csrf_sem_header_e_bloqueado():
+    client = cliente_autenticado("usuario-a")
+    client.cookies["csrfToken"] = "valor-secreto"
+
+    resposta = client.post("/api/dominio/projetos", {"nome": "Bloqueado"})
+
+    assert resposta.status_code == 403
+    assert not Projeto.objects.filter(nome="Bloqueado").exists()
+
+
+def test_post_com_cookie_csrf_e_header_divergente_e_bloqueado():
+    client = cliente_autenticado("usuario-a")
+    client.cookies["csrfToken"] = "valor-secreto"
+
+    resposta = client.post(
+        "/api/dominio/projetos",
+        {"nome": "Bloqueado"},
+        HTTP_X_CSRF_TOKEN="valor-errado",
+    )
+
+    assert resposta.status_code == 403
+
+
+def test_post_com_cookie_csrf_e_header_correto_e_permitido():
+    client = cliente_autenticado("usuario-a")
+    client.cookies["csrfToken"] = "valor-secreto"
+
+    resposta = client.post(
+        "/api/dominio/projetos",
+        {"nome": "Permitido"},
+        HTTP_X_CSRF_TOKEN="valor-secreto",
+    )
+
+    assert resposta.status_code == 201
+
+
+def test_get_nunca_e_bloqueado_por_csrf():
+    client = cliente_autenticado("usuario-a")
+    client.cookies["csrfToken"] = "valor-secreto"
+
+    resposta = client.get("/api/dominio/projetos")
+    assert resposta.status_code == 200

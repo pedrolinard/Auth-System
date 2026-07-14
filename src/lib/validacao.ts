@@ -39,3 +39,7 @@ export const esquemaVerificacaoMfa = z.object({
     .string({ error: "Informe o código de verificação." })
     .regex(/^\d{6}$/, { error: "O código deve ter 6 dígitos." }),
 });
+
+export const esquemaVerificacaoEmail = z.object({
+  token: z.string({ error: "Informe o token de verificação." }),
+});

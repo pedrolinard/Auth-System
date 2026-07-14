@@ -4,6 +4,7 @@ import jwt
 from django.conf import settings
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 @dataclass
@@ -17,6 +18,7 @@ class UsuarioRemoto:
 
     id: str
     email: str | None = None
+    papel: str = "usuario"
     is_authenticated: bool = True
     is_anonymous: bool = False
 
@@ -31,10 +33,18 @@ class AutenticacaoJWT(BaseAuthentication):
 
     def authenticate(self, request):
         cabecalho = request.headers.get("Authorization", "")
-        if not cabecalho.startswith("Bearer "):
+        if cabecalho.startswith("Bearer "):
+            token = cabecalho[len("Bearer "):]
+        else:
+            # Desde a migração do access token do Next.js para cookie
+            # httpOnly, o rewrite de /api/dominio/* em next.config.ts repassa
+            # cookies transparentemente — o navegador nunca precisa montar o
+            # header Authorization manualmente.
+            token = request.COOKIES.get("tokenAcesso")
+
+        if not token:
             return None
 
-        token = cabecalho[len("Bearer "):]
         try:
             payload = jwt.decode(
                 token,
@@ -50,7 +60,14 @@ class AutenticacaoJWT(BaseAuthentication):
         if not sub:
             raise AuthenticationFailed("Token sem claim 'sub'.")
 
-        return (UsuarioRemoto(id=sub, email=payload.get("email")), token)
+        return (
+            UsuarioRemoto(
+                id=sub,
+                email=payload.get("email"),
+                papel=payload.get("papel", "usuario"),
+            ),
+            token,
+        )
 
     def authenticate_header(self, request):
         # Sem isso, o DRF rebaixa credenciais ausentes/inválidas de 401 para
@@ -59,3 +76,26 @@ class AutenticacaoJWT(BaseAuthentication):
         # respostas 401, então esse header é o que faz o fluxo de renovação
         # automática funcionar de verdade.
         return "Bearer"
+
+
+class ProtegidoContraCsrf(BasePermission):
+    """Double-submit cookie: mesma regra do lado Next.js (src/lib/csrf.ts).
+
+    Desde que o access token virou cookie httpOnly, mutações em
+    /api/dominio/* passam a ser alcançáveis só com o cookie ambiente — sem
+    isso, um site atacante em outra origem poderia forjar um POST/DELETE
+    aqui. Métodos seguros (GET/HEAD/OPTIONS) não são checados. Se não existe
+    cookie csrfToken na requisição (cliente sem navegador, ex. Bearer via
+    curl/testes), não há sessão baseada em cookie e a checagem é pulada.
+    """
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+
+        valor_cookie = request.COOKIES.get("csrfToken")
+        if not valor_cookie:
+            return True
+
+        cabecalho = request.headers.get("X-CSRF-Token")
+        return cabecalho == valor_cookie

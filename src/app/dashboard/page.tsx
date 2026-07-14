@@ -7,10 +7,10 @@ import {
   confirmarMfa,
   desativarMfa,
   iniciarMfa,
-  limparTokenAcesso,
   listarSessoes,
   obterUsuarioAtual,
   revogarSessao,
+  revogarTodasSessoes,
   sair,
   type Sessao,
 } from "@/lib/clienteAuth";
@@ -21,6 +21,8 @@ type Usuario = {
   email: string;
   criadoEm: string;
   mfaAtivado: boolean;
+  emailVerificado: boolean;
+  papel: "usuario" | "admin";
 };
 
 export default function PaginaDashboard() {
@@ -70,6 +72,15 @@ export default function PaginaDashboard() {
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Conta criada em {new Date(usuario.criadoEm).toLocaleString("pt-BR")}
         </p>
+        <p
+          className={
+            usuario.emailVerificado
+              ? "text-sm text-green-600 dark:text-green-400"
+              : "text-sm text-amber-600 dark:text-amber-400"
+          }
+        >
+          {usuario.emailVerificado ? "E-mail verificado" : "E-mail não verificado"}
+        </p>
 
         <div className="mt-2 flex gap-2">
           <Link
@@ -96,7 +107,6 @@ export default function PaginaDashboard() {
 
       <SecaoSessoes
         aoRevogarAtual={() => {
-          limparTokenAcesso();
           router.replace("/login");
         }}
       />
@@ -298,6 +308,7 @@ function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
   const [sessoes, setSessoes] = useState<Sessao[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [revogandoId, setRevogandoId] = useState<string | null>(null);
+  const [revogandoTodas, setRevogandoTodas] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
@@ -329,9 +340,33 @@ function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
     }
   }
 
+  async function aoRevogarTodas() {
+    setErro(null);
+    setRevogandoTodas(true);
+    try {
+      await revogarTodasSessoes();
+      aoRevogarAtual();
+    } catch (erroCapturado) {
+      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setRevogandoTodas(false);
+    }
+  }
+
   return (
     <div className="flex w-full max-w-lg flex-col gap-4 rounded-xl border border-black/[.08] bg-white p-8 dark:border-white/[.145] dark:bg-zinc-950">
-      <h2 className="text-lg font-semibold text-black dark:text-zinc-50">Sessões ativas</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-black dark:text-zinc-50">Sessões ativas</h2>
+        {sessoes && sessoes.length > 0 && (
+          <button
+            onClick={aoRevogarTodas}
+            disabled={revogandoTodas}
+            className="rounded-full border border-red-600/30 px-3 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:opacity-50 dark:text-red-400"
+          >
+            {revogandoTodas ? "Saindo..." : "Sair de todos os dispositivos"}
+          </button>
+        )}
+      </div>
 
       {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
 

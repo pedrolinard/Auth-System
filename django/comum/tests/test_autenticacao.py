@@ -43,6 +43,12 @@ def _requisicao_com_token(token=None):
     return factory.get("/")
 
 
+def _requisicao_com_cookie(token):
+    request = RequestFactory().get("/")
+    request.COOKIES["tokenAcesso"] = token
+    return request
+
+
 def test_token_valido_autentica_com_id_correto():
     token = _gerar_token({"sub": "usuario-123", "email": "a@example.com"})
     resultado = AutenticacaoJWT().authenticate(_requisicao_com_token(token))
@@ -56,6 +62,41 @@ def test_token_valido_autentica_com_id_correto():
 def test_sem_header_retorna_none():
     resultado = AutenticacaoJWT().authenticate(_requisicao_com_token())
     assert resultado is None
+
+
+def test_token_via_cookie_autentica():
+    # Desde a migração do access token do Next.js para cookie httpOnly, o
+    # navegador não monta mais o header Authorization — o cookie tokenAcesso
+    # precisa funcionar sozinho como fallback.
+    token = _gerar_token({"sub": "usuario-123", "email": "a@example.com"})
+    resultado = AutenticacaoJWT().authenticate(_requisicao_com_cookie(token))
+
+    assert resultado is not None
+    usuario, _ = resultado
+    assert usuario.id == "usuario-123"
+
+
+def test_header_tem_prioridade_sobre_cookie():
+    token_header = _gerar_token({"sub": "usuario-do-header"})
+    token_cookie = _gerar_token({"sub": "usuario-do-cookie"})
+
+    request = _requisicao_com_token(token_header)
+    request.COOKIES["tokenAcesso"] = token_cookie
+
+    usuario, _ = AutenticacaoJWT().authenticate(request)
+    assert usuario.id == "usuario-do-header"
+
+
+def test_papel_default_quando_ausente_do_token():
+    token = _gerar_token({"sub": "usuario-123"})
+    usuario, _ = AutenticacaoJWT().authenticate(_requisicao_com_token(token))
+    assert usuario.papel == "usuario"
+
+
+def test_papel_lido_do_token():
+    token = _gerar_token({"sub": "usuario-123", "papel": "admin"})
+    usuario, _ = AutenticacaoJWT().authenticate(_requisicao_com_token(token))
+    assert usuario.papel == "admin"
 
 
 def test_token_expirado_rejeitado():

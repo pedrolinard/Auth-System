@@ -10,16 +10,23 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Papel {
+  usuario
+  admin
+}
+
 model Usuario {
-  id            String              @id @default(cuid())
-  nome          String
-  email         String              @unique
-  senhaHash     String
-  mfaAtivado    Boolean             @default(false)
-  mfaSecret     String?
-  criadoEm      DateTime            @default(now())
-  atualizadoEm  DateTime            @updatedAt
-  tokens        TokenAtualizacao[]
+  id             String              @id @default(cuid())
+  nome           String
+  email          String              @unique
+  senhaHash      String
+  mfaAtivado     Boolean             @default(false)
+  mfaSecret      String?
+  emailVerificado Boolean            @default(false)
+  papel          Papel               @default(usuario)
+  criadoEm       DateTime            @default(now())
+  atualizadoEm   DateTime            @updatedAt
+  tokens         TokenAtualizacao[]
 
   @@map("usuarios")
 }
@@ -35,4 +42,17 @@ model TokenAtualizacao {
 
   @@index([usuarioId])
   @@map("tokens_atualizacao")
+}
+
+model LogAuditoria {
+  id        String   @id @default(cuid())
+  usuarioId String?
+  email     String?
+  evento    String
+  ip        String?
+  userAgent String?
+  criadoEm  DateTime @default(now())
+
+  @@index([usuarioId])
+  @@map("logs_auditoria")
 }

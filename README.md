@@ -7,15 +7,27 @@ consumido por outras aplicações como camada intermediária de identidade.
 ## Arquitetura
 
 - **Cadastro/Login**: senha com hash `bcrypt` (`src/lib/senha.ts`).
-- **Tokens**: JWT assinado com `jose` (`src/lib/token.ts`)
+- **Tokens**: JWT assinado com `jose` (`src/lib/token.ts`), ambos entregues
+  como **cookies httpOnly** (`src/lib/cookies.ts`) — nenhum token fica
+  acessível a JavaScript no navegador (mitiga roubo via XSS).
   - **Token de acesso**: curta duração (15 min), assinado com **RS256** (par
     de chaves — a privada só existe no Next.js; a pública pode ser
     compartilhada com outros serviços, como o Django em `django/`, para eles
-    validarem o token sem precisar de um segredo compartilhado). Enviado no
-    header `Authorization: Bearer <token>` para chamar rotas protegidas.
+    validarem o token sem precisar de um segredo compartilhado). Também aceito
+    via header `Authorization: Bearer <token>` (fluxo de apps/curl/testes).
   - **Token de atualização**: longa duração (30 dias), assinado com HS256
     (nunca sai do Next.js), com rotação a cada uso e revogação persistida no
-    banco (`TokenAtualizacao`), guardado também como cookie `httpOnly`.
+    banco (`TokenAtualizacao`).
+- **CSRF explícito**: cookie `csrfToken` (double-submit, não-httpOnly de
+  propósito) exigido via header `X-CSRF-Token` em toda mutação autenticada
+  por cookie — tanto nas rotas de auth do Next.js quanto nas mutações do
+  Django (`comum/autenticacao.py::ProtegidoContraCsrf`), já que o access
+  token virou cookie e passou a viajar automaticamente com o navegador.
+- **RBAC mínimo**: `Usuario.papel` (`usuario`/`admin`), incluído como claim no
+  token de acesso; `GET /api/auth/usuarios` é a rota de exemplo restrita a
+  admins.
+- **Logs de auditoria**: `LogAuditoria` (`src/lib/auditoria.ts`) registra
+  login (sucesso/falha), cadastro e logout com IP e user-agent.
 - **Banco de dados**: Prisma + Postgres local (`autenticacao`), na mesma
   instância compartilhada com o serviço Django (`django/`), cada um com sua
   própria database (ver seção "Serviço de domínio" abaixo).
@@ -62,8 +74,9 @@ cd django
 ```
 
 Cobre `comum/tests/test_autenticacao.py` (validação do JWT: token válido,
-expirado, assinatura adulterada, confusão de algoritmo HS256/RS256) e
-`tarefas/tests/test_views.py` (CRUD e isolamento de dados por usuário).
+expirado, assinatura adulterada, confusão de algoritmo HS256/RS256, token via
+cookie vs. header, claim `papel`) e `tarefas/tests/test_views.py` (CRUD,
+isolamento de dados por usuário, e a proteção CSRF de ponta a ponta).
 
 ## Rotas de API
 
@@ -76,10 +89,13 @@ expirado, assinatura adulterada, confusão de algoritmo HS256/RS256) e
 | GET    | `/api/auth/me`             | Retorna o usuário autenticado (rota protegida, exemplo)                  |
 | GET    | `/api/auth/sessoes`        | Lista as sessões (tokens de atualização) ativas do usuário autenticado   |
 | DELETE | `/api/auth/sessoes/[id]`   | Revoga uma sessão específica do usuário autenticado                      |
+| DELETE | `/api/auth/sessoes`        | "Sair de todos os dispositivos" — revoga todas as sessões do usuário     |
 | POST   | `/api/auth/mfa/iniciar`    | Gera segredo TOTP + QR code para ativar MFA (rota protegida)             |
 | POST   | `/api/auth/mfa/confirmar`  | Confirma o código e ativa o MFA (rota protegida)                         |
 | POST   | `/api/auth/mfa/desativar`  | Desativa o MFA mediante código válido (rota protegida)                   |
 | POST   | `/api/auth/mfa/verificar`  | Conclui o login enviando `mfaToken` (do `/login`) + código de 6 dígitos  |
+| POST   | `/api/auth/verificar-email`| Confirma o e-mail a partir do token do link (`emailVerificado = true`)   |
+| GET    | `/api/auth/usuarios`       | Lista usuários — restrito a `papel = admin` (exemplo de RBAC)            |
 | POST   | `/api/cron/limpar-tokens`  | Remove tokens expirados/revogados antigos; exige `Authorization: Bearer CRON_SECRET` |
 
 As rotas `/api/dominio/*` (`/api/dominio/projetos`, `/api/dominio/tarefas`)
@@ -98,7 +114,8 @@ Abra [http://localhost:3000](http://localhost:3000).
 
 Antes de rodar, copie `.env.example` para `.env`, gere o par de chaves RS256
 do token de acesso (`npm run gerar:chaves-rs256`) e defina segredos fortes
-para `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET` e `CRON_SECRET`.
+para `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`, `JWT_VERIFICACAO_EMAIL_SECRET` e
+`CRON_SECRET`.
 
 ## Banco de dados
 
@@ -124,9 +141,10 @@ O token de acesso usa um par de chaves RS256 (`npm run gerar:chaves-rs256`,
 que preenche `JWT_ACCESS_PRIVATE_KEY_B64`/`JWT_ACCESS_PUBLIC_KEY_B64`).
 
 Os demais `*_SECRET` do `.env` precisam de um valor aleatório e único — nunca
-reuse o mesmo valor entre `JWT_REFRESH_SECRET` e `JWT_MFA_SECRET`, pois eles
-isolam os tipos de token entre si. Gere cada um separadamente (funciona em
-qualquer SO, sem depender do `openssl` estar instalado):
+reuse o mesmo valor entre `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET` e
+`JWT_VERIFICACAO_EMAIL_SECRET`, pois eles isolam os tipos de token entre si.
+Gere cada um separadamente (funciona em qualquer SO, sem depender do
+`openssl` estar instalado):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
@@ -146,6 +164,48 @@ código em `POST /api/auth/mfa/confirmar`. A partir daí, `POST /api/auth/login`
 passa a responder `{ mfaObrigatorio: true, mfaToken }` em vez dos tokens
 normais; o cliente completa o login em `POST /api/auth/mfa/verificar` com
 `{ mfaToken, codigo }`.
+
+### Verificação de e-mail
+
+Sem provedor de e-mail configurado ainda: `POST /api/auth/cadastro` gera um
+token stateless (mesmo padrão do desafio MFA, 1 dia de validade) e **loga o
+link de verificação no console do servidor** em vez de enviar e-mail de
+verdade — trocar por um provedor real (Resend, SES, SMTP etc.) é só plugar o
+envio no lugar do `console.log` em `src/app/api/auth/cadastro/route.ts`. O
+usuário abre `/verificar-email?token=...`, que chama
+`POST /api/auth/verificar-email` e marca `Usuario.emailVerificado = true`.
+
+### RBAC mínimo
+
+`Usuario.papel` (`"usuario"` ou `"admin"`, default `"usuario"`) vai no claim
+`papel` do token de acesso — tanto o Next.js quanto o Django
+(`UsuarioRemoto.papel`) conseguem checar sem consultar o banco de novo. Não
+existe UI para promover um usuário a admin ainda; faça direto no banco:
+
+```sql
+UPDATE usuarios SET papel = 'admin' WHERE email = 'seu-email@exemplo.com';
+```
+
+### Sair de todos os dispositivos
+
+`DELETE /api/auth/sessoes` revoga todas as sessões (tokens de atualização)
+ativas do usuário de uma vez — diferente de `DELETE /api/auth/sessoes/[id]`,
+que revoga só uma. Como o token de acesso é um JWT stateless de vida curta
+(15 min), outros dispositivos continuam "logados" com o token de acesso que
+já tinham até ele expirar naturalmente — só a **renovação** (refresh) é
+bloqueada imediatamente. Esse é o trade-off inerente a JWT sem blocklist, não
+uma falha da funcionalidade.
+
+### Proteção CSRF explícita
+
+Padrão *double-submit cookie*: `src/lib/csrf.ts` (Next.js) e
+`comum/autenticacao.py::ProtegidoContraCsrf` (Django) exigem que o header
+`X-CSRF-Token` bata com o valor do cookie `csrfToken` (não-httpOnly, o
+cliente lê via `document.cookie`) em toda mutação — exceto quando a
+requisição não tem esse cookie (cliente não-navegador, ex. Bearer/curl, onde
+CSRF não se aplica). Ficou necessário de verdade a partir do momento em que
+o access token virou cookie: antes, com o token só em `sessionStorage`, um
+site atacante não conseguia forjar o header `Authorization` sozinho.
 
 ### Limpeza de tokens expirados
 

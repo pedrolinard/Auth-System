@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { autenticarRequisicao } from "@/lib/autenticar";
+import { obterCookieCsrf } from "@/lib/cookies";
+import { csrfValido } from "@/lib/csrf";
 import { verificarCodigoMfa } from "@/lib/mfa";
 import { esquemaCodigoMfa } from "@/lib/validacao";
 
 export async function POST(req: Request) {
+  if (!csrfValido(req, await obterCookieCsrf())) {
+    return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
+  }
+
   const payload = await autenticarRequisicao(req);
   if (!payload) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });

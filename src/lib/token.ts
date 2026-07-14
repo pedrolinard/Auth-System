@@ -31,14 +31,22 @@ const SEGREDO_ATUALIZACAO = new TextEncoder().encode(
   process.env.JWT_REFRESH_SECRET,
 );
 const SEGREDO_MFA = new TextEncoder().encode(process.env.JWT_MFA_SECRET);
+const SEGREDO_VERIFICACAO_EMAIL = new TextEncoder().encode(
+  process.env.JWT_VERIFICACAO_EMAIL_SECRET,
+);
 
 export const DURACAO_TOKEN_ACESSO = "15m";
+export const DURACAO_TOKEN_ACESSO_SEGUNDOS = 15 * 60;
 export const DURACAO_TOKEN_ATUALIZACAO_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 export const DURACAO_TOKEN_DESAFIO_MFA = "5m";
+export const DURACAO_TOKEN_VERIFICACAO_EMAIL = "1d";
+
+export type Papel = "usuario" | "admin";
 
 export type PayloadTokenAcesso = {
   sub: string;
   email: string;
+  papel: Papel;
 };
 
 export type PayloadTokenAtualizacao = {
@@ -51,14 +59,20 @@ export type PayloadDesafioMfa = {
   tipo: "mfa_desafio";
 };
 
+export type PayloadVerificacaoEmail = {
+  sub: string;
+  tipo: "verificacao_email";
+};
+
 if (
   !process.env.JWT_ACCESS_PRIVATE_KEY_B64 ||
   !process.env.JWT_ACCESS_PUBLIC_KEY_B64 ||
   !process.env.JWT_REFRESH_SECRET ||
-  !process.env.JWT_MFA_SECRET
+  !process.env.JWT_MFA_SECRET ||
+  !process.env.JWT_VERIFICACAO_EMAIL_SECRET
 ) {
   throw new Error(
-    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET e JWT_MFA_SECRET precisam estar definidas.",
+    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET, JWT_MFA_SECRET e JWT_VERIFICACAO_EMAIL_SECRET precisam estar definidas.",
   );
 }
 
@@ -133,4 +147,30 @@ export async function verificarTokenDesafioMfa(token: string) {
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+// Token de verificação de e-mail: mesma ideia stateless do desafio MFA (não
+// precisa de coluna extra pra hash/expiração — o próprio jose cuida disso
+// via `exp`), com segredo próprio e vida mais longa (1 dia, já que é um
+// fluxo assíncrono — o usuário confere o e-mail quando quiser).
+export async function gerarTokenVerificacaoEmail(usuarioId: string) {
+  return new SignJWT({ sub: usuarioId, tipo: "verificacao_email" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(DURACAO_TOKEN_VERIFICACAO_EMAIL)
+    .sign(SEGREDO_VERIFICACAO_EMAIL);
+}
+
+export async function verificarTokenVerificacaoEmail(token: string) {
+  try {
+    const { payload } = await jwtVerify<PayloadVerificacaoEmail>(
+      token,
+      SEGREDO_VERIFICACAO_EMAIL,
+    );
+    if (payload.tipo !== "verificacao_email") return null;
+    return payload;
+  } catch (erro) {
+    if (erro instanceof errors.JOSEError) return null;
+    throw erro;
+  }
 }

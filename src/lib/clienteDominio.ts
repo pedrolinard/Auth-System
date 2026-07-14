@@ -1,6 +1,6 @@
 "use client";
 
-import { obterTokenAcesso, tentarAtualizarToken } from "./clienteAuth";
+import { cabecalhoCsrf, tentarAtualizarToken } from "./clienteAuth";
 
 export type StatusTarefa = "pendente" | "em_andamento" | "concluida";
 
@@ -29,13 +29,16 @@ async function requisicaoAutenticada(
   opcoes: RequestInit = {},
   tentouRenovar = false,
 ): Promise<Response> {
-  const token = obterTokenAcesso();
+  const metodo = (opcoes.method ?? "GET").toUpperCase();
+  const precisaCsrf = metodo !== "GET" && metodo !== "HEAD";
+
   const resposta = await fetch(caminho, {
     ...opcoes,
     headers: {
       ...(opcoes.headers ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(precisaCsrf ? cabecalhoCsrf() : {}),
     },
+    credentials: "include",
   });
 
   if (resposta.status === 401 && !tentouRenovar) {

@@ -17,6 +17,8 @@ export async function GET(req: Request) {
       email: true,
       criadoEm: true,
       mfaAtivado: true,
+      emailVerificado: true,
+      papel: true,
     },
   });
 

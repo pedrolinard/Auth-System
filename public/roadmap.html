@@ -326,14 +326,14 @@
   <header class="masthead">
     <span class="eyebrow">Roadmap · Auth Gateway</span>
     <h1>Sistema de Autenticação Intermediária</h1>
-    <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações — agora com um serviço de domínio em Django/DRF (Postgres compartilhado) por trás dele. Estado atual do que foi entregue, o que falta e onde apertar o que já existe.</p>
-    <span class="meta">atualizado em 14 jul 2026 · serviço de domínio Django (Postgres, Projeto/Tarefa, testes, telas) entregue</span>
+    <p>Gateway de cadastro, login e emissão de tokens JWT (acesso + atualização) para servir outras aplicações — com um serviço de domínio em Django/DRF (Postgres compartilhado) por trás, e todos os itens de prioridade Média entregues (RBAC, CSRF, cookies httpOnly, auditoria, verificação de e-mail, sair de todos os dispositivos). Estado atual do que foi entregue, o que falta e onde apertar o que já existe.</p>
+    <span class="meta">atualizado em 14 jul 2026 · todos os itens de prioridade Média entregues</span>
   </header>
 
   <div class="stats">
-    <div class="stat"><span class="n">42</span><span class="l">itens entregues</span></div>
-    <div class="stat"><span class="n">10</span><span class="l">pendentes</span></div>
-    <div class="stat"><span class="n">4/5</span><span class="l">melhorias concluídas</span></div>
+    <div class="stat"><span class="n">58</span><span class="l">itens entregues</span></div>
+    <div class="stat"><span class="n">4</span><span class="l">pendentes</span></div>
+    <div class="stat"><span class="n">5/5</span><span class="l">melhorias concluídas</span></div>
   </div>
 
   <section id="feito">
@@ -347,21 +347,23 @@
       <div class="card">
         <h3>API · <code>src/app/api/auth</code></h3>
         <ul>
-          <li><code>POST /cadastro</code> — cria usuário, senha hasheada, e-mail duplicado → 409</li>
-          <li><code>POST /login</code> — emite tokens ou desafio MFA (<code>mfaObrigatorio</code>)</li>
-          <li><code>POST /atualizar</code> — rotação de refresh token em transação</li>
-          <li><code>POST /logout</code> — revoga refresh token e limpa cookie</li>
-          <li><code>GET /me</code> — usuário autenticado via Bearer token</li>
+          <li><code>POST /cadastro</code> — cria usuário, senha hasheada, e-mail duplicado → 409, gera link de verificação (logado no console) e audita</li>
+          <li><code>POST /login</code> — emite tokens ou desafio MFA (<code>mfaObrigatorio</code>), audita sucesso/falha</li>
+          <li><code>POST /atualizar</code> — rotação de refresh token em transação, protegida por CSRF</li>
+          <li><code>POST /logout</code> — revoga refresh token e limpa cookies, protegida por CSRF, audita</li>
+          <li><code>GET /me</code> — usuário autenticado via cookie httpOnly ou Bearer (inclui <code>papel</code>, <code>emailVerificado</code>)</li>
+          <li><code>POST /verificar-email</code> · <code>GET /usuarios</code> (admin) — verificação de e-mail e exemplo de RBAC</li>
         </ul>
       </div>
 
       <div class="card">
         <h3>MFA &amp; sessões · <code>src/app/api/auth</code></h3>
         <ul>
-          <li><code>POST /mfa/iniciar</code> — gera segredo TOTP + QR code</li>
-          <li><code>POST /mfa/confirmar</code> / <code>/desativar</code> — ativa/desativa por código</li>
+          <li><code>POST /mfa/iniciar</code> — gera segredo TOTP + QR code, protegida por CSRF</li>
+          <li><code>POST /mfa/confirmar</code> / <code>/desativar</code> — ativa/desativa por código, protegidas por CSRF</li>
           <li><code>POST /mfa/verificar</code> — conclui o login com o código de 6 dígitos</li>
-          <li><code>GET /sessoes</code> · <code>DELETE /sessoes/[id]</code> — listar/revogar sessões</li>
+          <li><code>GET /sessoes</code> · <code>DELETE /sessoes/[id]</code> — listar/revogar sessões, protegida por CSRF</li>
+          <li><code>DELETE /sessoes</code> — <strong>sair de todos os dispositivos</strong>, protegida por CSRF</li>
           <li><code>POST /api/cron/limpar-tokens</code> — limpeza protegida por <code>CRON_SECRET</code></li>
         </ul>
       </div>
@@ -369,23 +371,24 @@
       <div class="card">
         <h3>Lib · <code>src/lib</code></h3>
         <ul>
-          <li><code>token.ts</code> — JWT (jose) + hash SHA-256 do refresh token + desafio MFA</li>
+          <li><code>token.ts</code> — JWT (jose): acesso (RS256, claim <code>papel</code>), atualização, desafio MFA e verificação de e-mail</li>
           <li><code>mfa.ts</code> — segredo/QR TOTP (otpauth + qrcode) e verificação</li>
-          <li><code>sessao.ts</code> — emissão compartilhada de tokens (login e MFA)</li>
-          <li><code>limpezaTokens.ts</code> — remoção de tokens expirados/revogados antigos</li>
+          <li><code>sessao.ts</code> — emissão de tokenAcesso/tokenAtualizacao/csrfToken em cookies httpOnly</li>
+          <li><code>cookies.ts</code> — cookies httpOnly (acesso, atualização) + CSRF não-httpOnly</li>
+          <li><code>csrf.ts</code> — geração/validação do token CSRF (double-submit cookie)</li>
+          <li><code>auditoria.ts</code> — registro de eventos com IP/user-agent, best-effort</li>
           <li><code>senha.ts</code> — hash/verificação com bcryptjs</li>
-          <li><code>cookies.ts</code> — cookie httpOnly / secure / sameSite=lax</li>
           <li><code>validacao.ts</code> — schemas Zod</li>
-          <li><code>clienteAuth.ts</code> — token em sessionStorage, refresh automático, sessões e MFA</li>
-          <li><code>autenticar.ts</code> — extração/validação de Bearer token</li>
+          <li><code>clienteAuth.ts</code> — sem sessionStorage, cookies httpOnly + header CSRF automático</li>
+          <li><code>autenticar.ts</code> — aceita token via cookie httpOnly ou Bearer</li>
         </ul>
       </div>
 
       <div class="card">
         <h3>Dados</h3>
         <ul>
-          <li>Prisma + <strong>Postgres local</strong> — modelos <code>Usuario</code> e <code>TokenAtualizacao</code></li>
-          <li><code>Usuario.mfaAtivado</code> / <code>mfaSecret</code> para verificação em duas etapas</li>
+          <li>Prisma + <strong>Postgres local</strong> — <code>Usuario</code>, <code>TokenAtualizacao</code>, <code>LogAuditoria</code></li>
+          <li><code>Usuario.mfaAtivado</code> / <code>mfaSecret</code> / <code>emailVerificado</code> / <code>papel</code> (enum <code>Papel</code>)</li>
           <li>Migrado de SQLite sem perda de dados existentes</li>
         </ul>
       </div>
@@ -393,10 +396,11 @@
       <div class="card">
         <h3>Frontend</h3>
         <ul>
-          <li>Páginas: home, <code>/login</code> (2ª etapa MFA), <code>/cadastro</code>, <code>/dashboard</code></li>
-          <li>Dashboard com seção Segurança: sessões ativas + ativar/desativar MFA</li>
+          <li>Páginas: home, <code>/login</code> (2ª etapa MFA), <code>/cadastro</code>, <code>/dashboard</code>, <code>/verificar-email</code></li>
+          <li>Dashboard com seção Segurança: sessões ativas (individual + todas de uma vez) + ativar/desativar MFA + indicador de e-mail verificado</li>
           <li><code>/dashboard/projetos</code> e <code>/dashboard/projetos/[id]</code> — CRUD de projetos e tarefas (Django)</li>
           <li><code>proxy.ts</code> redireciona rotas protegidas / somente-visitante</li>
+          <li>Sem <code>sessionStorage</code> — nenhum token guardado manualmente pelo cliente</li>
         </ul>
       </div>
 
@@ -404,11 +408,12 @@
         <h3>Serviço de domínio · <code>django/</code></h3>
         <ul>
           <li>Token de acesso migrado de HS256 para <strong>RS256</strong> — chave privada só no Next.js, pública compartilhada</li>
-          <li><code>comum/autenticacao.py</code> — classe DRF que valida o JWT (<code>algorithms=["RS256"]</code> fixo) e usa o claim <code>sub</code> como identidade, sem model de usuário próprio</li>
+          <li><code>comum/autenticacao.py</code> — classe DRF que valida o JWT (<code>algorithms=["RS256"]</code> fixo, via header Bearer <strong>ou</strong> cookie <code>tokenAcesso</code>) e usa os claims <code>sub</code>/<code>papel</code> como identidade, sem model de usuário próprio</li>
           <li>App <code>tarefas</code> com entidades reais: <code>Projeto</code> e <code>Tarefa</code> (status, prazo, isolados por usuário)</li>
-          <li><code>next.config.ts</code> encaminha <code>/api/dominio/*</code> para o Django via rewrite — mesma origem, sem CORS</li>
+          <li><code>next.config.ts</code> encaminha <code>/api/dominio/*</code> para o Django via rewrite — mesma origem, sem CORS, cookies repassados transparentemente</li>
           <li><strong>Postgres compartilhado</strong> com o Next.js (mesma instância local), database própria <code>autenticacao_dominio</code></li>
-          <li>13 testes automatizados (<code>pytest-django</code>) — JWT válido/expirado/adulterado/confusão de algoritmo + CRUD/isolamento por usuário</li>
+          <li><code>ProtegidoContraCsrf</code> — mesma proteção CSRF double-submit-cookie do lado Next.js, nas mutações de <code>ProjetoViewSet</code>/<code>TarefaViewSet</code></li>
+          <li>23 testes automatizados (<code>pytest-django</code>) — JWT válido/expirado/adulterado/confusão de algoritmo/cookie/<code>papel</code> + CRUD/isolamento/CSRF</li>
         </ul>
       </div>
 
@@ -418,10 +423,14 @@
           <li>Senha hasheada (bcrypt, 12 rounds)</li>
           <li>Refresh token hasheado no banco — nunca gravado em texto puro</li>
           <li>Rotação de refresh token a cada renovação, com erros inesperados tratados/logados</li>
-          <li>Cookie httpOnly para o refresh token</li>
+          <li>Access token e refresh token em cookies <strong>httpOnly</strong> — não acessíveis a JavaScript, mitiga roubo via XSS</li>
           <li>Access token de vida curta (15 min), assinado com RS256</li>
+          <li>Proteção CSRF explícita (double-submit cookie) em toda mutação autenticada por cookie, Next.js e Django</li>
           <li>Verificação em duas etapas (TOTP) opcional por usuário</li>
-          <li>Gestão de sessões ativas (listar/revogar individualmente)</li>
+          <li>Verificação de e-mail (token stateless, link logado no console em dev)</li>
+          <li>RBAC mínimo (<code>Usuario.papel</code>, claim no token, rota de exemplo restrita a admin)</li>
+          <li>Gestão de sessões ativas (individual ou todas de uma vez)</li>
+          <li>Logs de auditoria (login sucesso/falha, cadastro, logout — IP e user-agent)</li>
           <li>Job de limpeza de tokens expirados/revogados antigos</li>
           <li>Segredos JWT gerados aleatoriamente e documentados (não mais placeholders)</li>
           <li>Serviço Django valida algoritmo fixo (RS256) — bloqueia ataque de confusão de algoritmo</li>
@@ -444,15 +453,9 @@
         </thead>
         <tbody>
           <tr><td class="num">01</td><td>Revisar página de cadastro (confirmar mesmo padrão do login)</td><td><span class="pill pill--alta">Alta</span></td></tr>
-          <tr><td class="num">02</td><td>Verificação de e-mail</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">03</td><td>Recuperação de senha ("esqueci minha senha")</td><td><span class="pill pill--alta">Alta</span></td></tr>
+          <tr><td class="num">02</td><td>Recuperação de senha ("esqueci minha senha")</td><td><span class="pill pill--alta">Alta</span></td></tr>
+          <tr><td class="num">03</td><td>Testes automatizados das rotas de auth do <strong>Next.js</strong> (o lado Django já tem, ver acima)</td><td><span class="pill pill--alta">Alta</span></td></tr>
           <tr><td class="num">04</td><td>Rate limiting / proteção contra força bruta (login, cadastro)</td><td><span class="pill pill--alta">Alta</span></td></tr>
-          <tr><td class="num">05</td><td>Endpoint "sair de todos os dispositivos"</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">06</td><td>Proteção CSRF explícita nas mutações sensíveis</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">07</td><td>Repensar armazenamento do access token (sessionStorage é vulnerável a XSS)</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">08</td><td>Logs de auditoria (login sucesso/falha, IP, user-agent)</td><td><span class="pill pill--media">Média</span></td></tr>
-          <tr><td class="num">09</td><td>Testes automatizados das rotas de auth do <strong>Next.js</strong> (o lado Django já tem, ver acima)</td><td><span class="pill pill--alta">Alta</span></td></tr>
-          <tr><td class="num">10</td><td>RBAC (papéis/permissões) — o gateway já tem um segundo consumidor real (<code>django/</code>); ainda não desenhado</td><td><span class="pill pill--media">Média</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -496,7 +499,7 @@
 
   <div class="callout">
     <span class="eyebrow">Por onde começar</span>
-    <p><strong>Recuperação de senha</strong>, <strong>rate limiting</strong> e <strong>testes automatizados do Next.js</strong> (o lado Django já tem) são os três itens de maior impacto antes de qualquer uso além de ambiente de desenvolvimento.</p>
+    <p>Restam só 4 itens, todos de prioridade <strong>Alta</strong>: <strong>recuperação de senha</strong>, <strong>rate limiting</strong> e <strong>testes automatizados do Next.js</strong> (o lado Django já tem) são os de maior impacto antes de qualquer uso além de ambiente de desenvolvimento.</p>
   </div>
 
   <footer>roadmap gerado a partir do estado atual do repositório — auth-gateway · atualizado em 14 jul 2026</footer>

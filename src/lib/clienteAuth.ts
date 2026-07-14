@@ -1,17 +1,18 @@
 "use client";
 
-const CHAVE_TOKEN_ACESSO = "tokenAcesso";
-
-export function salvarTokenAcesso(token: string) {
-  sessionStorage.setItem(CHAVE_TOKEN_ACESSO, token);
+// Lê o cookie CSRF (não-httpOnly de propósito) pra ecoar no header
+// X-CSRF-Token nas mutações autenticadas — ver src/lib/csrf.ts no servidor
+// (Next.js) e comum/autenticacao.py (Django, mesma regra).
+export function obterCookieCsrfCliente(): string | null {
+  const encontrado = document.cookie
+    .split("; ")
+    .find((linha) => linha.startsWith("csrfToken="));
+  return encontrado ? decodeURIComponent(encontrado.split("=")[1]) : null;
 }
 
-export function obterTokenAcesso(): string | null {
-  return sessionStorage.getItem(CHAVE_TOKEN_ACESSO);
-}
-
-export function limparTokenAcesso() {
-  sessionStorage.removeItem(CHAVE_TOKEN_ACESSO);
+export function cabecalhoCsrf(): HeadersInit {
+  const token = obterCookieCsrfCliente();
+  return token ? { "X-CSRF-Token": token } : {};
 }
 
 export async function cadastrar(dados: {
@@ -29,6 +30,16 @@ export async function cadastrar(dados: {
   return corpo;
 }
 
+export async function verificarEmail(token: string) {
+  const resposta = await fetch("/api/auth/verificar-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao verificar e-mail.");
+}
+
 export async function entrar(dados: { email: string; senha: string }) {
   const resposta = await fetch("/api/auth/login", {
     method: "POST",
@@ -43,7 +54,6 @@ export async function entrar(dados: { email: string; senha: string }) {
     return { mfaObrigatorio: true as const, mfaToken: corpo.mfaToken as string };
   }
 
-  salvarTokenAcesso(corpo.tokenAcesso);
   return { mfaObrigatorio: false as const, ...corpo };
 }
 
@@ -59,25 +69,19 @@ export async function verificarMfaLogin(dados: {
   });
   const corpo = await resposta.json();
   if (!resposta.ok) throw new Error(corpo.erro ?? "Código inválido.");
-  salvarTokenAcesso(corpo.tokenAcesso);
   return corpo;
 }
 
 export async function sair() {
   await fetch("/api/auth/logout", {
     method: "POST",
+    headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  limparTokenAcesso();
 }
 
 export async function obterUsuarioAtual(tentouRenovar = false) {
-  const token = obterTokenAcesso();
-  if (!token) return null;
-
-  const resposta = await fetch("/api/auth/me", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const resposta = await fetch("/api/auth/me", { credentials: "include" });
 
   if (resposta.status === 401 && !tentouRenovar) {
     const renovado = await tentarAtualizarToken();
@@ -93,20 +97,10 @@ export async function obterUsuarioAtual(tentouRenovar = false) {
 export async function tentarAtualizarToken(): Promise<boolean> {
   const resposta = await fetch("/api/auth/atualizar", {
     method: "POST",
+    headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  if (!resposta.ok) {
-    limparTokenAcesso();
-    return false;
-  }
-  const corpo = await resposta.json();
-  salvarTokenAcesso(corpo.tokenAcesso);
-  return true;
-}
-
-function cabecalhoAutorizacao(): HeadersInit {
-  const token = obterTokenAcesso();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return resposta.ok;
 }
 
 export type Sessao = {
@@ -117,10 +111,7 @@ export type Sessao = {
 };
 
 export async function listarSessoes(): Promise<Sessao[]> {
-  const resposta = await fetch("/api/auth/sessoes", {
-    headers: cabecalhoAutorizacao(),
-    credentials: "include",
-  });
+  const resposta = await fetch("/api/auth/sessoes", { credentials: "include" });
   if (!resposta.ok) throw new Error("Falha ao carregar sessões.");
   const corpo = await resposta.json();
   return corpo.sessoes;
@@ -129,11 +120,21 @@ export async function listarSessoes(): Promise<Sessao[]> {
 export async function revogarSessao(id: string) {
   const resposta = await fetch(`/api/auth/sessoes/${id}`, {
     method: "DELETE",
-    headers: cabecalhoAutorizacao(),
+    headers: cabecalhoCsrf(),
     credentials: "include",
   });
   const corpo = await resposta.json();
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao revogar sessão.");
+}
+
+export async function revogarTodasSessoes() {
+  const resposta = await fetch("/api/auth/sessoes", {
+    method: "DELETE",
+    headers: cabecalhoCsrf(),
+    credentials: "include",
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao revogar sessões.");
 }
 
 export async function iniciarMfa(): Promise<{
@@ -143,7 +144,8 @@ export async function iniciarMfa(): Promise<{
 }> {
   const resposta = await fetch("/api/auth/mfa/iniciar", {
     method: "POST",
-    headers: cabecalhoAutorizacao(),
+    headers: cabecalhoCsrf(),
+    credentials: "include",
   });
   const corpo = await resposta.json();
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao iniciar MFA.");
@@ -153,7 +155,8 @@ export async function iniciarMfa(): Promise<{
 export async function confirmarMfa(codigo: string) {
   const resposta = await fetch("/api/auth/mfa/confirmar", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...cabecalhoAutorizacao() },
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
+    credentials: "include",
     body: JSON.stringify({ codigo }),
   });
   const corpo = await resposta.json();
@@ -163,7 +166,8 @@ export async function confirmarMfa(codigo: string) {
 export async function desativarMfa(codigo: string) {
   const resposta = await fetch("/api/auth/mfa/desativar", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...cabecalhoAutorizacao() },
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
+    credentials: "include",
     body: JSON.stringify({ codigo }),
   });
   const corpo = await resposta.json();

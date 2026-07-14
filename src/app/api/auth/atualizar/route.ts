@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { definirCookieAtualizacao, obterCookieAtualizacao } from "@/lib/cookies";
+import {
+  definirCookieAcesso,
+  definirCookieAtualizacao,
+  definirCookieCsrf,
+  obterCookieAtualizacao,
+  obterCookieCsrf,
+} from "@/lib/cookies";
+import { csrfValido, gerarTokenCsrf } from "@/lib/csrf";
 import {
   gerarTokenAcesso,
   gerarTokenAtualizacao,
@@ -10,6 +17,10 @@ import {
 import { esquemaAtualizacao } from "@/lib/validacao";
 
 export async function POST(req: Request) {
+  if (!csrfValido(req, await obterCookieCsrf())) {
+    return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
+  }
+
   const corpo = await req.json().catch(() => ({}));
   const tokenDoCorpo = esquemaAtualizacao.safeParse(corpo);
 
@@ -80,9 +91,12 @@ export async function POST(req: Request) {
   const novoTokenAcesso = await gerarTokenAcesso({
     sub: registroToken.usuario.id,
     email: registroToken.usuario.email,
+    papel: registroToken.usuario.papel,
   });
 
   await definirCookieAtualizacao(novoTokenAtualizacao);
+  await definirCookieAcesso(novoTokenAcesso);
+  await definirCookieCsrf(gerarTokenCsrf());
 
   return NextResponse.json({
     tokenAcesso: novoTokenAcesso,
