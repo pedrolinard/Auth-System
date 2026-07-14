@@ -195,13 +195,19 @@ normais; o cliente completa o login em `POST /api/auth/mfa/verificar` com
 
 ### Verificação de e-mail
 
-Sem provedor de e-mail configurado ainda: `POST /api/auth/cadastro` gera um
-token stateless (mesmo padrão do desafio MFA, 1 dia de validade) e **loga o
-link de verificação no console do servidor** em vez de enviar e-mail de
-verdade — trocar por um provedor real (Resend, SES, SMTP etc.) é só plugar o
-envio no lugar do `console.log` em `src/app/api/auth/cadastro/route.ts`. O
-usuário abre `/verificar-email?token=...`, que chama
-`POST /api/auth/verificar-email` e marca `Usuario.emailVerificado = true`.
+`POST /api/auth/cadastro` gera um token stateless (mesmo padrão do desafio
+MFA, 1 dia de validade) e envia o link de verificação por e-mail de verdade
+via **Resend** (`src/lib/email.ts`). O usuário abre `/verificar-email?token=...`,
+que chama `POST /api/auth/verificar-email` e marca `Usuario.emailVerificado = true`.
+
+Configuração: `RESEND_API_KEY` (gerada em https://resend.com/api-keys) e
+`EMAIL_FROM` (remetente). Sem `RESEND_API_KEY` definida, cai de volta pro
+comportamento antigo — o link só é logado no console (útil pra dev local sem
+depender de uma conta Resend). O remetente padrão (`onboarding@resend.dev`)
+é o domínio de teste do Resend: funciona sem configurar DNS, mas só entrega
+pro e-mail cadastrado na própria conta Resend (modo sandbox) — para enviar
+para qualquer destinatário (ex. um usuário real se cadastrando), é preciso
+verificar um domínio próprio no Resend e apontar `EMAIL_FROM` para ele.
 
 ### RBAC mínimo
 

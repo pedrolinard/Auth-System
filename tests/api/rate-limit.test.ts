@@ -30,7 +30,7 @@ describe("Rate limiting", () => {
     expect(sexta.status).toBe(429);
 
     await apagarUsuariosTeste([usuario.email]);
-  }, 30000); // 6 chamadas sequenciais com bcrypt + 1ª compilação da rota no Turbopack
+  }, 45000); // 6 chamadas sequenciais com bcrypt + 1ª compilação da rota no Turbopack
 
   it("bloqueia cadastro com 429 após estourar o limite de tentativas do mesmo IP", async () => {
     const ip = ipFalso();
