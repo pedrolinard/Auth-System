@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { verificarEmail } from "@/lib/clienteAuth";
+import { Marca } from "@/components/Marca";
 
 function ConteudoVerificacao() {
   const searchParams = useSearchParams();
@@ -26,10 +27,14 @@ function ConteudoVerificacao() {
   const semToken = !token;
 
   return (
-    <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-black/[.08] bg-white p-8 text-center dark:border-white/[.145] dark:bg-zinc-950">
-      <h1 className="text-xl font-semibold text-black dark:text-zinc-50">
-        Verificação de e-mail
-      </h1>
+    <div className="card-surface flex w-full max-w-sm flex-col items-center gap-5 p-8 text-center">
+      <Marca className="h-6 w-6 text-foreground" />
+      <div className="flex flex-col items-center gap-1.5">
+        <span className="eyebrow text-zinc-500 dark:text-zinc-500">Auth Gateway</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+          Verificação de e-mail
+        </h1>
+      </div>
 
       {semToken && (
         <p className="text-sm text-red-600 dark:text-red-400">
@@ -51,7 +56,7 @@ function ConteudoVerificacao() {
         <p className="text-sm text-red-600 dark:text-red-400">{mensagemErro}</p>
       )}
 
-      <Link href="/dashboard" className="text-sm font-medium text-black dark:text-zinc-50">
+      <Link href="/dashboard" className="link-underline text-sm font-medium text-foreground">
         Ir para o dashboard
       </Link>
     </div>
@@ -60,7 +65,7 @@ function ConteudoVerificacao() {
 
 export default function PaginaVerificarEmail() {
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
+    <div className="flex flex-1 items-center justify-center px-6 py-16">
       <Suspense
         fallback={<p className="text-zinc-600 dark:text-zinc-400">Carregando...</p>}
       >

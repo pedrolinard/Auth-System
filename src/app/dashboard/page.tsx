@@ -71,7 +71,7 @@ export default function PaginaDashboard() {
 
   if (carregando) {
     return (
-      <div className="flex flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
+      <div className="flex flex-1 items-center justify-center">
         <p className="text-zinc-600 dark:text-zinc-400">Carregando...</p>
       </div>
     );
@@ -80,9 +80,10 @@ export default function PaginaDashboard() {
   if (!usuario) return null;
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-6 bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
-      <div className="flex w-full max-w-lg flex-col gap-4 rounded-xl border border-black/[.08] bg-white p-8 dark:border-white/[.145] dark:bg-zinc-950">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">
+    <div className="flex flex-1 flex-col items-center gap-6 px-6 py-16">
+      <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
+        <span className="eyebrow text-zinc-500 dark:text-zinc-500">Perfil</span>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Olá, {usuario.nome}
         </h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">{usuario.email}</p>
@@ -109,7 +110,7 @@ export default function PaginaDashboard() {
               <button
                 onClick={aoReenviarVerificacao}
                 disabled={reenviando}
-                className="self-start text-sm text-zinc-600 underline disabled:opacity-50 dark:text-zinc-400"
+                className="link-underline self-start text-sm text-zinc-600 disabled:opacity-50 dark:text-zinc-400"
               >
                 {reenviando ? "Enviando..." : "Reenviar e-mail de verificação"}
               </button>
@@ -121,24 +122,15 @@ export default function PaginaDashboard() {
         )}
 
         <div className="mt-2 flex flex-wrap gap-2">
-          <Link
-            href="/dashboard/projetos"
-            className="self-start rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]"
-          >
+          <Link href="/dashboard/projetos" className="btn-primary">
             Meus projetos
           </Link>
           {usuario.papel === "admin" && (
-            <Link
-              href="/dashboard/usuarios"
-              className="self-start rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-            >
+            <Link href="/dashboard/usuarios" className="btn-secondary">
               Usuários
             </Link>
           )}
-          <button
-            onClick={aoSair}
-            className="self-start rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-          >
+          <button onClick={aoSair} className="btn-secondary">
             Sair
           </button>
         </div>
@@ -225,8 +217,9 @@ function SecaoMfa({
   }
 
   return (
-    <div className="flex w-full max-w-lg flex-col gap-4 rounded-xl border border-black/[.08] bg-white p-8 dark:border-white/[.145] dark:bg-zinc-950">
-      <h2 className="text-lg font-semibold text-black dark:text-zinc-50">
+    <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
+      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Segurança</span>
+      <h2 className="text-lg font-semibold tracking-tight text-foreground">
         Verificação em duas etapas
       </h2>
 
@@ -237,11 +230,7 @@ function SecaoMfa({
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Desativada. Ative para exigir um código do seu aplicativo autenticador a cada login.
           </p>
-          <button
-            onClick={aoIniciarAtivacao}
-            disabled={carregando}
-            className="self-start rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
-          >
+          <button onClick={aoIniciarAtivacao} disabled={carregando} className="btn-primary self-start">
             {carregando ? "Gerando..." : "Ativar"}
           </button>
         </>
@@ -256,7 +245,7 @@ function SecaoMfa({
           <img
             src={dadosSetup.qrCodeDataUrl}
             alt="QR code para configurar a verificação em duas etapas"
-            className="h-40 w-40 self-center"
+            className="h-40 w-40 self-center rounded-lg border border-black/[.08] dark:border-white/[.13]"
           />
           <p className="break-all text-center font-mono text-xs text-zinc-500 dark:text-zinc-400">
             {dadosSetup.segredo}
@@ -270,14 +259,10 @@ function SecaoMfa({
             value={codigo}
             onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))}
             placeholder="000000"
-            className="rounded-md border border-black/[.08] px-3 py-2 text-center text-lg tracking-[0.5em] dark:border-white/[.145] dark:bg-black"
+            className="input-field text-center font-mono text-lg tracking-[0.5em]"
           />
           <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={carregando || codigo.length !== 6}
-              className="rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
-            >
+            <button type="submit" disabled={carregando || codigo.length !== 6} className="btn-primary-sm">
               {carregando ? "Confirmando..." : "Confirmar"}
             </button>
             <button
@@ -288,7 +273,7 @@ function SecaoMfa({
                 setCodigo("");
                 setErro(null);
               }}
-              className="rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium dark:border-white/[.145]"
+              className="btn-secondary-sm"
             >
               Cancelar
             </button>
@@ -299,10 +284,7 @@ function SecaoMfa({
       {mfaAtivado && !desativando && (
         <>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">Ativada.</p>
-          <button
-            onClick={() => setDesativando(true)}
-            className="self-start rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-          >
+          <button onClick={() => setDesativando(true)} className="btn-secondary self-start">
             Desativar
           </button>
         </>
@@ -322,13 +304,13 @@ function SecaoMfa({
             value={codigo}
             onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))}
             placeholder="000000"
-            className="rounded-md border border-black/[.08] px-3 py-2 text-center text-lg tracking-[0.5em] dark:border-white/[.145] dark:bg-black"
+            className="input-field text-center font-mono text-lg tracking-[0.5em]"
           />
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={carregando || codigo.length !== 6}
-              className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+              className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition-all duration-150 hover:-translate-y-px hover:bg-red-700 active:translate-y-0 active:scale-[.97] disabled:pointer-events-none disabled:opacity-50"
             >
               {carregando ? "Desativando..." : "Confirmar desativação"}
             </button>
@@ -339,7 +321,7 @@ function SecaoMfa({
                 setCodigo("");
                 setErro(null);
               }}
-              className="rounded-full border border-black/[.08] px-5 py-2.5 text-sm font-medium dark:border-white/[.145]"
+              className="btn-secondary-sm"
             >
               Cancelar
             </button>
@@ -400,14 +382,17 @@ function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
   }
 
   return (
-    <div className="flex w-full max-w-lg flex-col gap-4 rounded-xl border border-black/[.08] bg-white p-8 dark:border-white/[.145] dark:bg-zinc-950">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-black dark:text-zinc-50">Sessões ativas</h2>
+    <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <span className="eyebrow text-zinc-500 dark:text-zinc-500">Segurança</span>
+          <h2 className="text-lg font-semibold tracking-tight text-foreground">Sessões ativas</h2>
+        </div>
         {sessoes && sessoes.length > 0 && (
           <button
             onClick={aoRevogarTodas}
             disabled={revogandoTodas}
-            className="rounded-full border border-red-600/30 px-3 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:opacity-50 dark:text-red-400"
+            className="shrink-0 rounded-full border border-red-600/30 px-3 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:opacity-50 dark:text-red-400"
           >
             {revogandoTodas ? "Saindo..." : "Sair de todos os dispositivos"}
           </button>
@@ -429,7 +414,7 @@ function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
           {sessoes.map((sessao) => (
             <li
               key={sessao.id}
-              className="flex flex-col gap-3 rounded-md bg-zinc-100 p-3 sm:flex-row sm:items-center sm:justify-between dark:bg-zinc-900"
+              className="flex flex-col gap-3 rounded-lg border border-black/[.06] bg-black/[.02] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[.06] dark:bg-white/[.03]"
             >
               <div className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -445,7 +430,7 @@ function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
               <button
                 onClick={() => aoRevogar(sessao)}
                 disabled={revogandoId === sessao.id}
-                className="shrink-0 self-start rounded-full border border-black/[.08] px-4 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] disabled:opacity-50 sm:self-auto dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                className="btn-secondary-sm shrink-0 self-start sm:self-auto"
               >
                 {revogandoId === sessao.id ? "Revogando..." : "Revogar"}
               </button>

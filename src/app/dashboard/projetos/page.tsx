@@ -60,44 +60,37 @@ export default function PaginaProjetos() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-6 bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
+    <div className="flex flex-1 flex-col items-center gap-6 px-6 py-16">
       <div className="flex w-full max-w-lg flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Projetos</h1>
-          <Link
-            href="/dashboard"
-            className="text-sm text-zinc-600 underline dark:text-zinc-400"
-          >
+          <div className="flex flex-col gap-1">
+            <span className="eyebrow text-zinc-500 dark:text-zinc-500">Domínio</span>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Projetos</h1>
+          </div>
+          <Link href="/dashboard" className="link-underline text-sm text-zinc-600 dark:text-zinc-400">
             Voltar ao dashboard
           </Link>
         </div>
 
         {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
 
-        <form
-          onSubmit={aoCriar}
-          className="flex flex-col gap-3 rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950"
-        >
-          <h2 className="text-sm font-medium text-black dark:text-zinc-50">Novo projeto</h2>
+        <form onSubmit={aoCriar} className="card-surface flex flex-col gap-3 p-6">
+          <h2 className="text-sm font-medium text-foreground">Novo projeto</h2>
           <input
             required
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             placeholder="Nome do projeto"
-            className="rounded-md border border-black/[.08] px-3 py-2 text-sm dark:border-white/[.145] dark:bg-black"
+            className="input-field"
           />
           <textarea
             value={descricao}
             onChange={(e) => setDescricao(e.target.value)}
             placeholder="Descrição (opcional)"
             rows={2}
-            className="rounded-md border border-black/[.08] px-3 py-2 text-sm dark:border-white/[.145] dark:bg-black"
+            className="input-field"
           />
-          <button
-            type="submit"
-            disabled={criando || !nome}
-            className="self-start rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
-          >
+          <button type="submit" disabled={criando || !nome} className="btn-primary self-start">
             {criando ? "Criando..." : "Criar projeto"}
           </button>
         </form>
@@ -115,11 +108,11 @@ export default function PaginaProjetos() {
             {projetos.map((projeto) => (
               <li
                 key={projeto.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-black/[.08] bg-white p-4 dark:border-white/[.145] dark:bg-zinc-950"
+                className="card-surface flex items-center justify-between gap-3 p-4"
               >
                 <Link
                   href={`/dashboard/projetos/${projeto.id}`}
-                  className="flex-1 text-sm text-black hover:underline dark:text-zinc-50"
+                  className="flex-1 text-sm text-foreground hover:underline"
                 >
                   <p className="font-medium">{projeto.nome}</p>
                   {projeto.descricao && (
@@ -131,7 +124,7 @@ export default function PaginaProjetos() {
                 <button
                   onClick={() => aoExcluir(projeto.id)}
                   disabled={excluindoId === projeto.id}
-                  className="shrink-0 rounded-full border border-black/[.08] px-4 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                  className="btn-secondary-sm shrink-0"
                 >
                   {excluindoId === projeto.id ? "Excluindo..." : "Excluir"}
                 </button>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { solicitarRecuperacaoSenha } from "@/lib/clienteAuth";
+import { Marca } from "@/components/Marca";
 
 export default function PaginaEsqueciSenha() {
   const [email, setEmail] = useState("");
@@ -27,23 +28,27 @@ export default function PaginaEsqueciSenha() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 px-6 font-sans dark:bg-black">
-      <div className="flex w-full max-w-sm flex-col gap-4 rounded-xl border border-black/[.08] bg-white p-8 dark:border-white/[.145] dark:bg-zinc-950">
-        <h1 className="text-xl font-semibold text-black dark:text-zinc-50">
-          Esqueci minha senha
-        </h1>
+    <div className="flex flex-1 items-center justify-center px-6 py-16">
+      <div className="card-surface flex w-full max-w-sm flex-col gap-5 p-8">
+        <Marca className="h-6 w-6 text-foreground" />
+        <div className="flex flex-col gap-1.5">
+          <span className="eyebrow text-zinc-500 dark:text-zinc-500">Auth Gateway</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            Esqueci minha senha
+          </h1>
+        </div>
 
         {enviado ? (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Se esse e-mail estiver cadastrado, um link de redefinição foi enviado.
           </p>
         ) : (
-          <form onSubmit={aoEnviar} className="flex flex-col gap-4">
+          <form onSubmit={aoEnviar} className="flex flex-col gap-5">
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               Digite o e-mail da sua conta e enviaremos um link para redefinir a senha.
             </p>
 
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               <label htmlFor="email" className="text-sm text-zinc-600 dark:text-zinc-400">
                 E-mail
               </label>
@@ -56,24 +61,20 @@ export default function PaginaEsqueciSenha() {
                 autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="rounded-md border border-black/[.08] px-3 py-2 text-sm dark:border-white/[.145] dark:bg-black"
+                className="input-field"
               />
             </div>
 
             {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
 
-            <button
-              type="submit"
-              disabled={carregando}
-              className="mt-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
-            >
+            <button type="submit" disabled={carregando} className="btn-primary mt-1">
               {carregando ? "Enviando..." : "Enviar link de redefinição"}
             </button>
           </form>
         )}
 
         <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
-          <Link href="/login" className="font-medium text-black dark:text-zinc-50">
+          <Link href="/login" className="link-underline font-medium text-foreground">
             Voltar para o login
           </Link>
         </p>

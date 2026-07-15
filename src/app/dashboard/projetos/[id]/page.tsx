@@ -92,15 +92,18 @@ export default function PaginaProjeto() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-6 bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
+    <div className="flex flex-1 flex-col items-center gap-6 px-6 py-16">
       <div className="flex w-full max-w-lg flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-black dark:text-zinc-50">
-            {projeto?.nome ?? "Carregando..."}
-          </h1>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="eyebrow text-zinc-500 dark:text-zinc-500">Domínio</span>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              {projeto?.nome ?? "Carregando..."}
+            </h1>
+          </div>
           <Link
             href="/dashboard/projetos"
-            className="text-sm text-zinc-600 underline dark:text-zinc-400"
+            className="link-underline shrink-0 text-sm text-zinc-600 dark:text-zinc-400"
           >
             Voltar aos projetos
           </Link>
@@ -112,23 +115,16 @@ export default function PaginaProjeto() {
 
         {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
 
-        <form
-          onSubmit={aoCriarTarefa}
-          className="flex flex-col gap-3 rounded-xl border border-black/[.08] bg-white p-6 dark:border-white/[.145] dark:bg-zinc-950"
-        >
-          <h2 className="text-sm font-medium text-black dark:text-zinc-50">Nova tarefa</h2>
+        <form onSubmit={aoCriarTarefa} className="card-surface flex flex-col gap-3 p-6">
+          <h2 className="text-sm font-medium text-foreground">Nova tarefa</h2>
           <input
             required
             value={titulo}
             onChange={(e) => setTitulo(e.target.value)}
             placeholder="Título da tarefa"
-            className="rounded-md border border-black/[.08] px-3 py-2 text-sm dark:border-white/[.145] dark:bg-black"
+            className="input-field"
           />
-          <button
-            type="submit"
-            disabled={criando || !titulo}
-            className="self-start rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
-          >
+          <button type="submit" disabled={criando || !titulo} className="btn-primary self-start">
             {criando ? "Criando..." : "Criar tarefa"}
           </button>
         </form>
@@ -144,19 +140,14 @@ export default function PaginaProjeto() {
         {tarefas && tarefas.length > 0 && (
           <ul className="flex flex-col gap-3">
             {tarefas.map((tarefa) => (
-              <li
-                key={tarefa.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-black/[.08] bg-white p-4 dark:border-white/[.145] dark:bg-zinc-950"
-              >
+              <li key={tarefa.id} className="card-surface flex items-center justify-between gap-3 p-4">
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-black dark:text-zinc-50">
-                    {tarefa.titulo}
-                  </p>
+                  <p className="text-sm font-medium text-foreground">{tarefa.titulo}</p>
                   <select
                     value={tarefa.status}
                     onChange={(e) => aoMudarStatus(tarefa, e.target.value as StatusTarefa)}
                     disabled={atualizandoId === tarefa.id}
-                    className="mt-1 rounded-md border border-black/[.08] bg-transparent px-2 py-1 text-xs dark:border-white/[.145]"
+                    className="mt-1.5 rounded-md border border-black/[.09] bg-transparent px-2 py-1 text-xs text-foreground outline-none dark:border-white/[.13]"
                   >
                     {Object.entries(ROTULOS_STATUS).map(([valor, rotulo]) => (
                       <option key={valor} value={valor}>
@@ -168,7 +159,7 @@ export default function PaginaProjeto() {
                 <button
                   onClick={() => aoExcluirTarefa(tarefa.id)}
                   disabled={excluindoId === tarefa.id}
-                  className="shrink-0 rounded-full border border-black/[.08] px-4 py-1.5 text-xs font-medium transition-colors hover:bg-black/[.04] disabled:opacity-50 dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+                  className="btn-secondary-sm shrink-0"
                 >
                   {excluindoId === tarefa.id ? "Excluindo..." : "Excluir"}
                 </button>

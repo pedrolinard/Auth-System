@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fbfaf8;
+  --foreground: #14130f;
+  --grid-line: rgba(20, 19, 15, 0.035);
+  --vignette: rgba(20, 19, 15, 0.025);
 }
 
 @theme inline {
@@ -16,11 +18,58 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --grid-line: rgba(255, 255, 255, 0.032);
+    --vignette: rgba(255, 255, 255, 0.022);
   }
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(ellipse 80% 55% at 50% -10%, var(--vignette), transparent),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    var(--background);
+  background-size: 100% 100%, 56px 56px, 56px 56px;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Rótulos/etiquetas em mono, uppercase e letter-spacing largo — reforça o
+   caráter "técnico" do produto (gateway de auth) sem depender de cor. */
+.eyebrow {
+  font-family: var(--font-geist-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.7rem;
+}
+
+/* Sistema de componentes compartilhado — mesmo visual em todas as telas
+   (cards, campos, botões, links) sem repetir a mesma string Tailwind gigante
+   em cada página. Todo em preto/branco/cinza de propósito. */
+.card-surface {
+  @apply relative rounded-2xl border border-black/[.1] bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_2px_rgba(20,19,15,0.04),0_24px_48px_-24px_rgba(20,19,15,0.3)] dark:border-white/[.13] dark:bg-zinc-900/95 dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_1px_rgba(0,0,0,0.3),0_24px_48px_-20px_rgba(0,0,0,0.85)];
+}
+
+.input-field {
+  @apply w-full rounded-lg border border-black/[.09] bg-white px-3 py-2.5 text-sm text-black outline-none transition-shadow duration-150 placeholder:text-zinc-400 focus:border-black/20 focus:ring-2 focus:ring-black/[.06] dark:border-white/[.12] dark:bg-black/40 dark:text-zinc-50 dark:placeholder:text-zinc-600 dark:focus:border-white/25 dark:focus:ring-white/[.06];
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background shadow-[0_1px_0_rgba(255,255,255,0.15)_inset,0_8px_20px_-8px_rgba(20,19,15,0.35)] transition-all duration-150 hover:-translate-y-px hover:shadow-[0_1px_0_rgba(255,255,255,0.15)_inset,0_12px_24px_-8px_rgba(20,19,15,0.4)] active:translate-y-0 active:scale-[.98] disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none disabled:hover:translate-y-0;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-full border border-black/[.1] px-5 py-2.5 text-sm font-medium text-foreground transition-all duration-150 hover:-translate-y-px hover:bg-black/[.04] active:translate-y-0 active:scale-[.98] disabled:pointer-events-none disabled:opacity-50 disabled:hover:translate-y-0 dark:border-white/[.14] dark:hover:bg-white/[.06];
+}
+
+.btn-primary-sm {
+  @apply inline-flex items-center justify-center rounded-full bg-foreground px-4 py-1.5 text-xs font-medium text-background transition-all duration-150 hover:-translate-y-px active:translate-y-0 active:scale-[.97] disabled:pointer-events-none disabled:opacity-50;
+}
+
+.btn-secondary-sm {
+  @apply inline-flex items-center justify-center rounded-full border border-black/[.1] px-4 py-1.5 text-xs font-medium text-foreground transition-all duration-150 hover:-translate-y-px hover:bg-black/[.04] active:translate-y-0 active:scale-[.97] disabled:pointer-events-none disabled:opacity-50 dark:border-white/[.14] dark:hover:bg-white/[.06];
+}
+
+.link-underline {
+  @apply relative text-foreground no-underline after:absolute after:-bottom-0.5 after:left-0 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-200 hover:after:w-full;
 }

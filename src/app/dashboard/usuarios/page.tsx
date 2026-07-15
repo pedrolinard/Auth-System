@@ -17,19 +17,20 @@ export default function PaginaUsuarios() {
   }, []);
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-6 bg-zinc-50 px-6 py-16 font-sans dark:bg-black">
+    <div className="flex flex-1 flex-col items-center gap-6 px-6 py-16">
       <div className="flex w-full max-w-3xl flex-col gap-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-black dark:text-zinc-50">Usuários</h1>
-          <Link href="/dashboard" className="text-sm text-zinc-600 underline dark:text-zinc-400">
+          <div className="flex flex-col gap-1">
+            <span className="eyebrow text-zinc-500 dark:text-zinc-500">Admin</span>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Usuários</h1>
+          </div>
+          <Link href="/dashboard" className="link-underline text-sm text-zinc-600 dark:text-zinc-400">
             Voltar ao dashboard
           </Link>
         </div>
 
         {erro && (
-          <div className="rounded-xl border border-black/[.08] bg-white p-6 text-sm text-red-600 dark:border-white/[.145] dark:bg-zinc-950 dark:text-red-400">
-            {erro}
-          </div>
+          <div className="card-surface p-6 text-sm text-red-600 dark:text-red-400">{erro}</div>
         )}
 
         {!erro && usuarios === null && (
@@ -37,10 +38,10 @@ export default function PaginaUsuarios() {
         )}
 
         {usuarios && (
-          <div className="overflow-x-auto rounded-xl border border-black/[.08] bg-white dark:border-white/[.145] dark:bg-zinc-950">
+          <div className="card-surface overflow-x-auto p-0">
             <table className="w-full min-w-[520px] text-left text-sm">
               <thead>
-                <tr className="border-b border-black/[.08] text-xs uppercase tracking-wide text-zinc-500 dark:border-white/[.145] dark:text-zinc-400">
+                <tr className="border-b border-black/[.08] text-xs uppercase tracking-wide text-zinc-500 dark:border-white/[.1] dark:text-zinc-500">
                   <th className="px-4 py-3 font-medium">Nome</th>
                   <th className="px-4 py-3 font-medium">E-mail</th>
                   <th className="px-4 py-3 font-medium">Papel</th>
@@ -51,9 +52,9 @@ export default function PaginaUsuarios() {
                 {usuarios.map((usuario) => (
                   <tr
                     key={usuario.id}
-                    className="border-b border-black/[.06] last:border-0 dark:border-white/[.08]"
+                    className="border-b border-black/[.05] last:border-0 dark:border-white/[.06]"
                   >
-                    <td className="px-4 py-3 text-black dark:text-zinc-50">{usuario.nome}</td>
+                    <td className="px-4 py-3 text-foreground">{usuario.nome}</td>
                     <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{usuario.email}</td>
                     <td className="px-4 py-3">
                       <span
