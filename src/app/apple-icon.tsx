@@ -12,16 +12,17 @@ export default function AppleIcon() {
         width={180}
         height={180}
       >
-        <rect width="32" height="32" rx="7" fill="#0b0e0d" />
-        <path
-          d="M11 15 V11 A5 5 0 0 1 21 11 V15"
-          fill="none"
-          stroke="#63b6a0"
-          strokeWidth="2.3"
-          strokeLinecap="round"
-        />
-        <rect x="8.5" y="14.5" width="15" height="11.5" rx="2.6" fill="#63b6a0" />
-        <circle cx="16" cy="19" r="1.6" fill="#0b0e0d" />
+        <rect width="32" height="32" rx="7" fill="#0a0a0a" />
+        {/* Assinatura visual do JWT: header.payload.signature como três
+            blocos separados por pontos, inclinados para ler como string
+            codificada — em vez de mais um cadeado genérico. */}
+        <g transform="rotate(-18 16 16)">
+          <rect x="4" y="12.5" width="4" height="7" rx="2" fill="#ededed" />
+          <circle cx="9.5" cy="16" r="1.6" fill="#ededed" />
+          <rect x="11" y="12.5" width="10" height="7" rx="2" fill="#ededed" />
+          <circle cx="22.5" cy="16" r="1.6" fill="#ededed" />
+          <rect x="24" y="12.5" width="4" height="7" rx="2" fill="#ededed" />
+        </g>
       </svg>
     ),
     { ...size },
