@@ -18,10 +18,16 @@ export default defineConfig({
   test: {
     environment: "node",
     globalSetup: ["tests/globalSetup.ts"],
-    // 30s (não 20s): algumas rotas só compilam no primeiro hit do Turbopack,
-    // e qual teste bate nelas primeiro varia por execução (arquivos rodam em
-    // paralelo) — um valor baixo demais causa timeouts esporádicos que não
-    // são um bug real, só a rota ainda não compilada.
+    // Todos os arquivos batem no MESMO servidor `next dev` real (não mocado).
+    // Rodando em paralelo, requisições concorrentes contra o Turbopack dev
+    // server esporadicamente voltam 404 sob carga (visto de forma
+    // reproduzível: a mesma suíte fica 100% verde quando rodada sozinha,
+    // sem paralelismo). Servidor real + banco real já é mais lento que mocks;
+    // preferimos suíte sequencial e confiável a uma mais rápida e instável.
+    fileParallelism: false,
+    // 30s (não 20s): algumas rotas só compilam no primeiro hit do Turbopack —
+    // um valor baixo demais causa timeouts esporádicos que não são um bug
+    // real, só a rota ainda não compilada.
     testTimeout: 30000,
     hookTimeout: 60000,
     // O próprio processo do Vitest também precisa apontar pra database de

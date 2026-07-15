@@ -40,6 +40,8 @@ export default async function setup() {
 
   await esperarServidorPronto(`http://localhost:${PORTA_TESTE}`);
   console.log("[tests] Servidor de teste pronto.");
+  await aquecerRotas(`http://localhost:${PORTA_TESTE}`);
+  console.log("[tests] Rotas de API pré-compiladas.");
 
   return async () => {
     if (!servidor.pid) return;
@@ -52,6 +54,48 @@ export default async function setup() {
       // processo já pode ter encerrado sozinho
     }
   };
+}
+
+// Os arquivos de teste rodam em paralelo, e cada um bate pela primeira vez
+// em rotas diferentes — sob Turbopack, requisições concorrentes contra rotas
+// ainda não compiladas às vezes retornam 404 em vez de esperar a compilação
+// terminar. Batendo em todas as rotas uma vez, em sequência, aqui no setup
+// (antes dos testes começarem de verdade), cada uma já compila isolada.
+const ROTAS_PARA_AQUECER = [
+  "/api/auth/atualizar",
+  "/api/auth/cadastro",
+  "/api/auth/esqueci-senha",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/auth/me",
+  "/api/auth/mfa/confirmar",
+  "/api/auth/mfa/desativar",
+  "/api/auth/mfa/iniciar",
+  "/api/auth/mfa/verificar",
+  "/api/auth/redefinir-senha",
+  "/api/auth/reenviar-verificacao",
+  "/api/auth/sessoes",
+  "/api/auth/sessoes/id-de-aquecimento",
+  "/api/auth/usuarios",
+  "/api/auth/usuarios/id-de-aquecimento",
+  "/api/auth/usuarios/id-de-aquecimento/reativar",
+  "/api/auth/usuarios/id-de-aquecimento/suspender",
+  "/api/auth/verificar-email",
+];
+
+async function aquecerRotas(baseUrl: string) {
+  for (const rota of ROTAS_PARA_AQUECER) {
+    try {
+      await fetch(`${baseUrl}${rota}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+    } catch {
+      // uma rota individual falhar em aquecer não deve travar a suíte —
+      // na pior das hipóteses ela ainda compila sob demanda no teste real.
+    }
+  }
 }
 
 async function esperarServidorPronto(url: string, tentativas = 60) {

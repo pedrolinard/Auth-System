@@ -44,6 +44,9 @@ consumido por outras aplicações como camada intermediária de identidade.
 - **Suspensão/exclusão de conta**: admins podem suspender (temporária ou
   permanente) ou excluir permanentemente a conta de outro usuário — ver seção
   "Suspensão e exclusão de contas" abaixo.
+- **Logout automático por inatividade**: 5 minutos sem nenhuma interação em
+  `/dashboard` derrubam a sessão de verdade e voltam pro login — ver seção
+  "Logout automático por inatividade" abaixo.
 
 ## Serviço de domínio (Django)
 
@@ -258,6 +261,18 @@ conta.
 - A checagem de suspensão roda tanto em `POST /api/auth/login` quanto em
   `POST /api/auth/mfa/verificar` — cobre o caso de um admin suspender a conta
   durante os até 5 min entre o desafio de MFA e a confirmação do código.
+
+### Logout automático por inatividade
+
+`src/components/MonitorInatividade.tsx`, montado em todas as telas de
+`/dashboard` via `src/app/dashboard/layout.tsx`, desloga automaticamente após
+**5 minutos sem nenhuma interação** (mouse, teclado, scroll, toque ou clique).
+Não é um redirecionamento só do lado do cliente: ele chama a mesma função
+`sair()` usada pelo botão de logout manual, que bate em
+`POST /api/auth/logout` e **revoga a sessão de verdade no banco**
+(`TokenAtualizacao`) antes de mandar o usuário de volta pro `/login` — um
+token de acesso já emitido não continuaria "logado" só porque a aba ficou
+parada.
 
 ### Sair de todos os dispositivos
 
