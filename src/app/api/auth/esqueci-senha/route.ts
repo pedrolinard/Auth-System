@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { enviarEmailRedefinicaoSenha } from "@/lib/email";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { gerarTokenRedefinicaoSenha } from "@/lib/token";
 import { esquemaEsqueciSenha } from "@/lib/validacao";
@@ -44,9 +45,7 @@ export async function POST(req: Request) {
   if (usuario) {
     const token = await gerarTokenRedefinicaoSenha(usuario.id);
     const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
-    console.log(
-      `[dev] Link de redefinição de senha para ${email}: ${baseUrl}/redefinir-senha?token=${token}`,
-    );
+    await enviarEmailRedefinicaoSenha(email, `${baseUrl}/redefinir-senha?token=${token}`);
   }
 
   return NextResponse.json({

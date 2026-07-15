@@ -253,10 +253,12 @@ uma falha da funcionalidade.
 
 Mesmo padrão stateless dos demais tokens (token JWT com segredo próprio,
 `JWT_REDEFINICAO_SENHA_SECRET`, expira em **1h**, sem coluna nova no banco):
-`POST /api/auth/esqueci-senha` (`/esqueci-senha` na UI) gera o token e **loga
-o link no console** do servidor (mesmo placeholder da verificação de e-mail
-até plugar um provedor real) — **sempre responde com sucesso genérico**,
-exista ou não o e-mail, pra não vazar quais contas existem.
+`POST /api/auth/esqueci-senha` (`/esqueci-senha` na UI) gera o token e envia
+o link por e-mail de verdade via Resend (`enviarEmailRedefinicaoSenha` em
+`src/lib/email.ts`, mesma configuração/limitação de sandbox do e-mail de
+verificação — ver seção "Verificação de e-mail" acima) — **sempre responde
+com sucesso genérico**, exista ou não o e-mail, pra não vazar quais contas
+existem.
 `POST /api/auth/redefinir-senha` (`/redefinir-senha?token=...` na UI) valida
 o token, atualiza a senha e **revoga todas as sessões ativas** do usuário (a
 senha pode ter sido comprometida, então todo acesso existente cai).

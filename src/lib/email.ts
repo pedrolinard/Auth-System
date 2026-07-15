@@ -36,3 +36,28 @@ export async function enviarEmailVerificacao(destinatario: string, link: string)
     console.error("Falha ao enviar e-mail de verificação:", error);
   }
 }
+
+export async function enviarEmailRedefinicaoSenha(destinatario: string, link: string) {
+  if (!resend) {
+    console.log(`[dev] Link de redefinição de senha para ${destinatario}: ${link}`);
+    return;
+  }
+
+  const { error } = await resend.emails.send({
+    from: REMETENTE,
+    to: destinatario,
+    subject: "Redefinição de senha",
+    html: `
+      <p>Pediram a redefinição da senha desta conta. Clique no link abaixo pra escolher uma nova senha:</p>
+      <p><a href="${link}">${link}</a></p>
+      <p style="color:#71717a;font-size:12px">O link expira em 1 hora. Se você não pediu isso, pode ignorar este e-mail — sua senha continua a mesma.</p>
+    `,
+  });
+
+  // Best-effort, mesmo raciocínio do envio de verificação: falha no envio não
+  // deve estourar a resposta genérica da rota (que já não revela se o
+  // e-mail existe ou não).
+  if (error) {
+    console.error("Falha ao enviar e-mail de redefinição de senha:", error);
+  }
+}
