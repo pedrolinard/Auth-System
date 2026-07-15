@@ -1,3 +1,4 @@
+import * as OTPAuth from "otpauth";
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { apagarUsuariosTeste, BASE_URL, criarUsuarioTeste, loginTeste } from "../helpers";
@@ -141,6 +142,57 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
       headers: cabecalhos,
     });
     expect(respostaExcluir.status).toBe(400);
+  });
+
+  it("suspender no meio do desafio de MFA bloqueia a conclusão do login", async () => {
+    const admin = await criarUsuarioTeste("admin-susp-mfa");
+    const alvo = await criarUsuarioTeste("alvo-susp-mfa");
+    emailsCriados.push(admin.email, alvo.email);
+    await promoverAdmin(admin.email);
+    const { cabecalhos: cabecalhosAdmin } = await loginTeste(admin.email, admin.senha);
+    const { cabecalhos: cabecalhosAlvo } = await loginTeste(alvo.email, alvo.senha);
+
+    // Ativa MFA no alvo.
+    const respostaIniciar = await fetch(`${BASE_URL}/api/auth/mfa/iniciar`, {
+      method: "POST",
+      headers: cabecalhosAlvo,
+    });
+    const { segredo } = await respostaIniciar.json();
+    const totp = new OTPAuth.TOTP({
+      algorithm: "SHA1",
+      digits: 6,
+      period: 30,
+      secret: OTPAuth.Secret.fromBase32(segredo),
+    });
+    await fetch(`${BASE_URL}/api/auth/mfa/confirmar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...cabecalhosAlvo },
+      body: JSON.stringify({ codigo: totp.generate() }),
+    });
+
+    // Login normal agora exige o desafio de MFA.
+    const respostaLogin = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: alvo.email, senha: alvo.senha }),
+    });
+    const { mfaToken } = await respostaLogin.json();
+    expect(mfaToken).toBeTruthy();
+
+    // Admin suspende a conta ANTES do código de MFA ser enviado.
+    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...cabecalhosAdmin },
+      body: JSON.stringify({}),
+    });
+
+    const respostaVerificar = await fetch(`${BASE_URL}/api/auth/mfa/verificar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mfaToken, codigo: totp.generate() }),
+    });
+    expect(respostaVerificar.status).toBe(403);
   });
 
   it("admin exclui a conta de outro usuário permanentemente", async () => {

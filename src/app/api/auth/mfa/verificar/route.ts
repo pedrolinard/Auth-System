@@ -4,6 +4,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
 import { verificarCodigoMfa } from "@/lib/mfa";
+import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaVerificacaoMfa } from "@/lib/validacao";
 
@@ -59,6 +60,14 @@ export async function POST(req: Request) {
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
+  }
+
+  // Cobre a janela entre o desafio de MFA (até 5 min) e a confirmação do
+  // código: se um admin suspender a conta nesse meio-tempo, o login não deve
+  // completar mesmo com o código certo.
+  if (estaSuspenso(usuario)) {
+    await registrarEvento({ req, evento: "login_bloqueado_suspenso", usuarioId: usuario.id, email: usuario.email });
+    return NextResponse.json({ erro: mensagemSuspensao(usuario) }, { status: 403 });
   }
 
   const sessao = await criarSessao(usuario);

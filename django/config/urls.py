@@ -14,10 +14,14 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.contrib import admin
 from django.urls import include, path
 
+# django.contrib.admin fica instalado (é dependência de contenttypes/auth,
+# usados internamente por outras partes do Django) mas a rota /admin/ não é
+# registrada de propósito: este serviço não tem model de Usuario próprio nem
+# fluxo de login do Django — expor o painel de admin seria só superfície de
+# ataque sem função real (ninguém consegue logar nele, já que não existe
+# superusuário nem processo pra criar um).
 urlpatterns = [
-    path('admin/', admin.site.urls),
     path('api/dominio/', include('tarefas.urls')),
 ]
