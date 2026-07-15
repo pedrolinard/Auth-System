@@ -37,6 +37,13 @@ consumido por outras aplicações como camada intermediária de identidade.
 - **Proxy** (`src/proxy.ts`, equivalente ao antigo `middleware.ts` a partir do
   Next.js 16): faz checagem otimista de sessão para proteger `/dashboard` e
   redirecionar usuários já autenticados para longe de `/login` e `/cadastro`.
+- **Headers de segurança** (`next.config.ts`): `Content-Security-Policy`,
+  `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`, e
+  remove o header `X-Powered-By`.
+- **Suspensão/exclusão de conta**: admins podem suspender (temporária ou
+  permanente) ou excluir permanentemente a conta de outro usuário — ver seção
+  "Suspensão e exclusão de contas" abaixo.
 
 ## Serviço de domínio (Django)
 
@@ -99,9 +106,10 @@ apareceriam testando o ciclo completo de request/response, não com mocks.
   processos no teardown (`taskkill /t /f` no Windows).
 - Crie a database antes da primeira execução: `CREATE DATABASE
   autenticacao_test;`.
-- 28 testes em `tests/api/*.test.ts` cobrindo cadastro, login, sessões, MFA
+- 40 testes em `tests/api/*.test.ts` cobrindo cadastro, login, sessões, MFA
   (com códigos TOTP reais via `otpauth`), RBAC, recuperação de senha,
-  verificação de e-mail, CSRF e rate limiting.
+  verificação de e-mail, CSRF, rate limiting, e suspensão/exclusão de conta
+  pelo admin (incluindo a janela entre desafio de MFA e suspensão).
 
 ## Rotas de API
 
@@ -120,9 +128,13 @@ apareceriam testando o ciclo completo de request/response, não com mocks.
 | POST   | `/api/auth/mfa/desativar`  | Desativa o MFA mediante código válido (rota protegida)                   |
 | POST   | `/api/auth/mfa/verificar`  | Conclui o login enviando `mfaToken` (do `/login`) + código de 6 dígitos  |
 | POST   | `/api/auth/verificar-email`| Confirma o e-mail a partir do token do link (`emailVerificado = true`)   |
-| POST   | `/api/auth/esqueci-senha`  | Gera o token de redefinição de senha (link logado no console em dev)    |
+| POST   | `/api/auth/reenviar-verificacao` | Reenvia o e-mail de verificação (rota protegida, rate limited)     |
+| POST   | `/api/auth/esqueci-senha`  | Gera o token de redefinição de senha e envia por e-mail                 |
 | POST   | `/api/auth/redefinir-senha`| Redefine a senha a partir do token; revoga todas as sessões ativas      |
-| GET    | `/api/auth/usuarios`       | Lista usuários — restrito a `papel = admin` (exemplo de RBAC)            |
+| GET    | `/api/auth/usuarios`       | Lista usuários — restrito a `papel = admin`                             |
+| DELETE | `/api/auth/usuarios/[id]`  | Exclui permanentemente a conta de outro usuário (admin)                 |
+| POST   | `/api/auth/usuarios/[id]/suspender` | Suspende a conta de outro usuário, temporária ou permanentemente (admin) |
+| POST   | `/api/auth/usuarios/[id]/reativar` | Reativa uma conta suspensa (admin)                                |
 | POST   | `/api/cron/limpar-tokens`  | Remove tokens expirados/revogados antigos; exige `Authorization: Bearer CRON_SECRET` |
 
 As rotas `/api/dominio/*` (`/api/dominio/projetos`, `/api/dominio/tarefas`)
@@ -209,6 +221,11 @@ pro e-mail cadastrado na própria conta Resend (modo sandbox) — para enviar
 para qualquer destinatário (ex. um usuário real se cadastrando), é preciso
 verificar um domínio próprio no Resend e apontar `EMAIL_FROM` para ele.
 
+Contas que não verificaram o e-mail veem um botão "Reenviar e-mail de
+verificação" no dashboard (`POST /api/auth/reenviar-verificacao`, autenticado,
+rate limited a 3 tentativas/hora por IP) — cobre o caso de contas criadas
+antes do envio real existir, ou de o e-mail original ter se perdido.
+
 ### RBAC mínimo
 
 `Usuario.papel` (`"usuario"` ou `"admin"`, default `"usuario"`) vai no claim
@@ -238,6 +255,9 @@ conta.
 - Suspensão temporária expirada (`suspensoAte` no passado) é tratada como
   inativa automaticamente, sem precisar de reativação manual nem job de
   limpeza.
+- A checagem de suspensão roda tanto em `POST /api/auth/login` quanto em
+  `POST /api/auth/mfa/verificar` — cobre o caso de um admin suspender a conta
+  durante os até 5 min entre o desafio de MFA e a confirmação do código.
 
 ### Sair de todos os dispositivos
 
@@ -274,6 +294,22 @@ erradas/15 min), cadastro e recuperação de senha (5 tentativas/hora cada).
 efetivamente o sobrescreve (Vercel faz isso em produção) — sem um proxy
 confiável na frente, é possível forjar o header pra burlar o limite ou pra
 derrubar outra pessoa nele. Trade-off documentado, não escondido.
+
+### Headers de segurança HTTP
+
+`next.config.ts` define, pra toda rota: `Content-Security-Policy` (default-src
+'self', com `unsafe-inline` em script/style — um CSP totalmente estrito exigiria
+nonce por requisição via `proxy.ts`, mais invasivo; ver comentário no arquivo),
+`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+strict-origin-when-cross-origin`, `Permissions-Policy` (bloqueia câmera/
+microfone/geolocalização) e `Strict-Transport-Security`. `poweredByHeader:
+false` remove o `X-Powered-By: Next.js`. Em desenvolvimento, o CSP libera
+`unsafe-eval` porque o React usa `eval()` pra reconstruir call stacks em modo
+dev — nunca em produção, então isso não enfraquece o CSP real.
+
+O serviço Django não expõe `/admin/` — o app não tem model de `Usuario` nem
+login próprio do Django (só a classe de autenticação JWT customizada), então
+o painel de admin padrão ficaria exposto sem nenhuma função real.
 
 ### Proteção CSRF explícita
 
@@ -322,10 +358,19 @@ projeto Vercel). Variáveis configuradas em cada projeto:
   `DJANGO_SERVICE_URL` (aponta para a URL de produção do projeto Django),
   além de `DATABASE_URL` (injetada automaticamente pela integração Neon).
 - **`auth-gateway-django`**: `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`
-  (`.vercel.app` — ajustar se um domínio próprio for configurado),
+  (`auth-gateway-django.vercel.app` — o domínio exato de produção, não um
+  wildcard `*.vercel.app`; ajustar se um domínio próprio for configurado),
   `JWT_ACCESS_PUBLIC_KEY_B64` (mesma chave pública do projeto Next.js, para
   validar o mesmo token), além de `DATABASE_URL` própria (Neon separado do
   Next.js — sem FK entre os dois bancos, só o claim `sub` do JWT).
+
+**Atenção**: só o projeto `auth-gateway` (Next.js) tem deploy automático via
+GitHub — cada push na `main` dispara build/deploy sozinho. O projeto
+`auth-gateway-django` **não** está conectado ao Git; mudanças em `django/`
+exigem `cd django && npx vercel deploy --prod` manualmente depois do push,
+e mudanças de schema exigem aplicar a migration na `DATABASE_URL` de
+produção antes (`prisma migrate deploy` do lado Next.js, `manage.py migrate`
+do lado Django) — nenhum dos dois lados aplica migration sozinho no deploy.
 
 Para reproduzir ou atualizar o deploy manualmente:
 
