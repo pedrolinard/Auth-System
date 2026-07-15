@@ -4,6 +4,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { criarSessao } from "@/lib/sessao";
+import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
 import { gerarTokenDesafioMfa } from "@/lib/token";
 import { esquemaLogin } from "@/lib/validacao";
 
@@ -48,6 +49,11 @@ export async function POST(req: Request) {
       { erro: "E-mail ou senha inválidos." },
       { status: 401 },
     );
+  }
+
+  if (estaSuspenso(usuario)) {
+    await registrarEvento({ req, evento: "login_bloqueado_suspenso", usuarioId: usuario.id, email });
+    return NextResponse.json({ erro: mensagemSuspensao(usuario) }, { status: 403 });
   }
 
   await registrarEvento({ req, evento: "login_sucesso", usuarioId: usuario.id, email });

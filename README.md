@@ -220,6 +220,25 @@ existe UI para promover um usuário a admin ainda; faça direto no banco:
 UPDATE usuarios SET papel = 'admin' WHERE email = 'seu-email@exemplo.com';
 ```
 
+### Suspensão e exclusão de contas (admin)
+
+Em `/dashboard/usuarios`, admins podem **suspender** (1/7/30 dias ou
+permanente, com motivo opcional) ou **excluir permanentemente** a conta de
+qualquer outro usuário — um admin não consegue suspender/excluir a própria
+conta.
+
+- `POST /api/auth/usuarios/[id]/suspender` (`{ dias?, motivo? }` — sem `dias`
+  = permanente) e `POST /api/auth/usuarios/[id]/reativar`.
+- `DELETE /api/auth/usuarios/[id]` — irreversível; `TokenAtualizacao` é
+  removido em cascata, `LogAuditoria` não (o histórico sobrevive à exclusão).
+- Suspender **revoga todas as sessões ativas na hora** (mesma lógica de "sair
+  de todos os dispositivos") e bloqueia `POST /api/auth/login` com 403 daí
+  em diante. O access token já emitido (até 15 min) continua valendo até
+  expirar naturalmente — mesmo trade-off já aceito no resto do sistema.
+- Suspensão temporária expirada (`suspensoAte` no passado) é tratada como
+  inativa automaticamente, sem precisar de reativação manual nem job de
+  limpeza.
+
 ### Sair de todos os dispositivos
 
 `DELETE /api/auth/sessoes` revoga todas as sessões (tokens de atualização)

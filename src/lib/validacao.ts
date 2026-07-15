@@ -54,3 +54,10 @@ export const esquemaRedefinirSenha = z.object({
   token: z.string({ error: "Informe o token de redefinição." }),
   novaSenha: esquemaSenhaForte,
 });
+
+export const esquemaSuspensao = z.object({
+  // Ausente = suspensão permanente. Presente = suspensão por N dias a partir
+  // de agora (calculado no servidor, não no cliente).
+  dias: z.number().int().positive().max(3650, { error: "Prazo muito longo." }).optional(),
+  motivo: z.string().trim().max(280, { error: "Motivo muito longo." }).optional(),
+});

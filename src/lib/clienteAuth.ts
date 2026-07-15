@@ -169,6 +169,10 @@ export type UsuarioAdmin = {
   email: string;
   papel: "usuario" | "admin";
   criadoEm: string;
+  suspenso: boolean;
+  suspensoAte: string | null;
+  suspensoMotivo: string | null;
+  suspensoAtivo: boolean;
 };
 
 export async function listarUsuarios(): Promise<UsuarioAdmin[]> {
@@ -176,6 +180,37 @@ export async function listarUsuarios(): Promise<UsuarioAdmin[]> {
   const corpo = await resposta.json();
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao carregar usuários.");
   return corpo.usuarios;
+}
+
+export async function excluirUsuario(id: string) {
+  const resposta = await fetch(`/api/auth/usuarios/${id}`, {
+    method: "DELETE",
+    headers: cabecalhoCsrf(),
+    credentials: "include",
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao excluir usuário."));
+}
+
+export async function suspenderUsuario(id: string, dados: { dias?: number; motivo?: string }) {
+  const resposta = await fetch(`/api/auth/usuarios/${id}/suspender`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
+    credentials: "include",
+    body: JSON.stringify(dados),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao suspender usuário."));
+}
+
+export async function reativarUsuario(id: string) {
+  const resposta = await fetch(`/api/auth/usuarios/${id}/reativar`, {
+    method: "POST",
+    headers: cabecalhoCsrf(),
+    credentials: "include",
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao reativar usuário."));
 }
 
 export async function revogarSessao(id: string) {

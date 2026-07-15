@@ -24,6 +24,12 @@ model Usuario {
   mfaSecret      String?
   emailVerificado Boolean            @default(false)
   papel          Papel               @default(usuario)
+  // suspensoAte null + suspenso true = suspensão permanente; suspensoAte no
+  // passado é tratado como suspensão expirada (login volta a funcionar sem
+  // precisar de reativação manual nem de job de limpeza).
+  suspenso       Boolean             @default(false)
+  suspensoAte    DateTime?
+  suspensoMotivo String?
   criadoEm       DateTime            @default(now())
   atualizadoEm   DateTime            @updatedAt
   tokens         TokenAtualizacao[]
