@@ -47,6 +47,12 @@ describe("Fluxo de MFA (TOTP)", () => {
     emailsCriados.push(usuario.email);
     const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
 
+    // Antes de ativar o MFA, /me não expõe contagem de códigos de backup
+    // (não existem códigos pra quem nunca ativou).
+    const respostaMeAntes = await fetch(`${BASE_URL}/api/auth/me`, { headers: cabecalhos });
+    const corpoMeAntes = await respostaMeAntes.json();
+    expect(corpoMeAntes.usuario.codigosBackupRestantes).toBeNull();
+
     const respostaIniciar = await chamar("/api/auth/mfa/iniciar", cabecalhos);
     expect(respostaIniciar.status).toBe(200);
     const { segredo } = await respostaIniciar.json();
@@ -62,10 +68,12 @@ describe("Fluxo de MFA (TOTP)", () => {
     expect(corpoConfirmar.codigosBackup).toHaveLength(10);
     expect(new Set(corpoConfirmar.codigosBackup).size).toBe(10);
 
-    // Confirma pelo /me que mfaAtivado agora é true.
+    // Confirma pelo /me que mfaAtivado agora é true e que a contagem de
+    // códigos de backup restantes aparece (10, nenhum consumido ainda).
     const respostaMe = await fetch(`${BASE_URL}/api/auth/me`, { headers: cabecalhos });
     const corpoMe = await respostaMe.json();
     expect(corpoMe.usuario.mfaAtivado).toBe(true);
+    expect(corpoMe.usuario.codigosBackupRestantes).toBe(10);
   });
 
   it("rejeita código incorreto na confirmação", async () => {

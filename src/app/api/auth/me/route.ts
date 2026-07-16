@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { autenticarRequisicao } from "@/lib/autenticar";
+import { contarCodigosRestantes } from "@/lib/backupMfa";
 
 export async function GET(req: Request) {
   const payload = await autenticarRequisicao(req);
@@ -29,5 +30,12 @@ export async function GET(req: Request) {
     );
   }
 
-  return NextResponse.json({ usuario });
+  // Só consulta a contagem quando o MFA está ativo — sem isso, todo usuário
+  // sem MFA pagaria uma query extra à toa, e o número não teria sentido
+  // nenhum (não existem códigos de backup pra quem nunca ativou o MFA).
+  const codigosBackupRestantes = usuario.mfaAtivado
+    ? await contarCodigosRestantes(usuario.id)
+    : null;
+
+  return NextResponse.json({ usuario: { ...usuario, codigosBackupRestantes } });
 }
