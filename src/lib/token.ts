@@ -100,6 +100,7 @@ export async function verificarTokenAcesso(token: string) {
     const { payload } = await jwtVerify<PayloadTokenAcesso>(
       token,
       await obterChavePublicaAcesso(),
+      { algorithms: ["RS256"] },
     );
     return payload;
   } catch (erro) {
@@ -126,6 +127,7 @@ export async function verificarTokenAtualizacao(token: string) {
     const { payload } = await jwtVerify<PayloadTokenAtualizacao>(
       token,
       SEGREDO_ATUALIZACAO,
+      { algorithms: ["HS256"] },
     );
     return payload;
   } catch (erro) {
@@ -147,7 +149,9 @@ export async function gerarTokenDesafioMfa(usuarioId: string) {
 
 export async function verificarTokenDesafioMfa(token: string) {
   try {
-    const { payload } = await jwtVerify<PayloadDesafioMfa>(token, SEGREDO_MFA);
+    const { payload } = await jwtVerify<PayloadDesafioMfa>(token, SEGREDO_MFA, {
+      algorithms: ["HS256"],
+    });
     if (payload.tipo !== "mfa_desafio") return null;
     return payload;
   } catch (erro) {
@@ -177,6 +181,7 @@ export async function verificarTokenVerificacaoEmail(token: string) {
     const { payload } = await jwtVerify<PayloadVerificacaoEmail>(
       token,
       SEGREDO_VERIFICACAO_EMAIL,
+      { algorithms: ["HS256"] },
     );
     if (payload.tipo !== "verificacao_email") return null;
     return payload;
@@ -202,6 +207,7 @@ export async function verificarTokenRedefinicaoSenha(token: string) {
     const { payload } = await jwtVerify<PayloadRedefinicaoSenha>(
       token,
       SEGREDO_REDEFINICAO_SENHA,
+      { algorithms: ["HS256"] },
     );
     if (payload.tipo !== "redefinicao_senha") return null;
     return payload;
