@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
+import { invalidarCodigosBackup } from "@/lib/backupMfa";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
@@ -72,6 +73,12 @@ export async function POST(req: Request) {
     where: { id: usuario.id },
     data: { mfaAtivado: false, mfaSecret: null },
   });
+
+  // Não faz sentido manter recovery codes de um segundo fator que não
+  // existe mais — sem isso, reativar o MFA depois (com um segredo TOTP
+  // novo) deixaria os códigos de backup antigos ainda válidos.
+  await invalidarCodigosBackup(usuario.id);
+  await registrarEvento({ req, evento: "codigos_backup_invalidados", usuarioId: usuario.id });
 
   return NextResponse.json({ sucesso: true });
 }

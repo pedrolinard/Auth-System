@@ -1,5 +1,6 @@
 import * as OTPAuth from "otpauth";
 import { afterAll, describe, expect, it } from "vitest";
+import { prisma } from "@/lib/db";
 import {
   apagarUsuariosTeste,
   BASE_URL,
@@ -97,5 +98,49 @@ describe("Fluxo de MFA (TOTP)", () => {
     const respostaMe = await fetch(`${BASE_URL}/api/auth/me`, { headers: cabecalhos });
     const corpoMe = await respostaMe.json();
     expect(corpoMe.usuario.mfaAtivado).toBe(false);
+  });
+
+  it("desativar o MFA invalida todos os códigos de backup", async () => {
+    const usuario = await criarUsuarioTeste("mfa-desativar-invalida-backup");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const respostaIniciar = await chamar("/api/auth/mfa/iniciar", cabecalhos);
+    const { segredo } = await respostaIniciar.json();
+    const respostaConfirmar = await chamar("/api/auth/mfa/confirmar", cabecalhos, {
+      codigo: gerarCodigoTotp(segredo),
+    });
+    const { codigosBackup } = await respostaConfirmar.json();
+
+    await chamar("/api/auth/mfa/desativar", cabecalhos, {
+      codigo: gerarCodigoTotp(segredo),
+    });
+
+    // Reativa o MFA com um segredo novo — os códigos de backup do MFA
+    // anterior não devem continuar valendo pro novo.
+    const respostaIniciar2 = await chamar("/api/auth/mfa/iniciar", cabecalhos);
+    const { segredo: segredo2 } = await respostaIniciar2.json();
+    await chamar("/api/auth/mfa/confirmar", cabecalhos, {
+      codigo: gerarCodigoTotp(segredo2),
+    });
+
+    const loginMfa = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
+      body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
+    });
+    const { mfaToken } = await loginMfa.json();
+
+    const respostaBackupAntigo = await chamar("/api/auth/mfa/backup", {}, {
+      mfaToken,
+      codigo: codigosBackup[0],
+    });
+    expect(respostaBackupAntigo.status).toBe(401);
+
+    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const log = await prisma.logAuditoria.findFirst({
+      where: { usuarioId: usuarioDb.id, evento: "codigos_backup_invalidados" },
+    });
+    expect(log).not.toBeNull();
   });
 });
