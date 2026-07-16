@@ -46,6 +46,19 @@ export const esquemaVerificacaoMfa = z.object({
     .regex(/^\d{6}$/, { error: "O código deve ter 6 dígitos." }),
 });
 
+// Mesmo alfabeto de src/lib/backupMfa.ts (A-Z e 2-9, sem O/0, I/1, L) —
+// hífen central opcional e case-insensitive, já que hashCodigo normaliza os
+// dois formatos da mesma forma antes de comparar.
+export const esquemaCodigoBackup = z.object({
+  mfaToken: z.string({ error: "Informe o token de desafio." }),
+  codigo: z
+    .string({ error: "Informe o código de backup." })
+    .trim()
+    .regex(/^[A-HJ-KM-NP-Z2-9]{5}-?[A-HJ-KM-NP-Z2-9]{5}$/i, {
+      error: "Código de backup inválido.",
+    }),
+});
+
 export const esquemaVerificacaoEmail = z.object({
   token: z.string({ error: "Informe o token de verificação." }),
 });

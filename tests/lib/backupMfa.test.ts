@@ -27,7 +27,7 @@ describe("Códigos de backup de MFA (src/lib/backupMfa.ts)", () => {
     const codigos = gerarCodigosBackup();
     expect(codigos).toHaveLength(10);
 
-    const formato = /^[ABCDEFGHJKMNPQRSTUVWXYZ234567]{5}-[ABCDEFGHJKMNPQRSTUVWXYZ234567]{5}$/;
+    const formato = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$/;
     for (const codigo of codigos) {
       expect(codigo).toMatch(formato);
       expect(codigo).not.toMatch(/[O0I1L]/);

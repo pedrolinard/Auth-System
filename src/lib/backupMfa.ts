@@ -7,11 +7,11 @@ import { hashToken } from "@/lib/token";
 const QUANTIDADE_CODIGOS = 10;
 const TAMANHO_CODIGO = 10;
 
-// Alfabeto base32 (A-Z + 2-7) sem os caracteres ambíguos O/0, I/1, L — evita
-// erro de transcrição quando o usuário copia o código à mão (ex.: anotado em
-// papel). 29 símbolos → ~4,86 bits/caractere × 10 caracteres ≈ 48,6 bits de
-// entropia por código (perto dos ~50 bits pedidos).
-const ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ234567";
+// Alfabeto alfanumérico (A-Z + 0-9) sem os caracteres ambíguos O/0, I/1, L —
+// evita erro de transcrição quando o usuário copia o código à mão (ex.:
+// anotado em papel). 31 símbolos → ~4,95 bits/caractere × 10 caracteres ≈
+// 49,5 bits de entropia por código.
+const ALFABETO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 function gerarUmCodigo(): string {
   let bruto = "";
