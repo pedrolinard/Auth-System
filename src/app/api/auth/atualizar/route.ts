@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { registrarEvento } from "@/lib/auditoria";
 import {
   definirCookieAcesso,
   definirCookieAtualizacao,
@@ -51,11 +52,36 @@ export async function POST(req: Request) {
     include: { usuario: true },
   });
 
-  if (
-    !registroToken ||
-    registroToken.revogadoEm ||
-    registroToken.expiraEm < new Date()
-  ) {
+  if (!registroToken) {
+    return NextResponse.json(
+      { erro: "Token de atualização inválido ou expirado." },
+      { status: 401 },
+    );
+  }
+
+  // Um token de atualização já revogado sendo reapresentado é o sinal
+  // clássico de roubo: a rotação já emitiu um substituto, então só existem
+  // duas explicações — o dono legítimo reusou uma cópia antiga por engano,
+  // ou um atacante está com o token vazado. Não dá pra distinguir os dois,
+  // então a resposta segura é derrubar a família inteira (todas as sessões
+  // do usuário), invalidando tanto o atacante quanto a sessão legítima.
+  if (registroToken.revogadoEm) {
+    await prisma.tokenAtualizacao.updateMany({
+      where: { usuarioId: registroToken.usuarioId, revogadoEm: null },
+      data: { revogadoEm: new Date() },
+    });
+    await registrarEvento({
+      req,
+      evento: "reuso_token_detectado",
+      usuarioId: registroToken.usuarioId,
+    });
+    return NextResponse.json(
+      { erro: "Token de atualização inválido ou expirado." },
+      { status: 401 },
+    );
+  }
+
+  if (registroToken.expiraEm < new Date()) {
     return NextResponse.json(
       { erro: "Token de atualização inválido ou expirado." },
       { status: 401 },
