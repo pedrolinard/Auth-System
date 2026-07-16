@@ -60,5 +60,6 @@ model LogAuditoria {
   criadoEm  DateTime @default(now())
 
   @@index([usuarioId])
+  @@index([evento, ip, criadoEm])
   @@map("logs_auditoria")
 }
