@@ -90,4 +90,38 @@ describe("Recuperação de senha", () => {
     });
     expect(resposta.status).toBe(401);
   });
+
+  it("token de redefinição é de uso único: a segunda tentativa com o mesmo link falha", async () => {
+    const usuario = await criarUsuarioTeste("redefinir-uso-unico");
+    emailsCriados.push(usuario.email);
+    const ip = ipAleatorio();
+
+    const token = await gerarTokenRedefinicaoSenha(
+      (await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } })).id,
+    );
+
+    async function redefinir(novaSenha: string) {
+      return fetch(`${BASE_URL}/api/auth/redefinir-senha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
+        body: JSON.stringify({ token, novaSenha }),
+      });
+    }
+
+    const primeiraTentativa = await redefinir("PrimeiraSenhaNova1!");
+    expect(primeiraTentativa.status).toBe(200);
+
+    // Mesmo token, ainda dentro da janela de validade do JWT — mas a senha
+    // já foi trocada, então o link não pode ser usado de novo.
+    const segundaTentativa = await redefinir("SegundaSenhaNova2!");
+    expect(segundaTentativa.status).toBe(401);
+
+    // Confirma que a senha efetivamente em vigor é a da primeira tentativa.
+    const loginComPrimeiraSenha = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
+      body: JSON.stringify({ email: usuario.email, senha: "PrimeiraSenhaNova1!" }),
+    });
+    expect(loginComPrimeiraSenha.status).toBe(200);
+  });
 });

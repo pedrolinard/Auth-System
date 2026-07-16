@@ -30,6 +30,11 @@ model Usuario {
   suspenso       Boolean             @default(false)
   suspensoAte    DateTime?
   suspensoMotivo String?
+  // Marca a redefinição de senha mais recente: qualquer token de redefinição
+  // emitido antes desse instante (comparado ao `iat` do JWT) deixa de valer.
+  // É o que torna o token, que por si só é um JWT stateless reutilizável
+  // dentro da janela de validade, de uso único na prática.
+  senhaAlteradaEm DateTime?
   criadoEm       DateTime            @default(now())
   atualizadoEm   DateTime            @updatedAt
   tokens         TokenAtualizacao[]

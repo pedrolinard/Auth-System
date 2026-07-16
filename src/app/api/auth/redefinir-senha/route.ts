@@ -24,11 +24,28 @@ export async function POST(req: Request) {
     );
   }
 
+  const usuario = await prisma.usuario.findUnique({ where: { id: payload.sub } });
+
+  // O token de redefinição é um JWT stateless válido por 1h inteira: sem
+  // essa checagem, o mesmo link poderia ser usado mais de uma vez dentro da
+  // janela. Comparando o `iat` (data de emissão) do token com o instante da
+  // última troca de senha, qualquer token emitido antes dela — incluindo o
+  // que acabou de ser usado nesta própria requisição — deixa de valer.
+  if (
+    !usuario ||
+    (usuario.senhaAlteradaEm && (payload.iat ?? 0) * 1000 < usuario.senhaAlteradaEm.getTime())
+  ) {
+    return NextResponse.json(
+      { erro: "Link de redefinição inválido ou expirado." },
+      { status: 401 },
+    );
+  }
+
   const senhaHash = await gerarHashSenha(novaSenha);
 
   await prisma.usuario.update({
-    where: { id: payload.sub },
-    data: { senhaHash },
+    where: { id: usuario.id },
+    data: { senhaHash, senhaAlteradaEm: new Date() },
   });
 
   // A senha antiga pode ter sido comprometida — derruba todas as sessões
