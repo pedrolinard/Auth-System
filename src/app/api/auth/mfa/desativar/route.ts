@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
+import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
 import { verificarCodigoMfa } from "@/lib/mfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
   // Exige o código atual para desativar, para que um access token roubado
   // (vida curta) sozinho não baste para remover a segunda camada.
   const codigoValido = verificarCodigoMfa(
-    usuario.mfaSecret,
+    descriptografar(usuario.mfaSecret),
     usuario.email,
     dadosValidados.data.codigo,
   );

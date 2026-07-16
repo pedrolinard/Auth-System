@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
+import { criptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
 import { gerarQrCodeMfa, gerarSegredoMfa } from "@/lib/mfa";
 
@@ -35,9 +36,11 @@ export async function POST(req: Request) {
   // Gera um segredo novo a cada chamada; fica pendente até ser confirmado
   // com um código válido em /api/auth/mfa/confirmar.
   const segredo = gerarSegredoMfa();
+  // Cifrado em repouso: se o banco vazar, os segredos TOTP não vazam junto
+  // (sem isso, o segundo fator de todo mundo seria anulado de uma vez).
   await prisma.usuario.update({
     where: { id: usuario.id },
-    data: { mfaSecret: segredo },
+    data: { mfaSecret: criptografar(segredo) },
   });
 
   const { otpauthUrl, qrCodeDataUrl } = await gerarQrCodeMfa(

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { descriptografar } from "@/lib/cripto";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
 import { verificarCodigoMfa } from "@/lib/mfa";
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const codigoValido = verificarCodigoMfa(usuario.mfaSecret, usuario.email, codigo);
+  const codigoValido = verificarCodigoMfa(descriptografar(usuario.mfaSecret), usuario.email, codigo);
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
