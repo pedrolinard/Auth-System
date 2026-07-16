@@ -56,6 +56,36 @@ describe("POST /api/auth/login", () => {
     expect(corpo.erro).toBe("E-mail ou senha inválidos.");
   });
 
+  it("e-mail inexistente e senha errada levam o mesmo tempo (sem side-channel de timing)", async () => {
+    // bcrypt.compare domina o tempo da rota; se o e-mail inexistente pulasse
+    // o bcrypt (curto-circuito), ele seria consistentemente muito mais
+    // rápido que o caminho de senha errada — o que daria pra usar pra
+    // enumerar e-mails cadastrados. Roda várias vezes e compara as médias
+    // com uma margem folgada, já que timing em CI nunca é perfeitamente
+    // estável.
+    const REPETICOES = 8;
+
+    async function tempoMedio(fazerChamada: () => Promise<Response>): Promise<number> {
+      const tempos: number[] = [];
+      for (let i = 0; i < REPETICOES; i++) {
+        const inicio = performance.now();
+        await fazerChamada();
+        tempos.push(performance.now() - inicio);
+      }
+      return tempos.reduce((soma, t) => soma + t, 0) / tempos.length;
+    }
+
+    const tempoSenhaErrada = await tempoMedio(() => login(email, "SenhaErrada999"));
+    const tempoEmailInexistente = await tempoMedio(() =>
+      login(gerarEmailTeste("nao-existe-timing"), "QualquerSenha1"),
+    );
+
+    const razao =
+      Math.max(tempoSenhaErrada, tempoEmailInexistente) /
+      Math.min(tempoSenhaErrada, tempoEmailInexistente);
+    expect(razao).toBeLessThan(3);
+  });
+
   it("retorna mfaObrigatorio quando o usuário tem MFA ativado", async () => {
     const usuarioMfa = await criarUsuarioTeste("login-mfa");
     emailsCriados.push(usuarioMfa.email);
