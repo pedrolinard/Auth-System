@@ -4,6 +4,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { invalidarCodigosBackup } from "@/lib/backupMfa";
 import { obterCookieCsrf } from "@/lib/cookies";
+import { enviarEmailMfaDesativado } from "@/lib/email";
 import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
 import { verificarCodigoMfa } from "@/lib/mfa";
@@ -79,6 +80,7 @@ export async function POST(req: Request) {
   // novo) deixaria os códigos de backup antigos ainda válidos.
   await invalidarCodigosBackup(usuario.id);
   await registrarEvento({ req, evento: "codigos_backup_invalidados", usuarioId: usuario.id });
+  await enviarEmailMfaDesativado(usuario.email);
 
   return NextResponse.json({ sucesso: true });
 }

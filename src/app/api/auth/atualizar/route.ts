@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { enviarEmailReusoTokenDetectado } from "@/lib/email";
 import {
   definirCookieAcesso,
   definirCookieAtualizacao,
@@ -75,6 +76,7 @@ export async function POST(req: Request) {
       evento: "reuso_token_detectado",
       usuarioId: registroToken.usuarioId,
     });
+    await enviarEmailReusoTokenDetectado(registroToken.usuario.email);
     return NextResponse.json(
       { erro: "Token de atualização inválido ou expirado." },
       { status: 401 },

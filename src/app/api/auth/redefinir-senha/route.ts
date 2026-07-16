@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { enviarEmailSenhaAlterada } from "@/lib/email";
 import { gerarHashSenha } from "@/lib/senha";
 import { verificarTokenRedefinicaoSenha } from "@/lib/token";
 import { esquemaRedefinirSenha } from "@/lib/validacao";
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
   });
 
   await registrarEvento({ req, evento: "senha_redefinida", usuarioId: payload.sub });
+  await enviarEmailSenhaAlterada(usuario.email);
 
   return NextResponse.json({ sucesso: true });
 }

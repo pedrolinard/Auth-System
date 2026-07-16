@@ -4,6 +4,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { persistirCodigosBackup } from "@/lib/backupMfa";
 import { obterCookieCsrf } from "@/lib/cookies";
+import { enviarEmailMfaAtivado } from "@/lib/email";
 import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
 import { verificarCodigoMfa } from "@/lib/mfa";
@@ -78,6 +79,7 @@ export async function POST(req: Request) {
   // antigos — não existe endpoint de "mostrar de novo".
   const codigosBackup = await persistirCodigosBackup(usuario.id);
   await registrarEvento({ req, evento: "codigos_backup_gerados", usuarioId: usuario.id });
+  await enviarEmailMfaAtivado(usuario.email);
 
   return NextResponse.json({
     sucesso: true,

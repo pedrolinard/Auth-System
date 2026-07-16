@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { enviarEmailDispositivoNovo } from "@/lib/email";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { criarSessao } from "@/lib/sessao";
@@ -69,7 +70,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: mensagemSuspensao(usuario) }, { status: 403 });
   }
 
+  // Detecção de "dispositivo novo" sem schema novo: reaproveita o próprio
+  // LogAuditoria — se este par (ip, userAgent) nunca gerou um login_sucesso
+  // antes para este usuário, é a primeira vez que o vemos. Precisa rodar
+  // ANTES de registrar o evento atual, senão o registro que estamos prestes
+  // a criar já "contaria" como o anterior.
+  const userAgent = req.headers.get("user-agent");
+  const loginAnteriorMesmoDispositivo = await prisma.logAuditoria.findFirst({
+    where: { usuarioId: usuario.id, evento: "login_sucesso", ip, userAgent },
+  });
+
   await registrarEvento({ req, evento: "login_sucesso", usuarioId: usuario.id, email });
+
+  if (!loginAnteriorMesmoDispositivo) {
+    await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando: new Date() });
+  }
 
   if (usuario.mfaAtivado) {
     const mfaToken = await gerarTokenDesafioMfa(usuario.id);
