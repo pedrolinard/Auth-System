@@ -1,6 +1,6 @@
 import "server-only";
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 
 export function gerarTokenCsrf(): string {
   return randomBytes(32).toString("base64url");
@@ -13,5 +13,15 @@ export function gerarTokenCsrf(): string {
 export function csrfValido(req: Request, valorCookie: string | undefined): boolean {
   if (!valorCookie) return true;
   const cabecalho = req.headers.get("x-csrf-token");
-  return cabecalho === valorCookie;
+  if (!cabecalho) return false;
+
+  // timingSafeEqual exige buffers do mesmo tamanho — comparar o tamanho
+  // antes não vaza nada útil (o tamanho do token CSRF é sempre o mesmo,
+  // fixo pelo gerarTokenCsrf acima), só evita o comparando byte a byte
+  // sem essa checagem lançar em vez de simplesmente reprovar.
+  const bufferCabecalho = Buffer.from(cabecalho);
+  const bufferCookie = Buffer.from(valorCookie);
+  if (bufferCabecalho.length !== bufferCookie.length) return false;
+
+  return timingSafeEqual(bufferCabecalho, bufferCookie);
 }

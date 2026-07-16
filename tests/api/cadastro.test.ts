@@ -52,4 +52,19 @@ describe("POST /api/auth/cadastro", () => {
     const resposta = await cadastrar({ nome: "T", email: "invalido", senha: "123" });
     expect(resposta.status).toBe(400);
   });
+
+  it("rejeita senha com mais de 72 caracteres (limite de bytes do bcrypt)", async () => {
+    const email = proximoEmail("cadastro-senha-longa");
+    const senhaGigante = `Senha1${"a".repeat(70)}`; // 76 caracteres
+    const resposta = await cadastrar({ nome: "Teste", email, senha: senhaGigante });
+    expect(resposta.status).toBe(400);
+  });
+
+  it("aceita senha de exatamente 72 caracteres", async () => {
+    const email = proximoEmail("cadastro-senha-72");
+    const senhaNoLimite = `Senha1${"a".repeat(66)}`; // 72 caracteres
+    expect(senhaNoLimite).toHaveLength(72);
+    const resposta = await cadastrar({ nome: "Teste", email, senha: senhaNoLimite });
+    expect(resposta.status).toBe(201);
+  });
 });

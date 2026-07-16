@@ -53,6 +53,32 @@ describe("Proteção CSRF (double-submit cookie)", () => {
     expect(resposta.status).toBe(403);
   });
 
+  it("header com o MESMO tamanho do cookie mas valor diferente é bloqueado (403)", async () => {
+    // Exercita o caminho do timingSafeEqual de verdade (não só a checagem de
+    // tamanho que vem antes) — o token real e o forjado precisam ter o
+    // mesmo comprimento pra isso.
+    const usuario = await criarUsuarioTeste("csrf-mesmo-tamanho");
+    emailsCriados.push(usuario.email);
+    const { cookies } = await loginTeste(usuario.email, usuario.senha);
+
+    const tokenForjado = cookies.csrfToken
+      .split("")
+      .reverse()
+      .join("");
+    expect(tokenForjado).toHaveLength(cookies.csrfToken.length);
+    expect(tokenForjado).not.toBe(cookies.csrfToken);
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/mfa/iniciar`, {
+      method: "POST",
+      headers: {
+        Cookie: `tokenAcesso=${cookies.tokenAcesso}; csrfToken=${cookies.csrfToken}`,
+        "X-CSRF-Token": tokenForjado,
+      },
+    });
+
+    expect(resposta.status).toBe(403);
+  });
+
   it("com cookie e header CSRF batendo, a mutação é permitida", async () => {
     const usuario = await criarUsuarioTeste("csrf-ok");
     emailsCriados.push(usuario.email);

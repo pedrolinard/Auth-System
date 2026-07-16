@@ -3,6 +3,10 @@ import * as z from "zod";
 const esquemaSenhaForte = z
   .string({ error: "Informe a senha." })
   .min(8, { error: "A senha deve ter pelo menos 8 caracteres." })
+  // bcryptjs trunca silenciosamente qualquer byte além do 72º — sem esse
+  // limite, "SenhaGigante...(73+ bytes)X" e a mesma senha com o último
+  // caractere trocado gerariam o mesmo hash, e o usuário nunca perceberia.
+  .max(72, { error: "A senha deve ter no máximo 72 caracteres." })
   .regex(/[a-zA-Z]/, { error: "A senha deve conter pelo menos uma letra." })
   .regex(/[0-9]/, { error: "A senha deve conter pelo menos um número." });
 
