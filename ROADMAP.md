@@ -1,6 +1,6 @@
 # Roadmap — Sistema de Autenticação Intermediária
 
-> Gerado em 2026-07-13. Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.** Sistema em produção na Vercel desde 2026-07-14 (ver seção "Deploy em produção" abaixo).
+> Gerado em 2026-07-13. Atualizado em 2026-07-16 (índice composto em `LogAuditoria` pra acelerar as consultas do rate limit). Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.** Sistema em produção na Vercel desde 2026-07-14 (ver seção "Deploy em produção" abaixo).
 
 ## ✅ Feito
 
@@ -36,6 +36,7 @@
 
 ### Dados
 - Prisma + **Postgres local** (`Usuario`, `TokenAtualizacao`, `LogAuditoria`), com campos de MFA (`mfaAtivado`, `mfaSecret`), `emailVerificado` e `papel` (enum `Papel`) — migrado de SQLite, dados existentes preservados
+- Índice composto `(evento, ip, criadoEm)` em `LogAuditoria` — a consulta do `rateLimit.ts` roda em todo login/MFA/recuperação de senha e sem índice fazia table scan em caminho crítico de auth
 
 ### Deploy em produção (Vercel)
 - Dois projetos Vercel independentes, cada um com Postgres próprio via Marketplace (Neon): `auth-gateway` (Next.js, https://auth-gateway-kappa.vercel.app) e `auth-gateway-django` (Django, https://auth-gateway-django.vercel.app)
