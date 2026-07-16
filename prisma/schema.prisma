@@ -38,6 +38,7 @@ model Usuario {
   criadoEm       DateTime            @default(now())
   atualizadoEm   DateTime            @updatedAt
   tokens         TokenAtualizacao[]
+  codigosBackup  CodigoBackupMfa[]
 
   @@map("usuarios")
 }
@@ -53,6 +54,21 @@ model TokenAtualizacao {
 
   @@index([usuarioId])
   @@map("tokens_atualizacao")
+}
+
+// Código de backup (recovery code) de MFA: segundo fator alternativo pra
+// quando o usuário perde o autenticador TOTP. Só o hash fica no banco — o
+// texto puro é exibido uma única vez, no momento da geração.
+model CodigoBackupMfa {
+  id         String    @id @default(cuid())
+  usuarioId  String
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  codigoHash String    @unique
+  usadoEm    DateTime?
+  criadoEm   DateTime  @default(now())
+
+  @@index([usuarioId])
+  @@map("codigos_backup_mfa")
 }
 
 model LogAuditoria {
