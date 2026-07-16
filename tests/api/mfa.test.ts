@@ -55,6 +55,11 @@ describe("Fluxo de MFA (TOTP)", () => {
       codigo: gerarCodigoTotp(segredo),
     });
     expect(respostaConfirmar.status).toBe(200);
+    const corpoConfirmar = await respostaConfirmar.json();
+    // Códigos de backup são emitidos nesse exato momento — única vez que
+    // aparecem em texto puro.
+    expect(corpoConfirmar.codigosBackup).toHaveLength(10);
+    expect(new Set(corpoConfirmar.codigosBackup).size).toBe(10);
 
     // Confirma pelo /me que mfaAtivado agora é true.
     const respostaMe = await fetch(`${BASE_URL}/api/auth/me`, { headers: cabecalhos });

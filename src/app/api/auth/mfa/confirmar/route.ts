@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
+import { persistirCodigosBackup } from "@/lib/backupMfa";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
@@ -71,5 +72,17 @@ export async function POST(req: Request) {
     data: { mfaAtivado: true },
   });
 
-  return NextResponse.json({ sucesso: true });
+  // Emite o conjunto de códigos de backup junto com a ativação: é a única
+  // vez que eles aparecem em texto puro. Se o cliente perder essa resposta,
+  // o único jeito de recuperar é regenerar (passo 5), invalidando os
+  // antigos — não existe endpoint de "mostrar de novo".
+  const codigosBackup = await persistirCodigosBackup(usuario.id);
+  await registrarEvento({ req, evento: "codigos_backup_gerados", usuarioId: usuario.id });
+
+  return NextResponse.json({
+    sucesso: true,
+    codigosBackup,
+    aviso:
+      "Guarde esses códigos de backup em um lugar seguro agora — eles não serão exibidos novamente.",
+  });
 }
