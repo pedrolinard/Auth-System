@@ -82,5 +82,9 @@ model LogAuditoria {
 
   @@index([usuarioId])
   @@index([evento, ip, criadoEm])
+  // Suporte ao rate limit por CONTA (complementa o por IP): protege contra
+  // ataque distribuído mirando um único e-mail a partir de vários IPs, que
+  // nenhum limite por IP isolado detectaria.
+  @@index([evento, email, criadoEm])
   @@map("logs_auditoria")
 }

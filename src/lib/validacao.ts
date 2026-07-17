@@ -20,6 +20,9 @@ export const esquemaCadastro = z.object({
     .trim()
     .toLowerCase(),
   senha: esquemaSenhaForte,
+  // Só exigido de verdade depois de X tentativas da mesma origem (ver
+  // rota) — opcional aqui pra não quebrar o fluxo normal sem CAPTCHA.
+  turnstileToken: z.string().optional(),
 });
 
 export const esquemaLogin = z.object({
@@ -27,6 +30,7 @@ export const esquemaLogin = z.object({
   senha: z.string({ error: "Informe a senha." }).min(1, {
     error: "Informe a senha.",
   }),
+  turnstileToken: z.string().optional(),
 });
 
 export const esquemaAtualizacao = z.object({

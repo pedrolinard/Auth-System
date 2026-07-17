@@ -32,6 +32,32 @@ describe("Rate limiting", () => {
     await apagarUsuariosTeste([usuario.email]);
   }, 45000); // 6 chamadas sequenciais com bcrypt + 1ª compilação da rota no Turbopack
 
+  it("bloqueia login com 429 por CONTA quando as falhas vêm de IPs diferentes (cross-IP)", async () => {
+    // O limite por IP sozinho não pegaria isso: cada IP abaixo faz só UMA
+    // tentativa (bem abaixo do próprio limite de 5), mas a mesma CONTA
+    // acumula falhas de todos eles — exatamente o padrão de um ataque
+    // distribuído (credential stuffing) mirando um único alvo.
+    const usuario = await criarUsuarioTeste("rate-limit-conta");
+
+    async function tentarLoginErradoDeOutroIp() {
+      return fetch(`${BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": ipFalso() },
+        body: JSON.stringify({ email: usuario.email, senha: "SenhaErrada999" }),
+      });
+    }
+
+    for (let i = 0; i < 20; i++) {
+      const resposta = await tentarLoginErradoDeOutroIp();
+      expect(resposta.status).toBe(401);
+    }
+
+    const vigesimaPrimeira = await tentarLoginErradoDeOutroIp();
+    expect(vigesimaPrimeira.status).toBe(429);
+
+    await apagarUsuariosTeste([usuario.email]);
+  }, 120000);
+
   it("bloqueia cadastro com 429 após estourar o limite de tentativas do mesmo IP", async () => {
     const ip = ipFalso();
     const emailsCriados: string[] = [];

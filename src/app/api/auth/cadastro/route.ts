@@ -3,24 +3,27 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { enviarEmailVerificacao } from "@/lib/email";
-import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { contarEventosPorIp, obterIp } from "@/lib/rateLimit";
 import { gerarHashSenha } from "@/lib/senha";
 import { gerarTokenVerificacaoEmail } from "@/lib/token";
+import { verificarTurnstile } from "@/lib/turnstile";
 import { esquemaCadastro } from "@/lib/validacao";
 
 const MAX_TENTATIVAS_CADASTRO = 5;
 const JANELA_CADASTRO_MS = 60 * 60 * 1000;
 
+// Mesmo raciocínio do login: exige CAPTCHA antes do bloqueio duro, como
+// fricção progressiva contra automação (ex.: criação em massa de contas).
+const LIMITE_TENTATIVAS_ANTES_DE_CAPTCHA = 3;
+
 export async function POST(req: Request) {
   const ip = obterIp(req);
-  if (
-    await limiteExcedido({
-      ip,
-      evento: "cadastro_tentativa",
-      maximo: MAX_TENTATIVAS_CADASTRO,
-      janelaMs: JANELA_CADASTRO_MS,
-    })
-  ) {
+  const tentativasIp = await contarEventosPorIp({
+    ip,
+    evento: "cadastro_tentativa",
+    janelaMs: JANELA_CADASTRO_MS,
+  });
+  if (tentativasIp >= MAX_TENTATIVAS_CADASTRO) {
     return NextResponse.json(
       { erro: "Muitas tentativas. Tente novamente mais tarde." },
       { status: 429 },
@@ -38,7 +41,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const { nome, email, senha } = dadosValidados.data;
+  const { nome, email, senha, turnstileToken } = dadosValidados.data;
+
+  if (tentativasIp >= LIMITE_TENTATIVAS_ANTES_DE_CAPTCHA) {
+    const captchaValido = await verificarTurnstile(turnstileToken, ip);
+    if (!captchaValido) {
+      return NextResponse.json(
+        { erro: "Verificação anti-automação necessária.", captchaNecessario: true },
+        { status: 400 },
+      );
+    }
+  }
   const senhaHash = await gerarHashSenha(senha);
 
   try {

@@ -2,15 +2,33 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { enviarEmailDispositivoNovo } from "@/lib/email";
-import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import {
+  contarEventosPorIp,
+  limiteExcedidoPorEmail,
+  obterIp,
+} from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { criarSessao } from "@/lib/sessao";
 import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
 import { gerarTokenDesafioMfa } from "@/lib/token";
+import { verificarTurnstile } from "@/lib/turnstile";
 import { esquemaLogin } from "@/lib/validacao";
 
 const MAX_TENTATIVAS_LOGIN = 5;
 const JANELA_LOGIN_MS = 15 * 60 * 1000;
+
+// Depois desse tanto de falhas do mesmo IP, exige um CAPTCHA válido além das
+// credenciais — antes do bloqueio duro (MAX_TENTATIVAS_LOGIN), como uma
+// fricção progressiva que atrasa automação sem travar todo mundo de cara.
+const LIMITE_FALHAS_ANTES_DE_CAPTCHA = 3;
+
+// Limite por CONTA (e-mail), independente de IP: pega um ataque distribuído
+// mirando uma única conta a partir de muitos IPs diferentes, cada um abaixo
+// do próprio limite por IP. Mais generoso que o limite por IP (20 vs. 5) —
+// aqui o alvo é um padrão bem mais anômalo (dezenas de falhas na mesma conta
+// vindas de origens diferentes), não só "alguém errou a senha algumas vezes".
+const MAX_TENTATIVAS_LOGIN_POR_CONTA = 20;
+const JANELA_LOGIN_POR_CONTA_MS = 15 * 60 * 1000;
 
 // Hash bcrypt fixo (de uma senha qualquer, nunca usada de verdade) para rodar
 // contra e-mails inexistentes — sem isso, `usuario && verificarSenha(...)`
@@ -22,14 +40,12 @@ const HASH_FALSO_PARA_EQUALIZAR_TEMPO =
 
 export async function POST(req: Request) {
   const ip = obterIp(req);
-  if (
-    await limiteExcedido({
-      ip,
-      evento: "login_falha",
-      maximo: MAX_TENTATIVAS_LOGIN,
-      janelaMs: JANELA_LOGIN_MS,
-    })
-  ) {
+  const falhasIp = await contarEventosPorIp({
+    ip,
+    evento: "login_falha",
+    janelaMs: JANELA_LOGIN_MS,
+  });
+  if (falhasIp >= MAX_TENTATIVAS_LOGIN) {
     return NextResponse.json(
       { erro: "Muitas tentativas. Tente novamente mais tarde." },
       { status: 429 },
@@ -46,7 +62,31 @@ export async function POST(req: Request) {
     );
   }
 
-  const { email, senha } = dadosValidados.data;
+  const { email, senha, turnstileToken } = dadosValidados.data;
+
+  if (
+    await limiteExcedidoPorEmail({
+      email,
+      evento: "login_falha",
+      maximo: MAX_TENTATIVAS_LOGIN_POR_CONTA,
+      janelaMs: JANELA_LOGIN_POR_CONTA_MS,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
+  if (falhasIp >= LIMITE_FALHAS_ANTES_DE_CAPTCHA) {
+    const captchaValido = await verificarTurnstile(turnstileToken, ip);
+    if (!captchaValido) {
+      return NextResponse.json(
+        { erro: "Verificação anti-automação necessária.", captchaNecessario: true },
+        { status: 400 },
+      );
+    }
+  }
 
   const usuario = await prisma.usuario.findUnique({ where: { email } });
   // Sempre roda o bcrypt.compare, mesmo sem usuário — contra o hash falso
