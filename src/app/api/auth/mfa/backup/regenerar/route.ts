@@ -7,7 +7,7 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { enviarEmailCodigosBackupRegenerados } from "@/lib/email";
 import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
-import { verificarCodigoMfa } from "@/lib/mfa";
+import { verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
 
@@ -62,7 +62,8 @@ export async function POST(req: Request) {
   // atual) pra regenerar os códigos. Sem isso, uma sessão sequestrada
   // conseguiria rotacionar os códigos de backup silenciosamente e usá-los
   // depois — o dono legítimo nem ficaria sabendo que os códigos mudaram.
-  const codigoValido = verificarCodigoMfa(
+  const codigoValido = await verificarCodigoMfaSemReplay(
+    usuario.id,
     descriptografar(usuario.mfaSecret),
     usuario.email,
     dadosValidados.data.codigo,

@@ -7,7 +7,7 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { enviarEmailMfaDesativado } from "@/lib/email";
 import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
-import { verificarCodigoMfa } from "@/lib/mfa";
+import { verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
 
@@ -59,8 +59,12 @@ export async function POST(req: Request) {
   }
 
   // Exige o código atual para desativar, para que um access token roubado
-  // (vida curta) sozinho não baste para remover a segunda camada.
-  const codigoValido = verificarCodigoMfa(
+  // (vida curta) sozinho não baste para remover a segunda camada. Mesma
+  // proteção contra replay dos outros pontos que aceitam TOTP: sem ela, um
+  // código já usado em /mfa/verificar ou /mfa/confirmar ainda dentro da
+  // janela de ±30s poderia ser reapresentado aqui pra desativar o MFA.
+  const codigoValido = await verificarCodigoMfaSemReplay(
+    usuario.id,
     descriptografar(usuario.mfaSecret),
     usuario.email,
     dadosValidados.data.codigo,

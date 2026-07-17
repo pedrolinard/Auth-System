@@ -22,6 +22,12 @@ model Usuario {
   senhaHash      String
   mfaAtivado     Boolean             @default(false)
   mfaSecret      String?
+  // Timestep (contador de janelas de 30s desde a época) do último código
+  // TOTP aceito — rejeita qualquer código com timestep <= esse valor,
+  // impedindo reusar o mesmo código (ou um mais antigo) dentro da janela de
+  // tolerância de ±30s. Timesteps sobem com o relógio, não por segredo, então
+  // não precisa resetar ao gerar um segredo novo (mfa/iniciar).
+  mfaUltimoTimestep Int?
   emailVerificado Boolean            @default(false)
   papel          Papel               @default(usuario)
   // suspensoAte null + suspenso true = suspensão permanente; suspensoAte no
@@ -69,6 +75,19 @@ model CodigoBackupMfa {
 
   @@index([usuarioId])
   @@map("codigos_backup_mfa")
+}
+
+// Torna o desafio de MFA (mfaToken) de uso único: mesmo sendo um JWT
+// stateless válido por até 5 min, o jti só pode completar UMA tentativa
+// bem-sucedida (TOTP ou código de backup) — insert com jti como chave
+// única, então uma segunda tentativa esbarra na constraint. expiraEm
+// espelha o `exp` do próprio JWT, só pra permitir limpeza periódica das
+// linhas já vencidas (o job de limpeza de tokens pode incluir esta tabela).
+model DesafioMfaConsumido {
+  jti      String   @id
+  expiraEm DateTime
+
+  @@map("desafios_mfa_consumidos")
 }
 
 model LogAuditoria {

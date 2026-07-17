@@ -7,7 +7,7 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { enviarEmailMfaAtivado } from "@/lib/email";
 import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
-import { verificarCodigoMfa } from "@/lib/mfa";
+import { verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
 
@@ -58,7 +58,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const codigoValido = verificarCodigoMfa(
+  const codigoValido = await verificarCodigoMfaSemReplay(
+    usuario.id,
     descriptografar(usuario.mfaSecret),
     usuario.email,
     dadosValidados.data.codigo,

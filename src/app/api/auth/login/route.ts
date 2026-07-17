@@ -127,7 +127,7 @@ export async function POST(req: Request) {
   }
 
   if (usuario.mfaAtivado) {
-    const mfaToken = await gerarTokenDesafioMfa(usuario.id);
+    const { token: mfaToken } = await gerarTokenDesafioMfa(usuario.id);
     return NextResponse.json({ mfaObrigatorio: true, mfaToken });
   }
 

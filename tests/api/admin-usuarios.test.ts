@@ -187,10 +187,17 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
       body: JSON.stringify({}),
     });
 
+    // timestep diferente do usado na confirmação acima — senão colidiria com
+    // a proteção contra replay de TOTP (mesmo código não pode validar duas
+    // vezes), e o teste quer testar especificamente o bloqueio por
+    // suspensão, não por replay.
     const respostaVerificar = await fetch(`${BASE_URL}/api/auth/mfa/verificar`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mfaToken, codigo: totp.generate() }),
+      body: JSON.stringify({
+        mfaToken,
+        codigo: totp.generate({ timestamp: Date.now() + 30_000 }),
+      }),
     });
     expect(respostaVerificar.status).toBe(403);
   });

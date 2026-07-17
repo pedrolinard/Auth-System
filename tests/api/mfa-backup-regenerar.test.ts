@@ -11,14 +11,16 @@ import {
 
 const emailsCriados: string[] = [];
 
-function gerarCodigoTotp(segredoBase32: string): string {
+// offsetPeriodos evita colidir com um código já usado nesta mesma execução
+// rápida de teste (ver mesma proteção anti-replay em src/lib/mfa.ts).
+function gerarCodigoTotp(segredoBase32: string, offsetPeriodos = 0): string {
   const totp = new OTPAuth.TOTP({
     algorithm: "SHA1",
     digits: 6,
     period: 30,
     secret: OTPAuth.Secret.fromBase32(segredoBase32),
   });
-  return totp.generate();
+  return totp.generate({ timestamp: Date.now() + offsetPeriodos * 30_000 });
 }
 
 async function chamar(
@@ -60,7 +62,7 @@ describe("POST /api/auth/mfa/backup/regenerar", () => {
       await ativarMfa("backup-regen-ok");
 
     const resposta = await chamar("/api/auth/mfa/backup/regenerar", cabecalhos, {
-      codigo: gerarCodigoTotp(segredo),
+      codigo: gerarCodigoTotp(segredo, 1),
     });
 
     expect(resposta.status).toBe(200);

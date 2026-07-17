@@ -11,14 +11,20 @@ import {
 
 const emailsCriados: string[] = [];
 
-function gerarCodigoTotp(segredoBase32: string): string {
+// offsetPeriodos permite gerar o código de um timestep diferente do atual —
+// necessário quando um teste precisa de DOIS códigos válidos em sequência
+// rápida (ex.: confirmar + desativar): sem isso, os dois `totp.generate()`
+// cairiam no mesmo timestep (o teste roda bem mais rápido que os 30s de
+// período) e o segundo seria rejeitado como replay do primeiro — a própria
+// proteção que este código de produção agora aplica.
+function gerarCodigoTotp(segredoBase32: string, offsetPeriodos = 0): string {
   const totp = new OTPAuth.TOTP({
     algorithm: "SHA1",
     digits: 6,
     period: 30,
     secret: OTPAuth.Secret.fromBase32(segredoBase32),
   });
-  return totp.generate();
+  return totp.generate({ timestamp: Date.now() + offsetPeriodos * 30_000 });
 }
 
 // As rotas de MFA têm rate limit por IP (mfa_codigo_falha) — cada teste usa
@@ -99,7 +105,7 @@ describe("Fluxo de MFA (TOTP)", () => {
     await chamar("/api/auth/mfa/confirmar", cabecalhos, { codigo: gerarCodigoTotp(segredo) });
 
     const respostaDesativar = await chamar("/api/auth/mfa/desativar", cabecalhos, {
-      codigo: gerarCodigoTotp(segredo),
+      codigo: gerarCodigoTotp(segredo, 1),
     });
     expect(respostaDesativar.status).toBe(200);
 
@@ -121,13 +127,24 @@ describe("Fluxo de MFA (TOTP)", () => {
     const { codigosBackup } = await respostaConfirmar.json();
 
     await chamar("/api/auth/mfa/desativar", cabecalhos, {
-      codigo: gerarCodigoTotp(segredo),
+      codigo: gerarCodigoTotp(segredo, 1),
     });
 
     // Reativa o MFA com um segredo novo — os códigos de backup do MFA
     // anterior não devem continuar valendo pro novo.
     const respostaIniciar2 = await chamar("/api/auth/mfa/iniciar", cabecalhos);
     const { segredo: segredo2 } = await respostaIniciar2.json();
+    // mfaUltimoTimestep é por USUÁRIO (sobe com o relógio, não reseta ao
+    // trocar de segredo) — um offset simples não dá conta aqui: qualquer
+    // timestep adiante o bastante pra não colidir com o já usado no
+    // desativar cai fora da janela de tolerância (±1 período) do TOTP em
+    // relação ao instante real da validação. Resetar direto no banco simula
+    // a passagem real de tempo (o que aconteceria de verdade entre
+    // desativar e reativar o MFA num uso normal) sem esperar 30s de verdade.
+    await prisma.usuario.update({
+      where: { email: usuario.email },
+      data: { mfaUltimoTimestep: null },
+    });
     await chamar("/api/auth/mfa/confirmar", cabecalhos, {
       codigo: gerarCodigoTotp(segredo2),
     });
@@ -150,5 +167,67 @@ describe("Fluxo de MFA (TOTP)", () => {
       where: { usuarioId: usuarioDb.id, evento: "codigos_backup_invalidados" },
     });
     expect(log).not.toBeNull();
+  });
+
+  it("rejeita o mesmo código TOTP usado duas vezes (replay dentro da janela de 30s)", async () => {
+    const usuario = await criarUsuarioTeste("mfa-replay-totp");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const respostaIniciar = await chamar("/api/auth/mfa/iniciar", cabecalhos);
+    const { segredo } = await respostaIniciar.json();
+    const codigo = gerarCodigoTotp(segredo);
+
+    const primeiraConfirmacao = await chamar("/api/auth/mfa/confirmar", cabecalhos, { codigo });
+    expect(primeiraConfirmacao.status).toBe(200);
+
+    // /mfa/confirmar já ativou o MFA; usar o MESMO código de novo em
+    // /mfa/desativar (mesmo endpoint que consome TOTP) deve ser rejeitado
+    // como replay, mesmo sendo um código que "seria válido" pelo relógio.
+    const segundaTentativa = await chamar("/api/auth/mfa/desativar", cabecalhos, { codigo });
+    expect(segundaTentativa.status).toBe(401);
+
+    // Confirma que o MFA continua ativado (a tentativa de desativar falhou de verdade).
+    const respostaMe = await fetch(`${BASE_URL}/api/auth/me`, { headers: cabecalhos });
+    const corpoMe = await respostaMe.json();
+    expect(corpoMe.usuario.mfaAtivado).toBe(true);
+  });
+
+  it("o mfaToken de desafio é de uso único: uma segunda conclusão com o mesmo token falha", async () => {
+    const usuario = await criarUsuarioTeste("mfa-desafio-uso-unico");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const respostaIniciar = await chamar("/api/auth/mfa/iniciar", cabecalhos);
+    const { segredo } = await respostaIniciar.json();
+    await chamar("/api/auth/mfa/confirmar", cabecalhos, { codigo: gerarCodigoTotp(segredo) });
+
+    const respostaLogin = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
+      body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
+    });
+    const { mfaToken } = await respostaLogin.json();
+    expect(mfaToken).toBeTruthy();
+
+    const primeiraConclusao = await chamar("/api/auth/mfa/verificar", {}, {
+      mfaToken,
+      codigo: gerarCodigoTotp(segredo, 1),
+    });
+    expect(primeiraConclusao.status).toBe(200);
+
+    // Reseta mfaUltimoTimestep pra isolar o que este teste quer provar: o
+    // código da segunda tentativa é, por si só, perfeitamente válido pelo
+    // TOTP (não é replay de código) — quem tem que rejeitar é o jti do
+    // mfaToken já ter sido consumido na conclusão anterior.
+    await prisma.usuario.update({
+      where: { email: usuario.email },
+      data: { mfaUltimoTimestep: null },
+    });
+    const segundaConclusao = await chamar("/api/auth/mfa/verificar", {}, {
+      mfaToken,
+      codigo: gerarCodigoTotp(segredo),
+    });
+    expect(segundaConclusao.status).toBe(401);
   });
 });

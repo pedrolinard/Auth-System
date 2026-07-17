@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { descriptografar } from "@/lib/cripto";
+import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
-import { verificarCodigoMfa } from "@/lib/mfa";
+import { verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaVerificacaoMfa } from "@/lib/validacao";
@@ -57,7 +58,12 @@ export async function POST(req: Request) {
     );
   }
 
-  const codigoValido = verificarCodigoMfa(descriptografar(usuario.mfaSecret), usuario.email, codigo);
+  const codigoValido = await verificarCodigoMfaSemReplay(
+    usuario.id,
+    descriptografar(usuario.mfaSecret),
+    usuario.email,
+    codigo,
+  );
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
@@ -69,6 +75,20 @@ export async function POST(req: Request) {
   if (estaSuspenso(usuario)) {
     await registrarEvento({ req, evento: "login_bloqueado_suspenso", usuarioId: usuario.id, email: usuario.email });
     return NextResponse.json({ erro: mensagemSuspensao(usuario) }, { status: 403 });
+  }
+
+  // Consome o jti só na conclusão bem-sucedida — uma tentativa com código
+  // errado não pode "gastar" o desafio, senão o usuário perderia a chance de
+  // tentar de novo com o código certo.
+  const desafioAindaValido = await consumirDesafioMfaJti(
+    payload.jti,
+    new Date((payload.exp ?? 0) * 1000),
+  );
+  if (!desafioAindaValido) {
+    return NextResponse.json(
+      { erro: "Desafio de MFA inválido ou expirado. Faça login novamente." },
+      { status: 401 },
+    );
   }
 
   const sessao = await criarSessao(usuario);

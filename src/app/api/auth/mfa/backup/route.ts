@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { consumirCodigoBackup, contarCodigosRestantes } from "@/lib/backupMfa";
+import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
 import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
@@ -71,6 +72,21 @@ export async function POST(req: Request) {
   if (estaSuspenso(usuario)) {
     await registrarEvento({ req, evento: "login_bloqueado_suspenso", usuarioId: usuario.id, email: usuario.email });
     return NextResponse.json({ erro: mensagemSuspensao(usuario) }, { status: 403 });
+  }
+
+  // Mesma proteção de uso único de /mfa/verificar: consome o jti só na
+  // conclusão bem-sucedida (o código de backup já foi consumido acima,
+  // então não há "tentar de novo" — mas o mfaToken em si ainda não deve
+  // servir pra abrir uma segunda sessão).
+  const desafioAindaValido = await consumirDesafioMfaJti(
+    payload.jti,
+    new Date((payload.exp ?? 0) * 1000),
+  );
+  if (!desafioAindaValido) {
+    return NextResponse.json(
+      { erro: "Desafio de MFA inválido ou expirado. Faça login novamente." },
+      { status: 401 },
+    );
   }
 
   await registrarEvento({ req, evento: "mfa_backup_sucesso", usuarioId: usuario.id });

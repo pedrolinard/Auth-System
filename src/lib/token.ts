@@ -42,6 +42,7 @@ export const DURACAO_TOKEN_ACESSO = "15m";
 export const DURACAO_TOKEN_ACESSO_SEGUNDOS = 15 * 60;
 export const DURACAO_TOKEN_ATUALIZACAO_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 export const DURACAO_TOKEN_DESAFIO_MFA = "5m";
+export const DURACAO_TOKEN_DESAFIO_MFA_MS = 5 * 60 * 1000;
 export const DURACAO_TOKEN_VERIFICACAO_EMAIL = "1d";
 export const DURACAO_TOKEN_REDEFINICAO_SENHA = "1h";
 
@@ -61,6 +62,7 @@ export type PayloadTokenAtualizacao = {
 export type PayloadDesafioMfa = {
   sub: string;
   tipo: "mfa_desafio";
+  jti: string;
 };
 
 export type PayloadVerificacaoEmail = {
@@ -138,13 +140,21 @@ export async function verificarTokenAtualizacao(token: string) {
 
 // Token de curta duração emitido após validar e-mail/senha quando o usuário
 // tem MFA ativado. Não serve como token de acesso nem de atualização: usa um
-// segredo próprio para evitar confusão entre os três tipos de token.
+// segredo próprio para evitar confusão entre os três tipos de token. O jti
+// permite consumir o desafio uma única vez (src/lib/desafioMfa.ts) — sem
+// isso, o mesmo mfaToken poderia completar o login mais de uma vez dentro
+// dos 5 minutos de validade.
 export async function gerarTokenDesafioMfa(usuarioId: string) {
-  return new SignJWT({ sub: usuarioId, tipo: "mfa_desafio" })
+  const jti = crypto.randomUUID();
+  const expiraEm = new Date(Date.now() + DURACAO_TOKEN_DESAFIO_MFA_MS);
+
+  const token = await new SignJWT({ sub: usuarioId, tipo: "mfa_desafio", jti })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(DURACAO_TOKEN_DESAFIO_MFA)
     .sign(SEGREDO_MFA);
+
+  return { token, jti, expiraEm };
 }
 
 export async function verificarTokenDesafioMfa(token: string) {
