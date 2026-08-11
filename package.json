@@ -10,6 +10,7 @@
     "lint": "eslint",
     "limpeza:tokens": "node -r dotenv/config scripts/limpar-tokens.mjs dotenv_config_path=.env",
     "gerar:chaves-rs256": "node scripts/gerar-chaves-rs256.mjs",
+    "rotacionar:chave-mfa": "node -r dotenv/config scripts/rotacionar-chave-mfa.mjs dotenv_config_path=.env",
     "test": "vitest run"
   },
   "dependencies": {

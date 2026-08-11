@@ -55,3 +55,8 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# tooling/config local do Claude Code (não é código do projeto)
+.agents/
+.claude/
+skills-lock.json

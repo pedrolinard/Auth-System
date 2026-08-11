@@ -116,12 +116,14 @@ apareceriam testando o ciclo completo de request/response, não com mocks.
   processos no teardown (`taskkill /t /f` no Windows).
 - Crie a database antes da primeira execução: `CREATE DATABASE
   autenticacao_test;`.
-- 66 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
-  AES-256-GCM e geração/consumo/regeneração dos códigos de backup, incluindo
-  uma corrida real de duas requisições simultâneas pelo mesmo código) e
-  `tests/api/*.test.ts` cobrindo cadastro, login (incluindo o side-channel de
-  timing entre e-mail inexistente e senha errada), rotação/reuso de refresh
-  token, sessões, MFA (TOTP real via `otpauth` + códigos de backup +
+- 88 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
+  AES-256-GCM incluindo o versionamento do formato cifrado e a rotação de
+  `MFA_ENCRYPTION_KEY`, e geração/consumo/regeneração dos códigos de backup,
+  incluindo uma corrida real de duas requisições simultâneas pelo mesmo
+  código) e `tests/api/*.test.ts` cobrindo cadastro, login (incluindo o
+  side-channel de timing entre e-mail inexistente e senha errada),
+  rotação/reuso de refresh token, sessões, MFA (TOTP real via `otpauth` +
+  bloqueio de replay/código expirado no login + códigos de backup +
   regeneração), RBAC, recuperação de senha (incluindo o uso único do token),
   verificação de e-mail, CSRF, rate limiting, e suspensão/exclusão de conta
   pelo admin (incluindo a janela entre desafio de MFA e suspensão).
@@ -226,13 +228,48 @@ normais; o cliente completa o login em `POST /api/auth/mfa/verificar` com
 `{ mfaToken, codigo }`.
 
 `Usuario.mfaSecret` é cifrado em repouso (`src/lib/cripto.ts`, AES-256-GCM,
-formato `iv:authTag:ciphertext` em base64) com uma chave própria
+formato versionado `v1:iv:authTag:ciphertext` em base64 — blobs legados de
+3 partes sem prefixo de versão continuam decifráveis) com uma chave própria
 (`MFA_ENCRYPTION_KEY`, 32 bytes em base64, distinta dos segredos JWT) — se o
 banco vazar, os segredos TOTP não vazam junto. Gere com:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
+
+#### Bloqueio de replay do código TOTP
+
+Um código TOTP válido só pode completar um login (ou confirmar/desativar o
+MFA) **uma vez**: `verificarCodigoMfaSemReplay` (`src/lib/mfa.ts`) grava o
+timestep aceito em `Usuario.mfaUltimoTimestep` via um `UPDATE` atomicamente
+condicionado (`mfaUltimoTimestep < novoTimestep`), então reusar o mesmo
+código — mesmo ainda dentro da janela de tolerância de ±30s do relógio — é
+rejeitado como se fosse inválido. Da mesma forma, o próprio desafio de login
+(`mfaToken`) é de uso único: `DesafioMfaConsumido` (`src/lib/desafioMfa.ts`)
+guarda o `jti` do token num insert com chave única, então uma segunda
+conclusão bem-sucedida com o mesmo `mfaToken` falha mesmo que o JWT em si
+ainda seja válido pelos 5 minutos de prazo. Um código incorreto ou expirado
+não consome nem o timestep nem o `jti` — não pode "gastar" a tentativa de um
+usuário legítimo que só errou a digitação.
+
+#### Rotação de `MFA_ENCRYPTION_KEY`
+
+Trocar `MFA_ENCRYPTION_KEY` sem downtime (ex.: suspeita de vazamento, rotina
+de segurança) usa uma chave anterior temporária como fallback de leitura:
+
+1. Gere uma chave nova com o mesmo comando acima.
+2. No ambiente, copie o valor **atual** de `MFA_ENCRYPTION_KEY` para
+   `MFA_ENCRYPTION_KEY_ANTERIOR` e troque `MFA_ENCRYPTION_KEY` pela chave
+   nova. Faça o deploy dessa mudança de env **antes** do próximo passo — com
+   as duas presentes, `descriptografar` (`src/lib/cripto.ts`) tenta a chave
+   atual e cai para a anterior automaticamente, então logins continuam
+   funcionando enquanto nem todo `mfaSecret` foi re-cifrado.
+3. Rode `npm run rotacionar:chave-mfa` (contra o mesmo `DATABASE_URL` de
+   produção) — `scripts/rotacionar-chave-mfa.mjs` decifra o segredo de cada
+   usuário e re-cifra com a chave atual, deixando todo mundo na mesma
+   chave/versão de formato.
+4. Confira a saída (0 falhas) e só então remova `MFA_ENCRYPTION_KEY_ANTERIOR`
+   do ambiente.
 
 #### Códigos de backup (recovery codes)
 

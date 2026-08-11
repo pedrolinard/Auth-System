@@ -230,4 +230,88 @@ describe("Fluxo de MFA (TOTP)", () => {
     });
     expect(segundaConclusao.status).toBe(401);
   });
+
+  it("rejeita no login um código TOTP já usado em outro login (replay em /mfa/verificar)", async () => {
+    const usuario = await criarUsuarioTeste("mfa-login-replay");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const respostaIniciar = await chamar("/api/auth/mfa/iniciar", cabecalhos);
+    const { segredo } = await respostaIniciar.json();
+    await chamar("/api/auth/mfa/confirmar", cabecalhos, { codigo: gerarCodigoTotp(segredo) });
+
+    // Primeiro login completo com um código fresco (period seguinte, pra não
+    // colidir com o código já consumido em /mfa/confirmar).
+    const primeiroLogin = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
+      body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
+    });
+    const { mfaToken: primeiroToken } = await primeiroLogin.json();
+    const codigoReutilizado = gerarCodigoTotp(segredo, 1);
+    const primeiraVerificacao = await chamar("/api/auth/mfa/verificar", {}, {
+      mfaToken: primeiroToken,
+      codigo: codigoReutilizado,
+    });
+    expect(primeiraVerificacao.status).toBe(200);
+
+    // Segundo login (novo desafio/mfaToken), tentando completar com o MESMO
+    // código TOTP já aceito no login anterior — precisa ser rejeitado como
+    // replay, mesmo com um jti de desafio novo e ainda dentro da janela do
+    // relógio em que o código "seria válido".
+    const segundoLogin = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
+      body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
+    });
+    const { mfaToken: segundoToken } = await segundoLogin.json();
+    expect(segundoToken).toBeTruthy();
+    expect(segundoToken).not.toBe(primeiroToken);
+
+    const segundaVerificacao = await chamar("/api/auth/mfa/verificar", {}, {
+      mfaToken: segundoToken,
+      codigo: codigoReutilizado,
+    });
+    expect(segundaVerificacao.status).toBe(401);
+    const corpoErro = await segundaVerificacao.json();
+    expect(corpoErro.erro).toBe("Código inválido.");
+  });
+
+  it("rejeita no login um código TOTP expirado (fora da janela de tolerância de ±30s)", async () => {
+    const usuario = await criarUsuarioTeste("mfa-login-expirado");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const respostaIniciar = await chamar("/api/auth/mfa/iniciar", cabecalhos);
+    const { segredo } = await respostaIniciar.json();
+    await chamar("/api/auth/mfa/confirmar", cabecalhos, { codigo: gerarCodigoTotp(segredo) });
+
+    const respostaLogin = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
+      body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
+    });
+    const { mfaToken } = await respostaLogin.json();
+    expect(mfaToken).toBeTruthy();
+
+    // 10 períodos (5 minutos) atrás — bem fora da janela de tolerância de
+    // ±1 período (±30s) aceita por verificarCodigoMfa/mfa.ts.
+    const codigoExpirado = gerarCodigoTotp(segredo, -10);
+    const resposta = await chamar("/api/auth/mfa/verificar", {}, {
+      mfaToken,
+      codigo: codigoExpirado,
+    });
+    expect(resposta.status).toBe(401);
+    const corpoErro = await resposta.json();
+    expect(corpoErro.erro).toBe("Código inválido.");
+
+    // O desafio (mfaToken) continua de pé — um código expirado/errado não
+    // pode "gastar" a tentativa de login, só um código correto consome o jti.
+    const codigoValido = gerarCodigoTotp(segredo, 1);
+    const respostaValida = await chamar("/api/auth/mfa/verificar", {}, {
+      mfaToken,
+      codigo: codigoValido,
+    });
+    expect(respostaValida.status).toBe(200);
+  });
 });
