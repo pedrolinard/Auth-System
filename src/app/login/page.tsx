@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { entrar, verificarMfaLogin } from "@/lib/clienteAuth";
+import { entrar, ErroCaptchaNecessario, verificarMfaLogin } from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
+import { DesafioTurnstile } from "@/components/DesafioTurnstile";
 import { Marca } from "@/components/Marca";
 
 export default function PaginaLogin() {
@@ -16,12 +17,24 @@ export default function PaginaLogin() {
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
+  // Só aparece depois que o servidor recusa por falta de CAPTCHA
+  // (`captchaNecessario`) — fricção progressiva, ver src/app/api/auth/login.
+  // `tentativaCaptcha` muda a cada tentativa reprovada pra remontar o widget
+  // e pedir um token novo (o do Turnstile é de uso único).
+  const [precisaCaptcha, setPrecisaCaptcha] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [tentativaCaptcha, setTentativaCaptcha] = useState(0);
+
   async function aoEnviarCredenciais(evento: React.FormEvent) {
     evento.preventDefault();
     setErro(null);
     setCarregando(true);
     try {
-      const resultado = await entrar({ email, senha });
+      const resultado = await entrar({
+        email,
+        senha,
+        turnstileToken: turnstileToken ?? undefined,
+      });
       if (resultado.mfaObrigatorio) {
         setMfaToken(resultado.mfaToken);
         return;
@@ -29,6 +42,11 @@ export default function PaginaLogin() {
       router.push("/dashboard");
       router.refresh();
     } catch (erroCapturado) {
+      if (erroCapturado instanceof ErroCaptchaNecessario) {
+        setPrecisaCaptcha(true);
+        setTurnstileToken(null);
+        setTentativaCaptcha((n) => n + 1);
+      }
       setErro(
         erroCapturado instanceof Error
           ? erroCapturado.message
@@ -164,9 +182,17 @@ export default function PaginaLogin() {
           </Link>
         </div>
 
+        {precisaCaptcha && (
+          <DesafioTurnstile key={tentativaCaptcha} onToken={setTurnstileToken} />
+        )}
+
         {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
 
-        <button type="submit" disabled={carregando} className="btn-primary mt-1">
+        <button
+          type="submit"
+          disabled={carregando || (precisaCaptcha && !turnstileToken)}
+          className="btn-primary mt-1"
+        >
           {carregando ? "Entrando..." : "Entrar"}
         </button>
 

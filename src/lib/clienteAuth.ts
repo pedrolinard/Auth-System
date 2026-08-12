@@ -30,10 +30,22 @@ function mensagemErro(corpo: CorpoErro, padrao: string): string {
   return primeiroCampoComErro?.[0] ?? corpo.erro ?? padrao;
 }
 
+// Login e cadastro respondem `captchaNecessario: true` (junto do 400) quando
+// o IP passou do limite de tentativas sem CAPTCHA — precisa de um tratamento
+// diferente de "credenciais erradas": a página precisa saber disso pra
+// renderizar o widget do Turnstile, não só mostrar a mensagem de erro.
+export class ErroCaptchaNecessario extends Error {
+  constructor(mensagem: string) {
+    super(mensagem);
+    this.name = "ErroCaptchaNecessario";
+  }
+}
+
 export async function cadastrar(dados: {
   nome: string;
   email: string;
   senha: string;
+  turnstileToken?: string;
 }) {
   const resposta = await fetch("/api/auth/cadastro", {
     method: "POST",
@@ -41,7 +53,12 @@ export async function cadastrar(dados: {
     body: JSON.stringify(dados),
   });
   const corpo = await resposta.json();
-  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha no cadastro."));
+  if (!resposta.ok) {
+    if (corpo.captchaNecessario) {
+      throw new ErroCaptchaNecessario(mensagemErro(corpo, "Verificação necessária."));
+    }
+    throw new Error(mensagemErro(corpo, "Falha no cadastro."));
+  }
   return corpo;
 }
 
@@ -86,7 +103,11 @@ export async function reenviarVerificacaoEmail() {
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao reenviar e-mail."));
 }
 
-export async function entrar(dados: { email: string; senha: string }) {
+export async function entrar(dados: {
+  email: string;
+  senha: string;
+  turnstileToken?: string;
+}) {
   const resposta = await fetch("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -94,7 +115,12 @@ export async function entrar(dados: { email: string; senha: string }) {
     credentials: "include",
   });
   const corpo = await resposta.json();
-  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha no login.");
+  if (!resposta.ok) {
+    if (corpo.captchaNecessario) {
+      throw new ErroCaptchaNecessario(corpo.erro ?? "Verificação necessária.");
+    }
+    throw new Error(corpo.erro ?? "Falha no login.");
+  }
 
   if (corpo.mfaObrigatorio) {
     return { mfaObrigatorio: true as const, mfaToken: corpo.mfaToken as string };

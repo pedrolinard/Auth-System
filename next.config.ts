@@ -9,10 +9,17 @@ import type { NextConfig } from "next";
 // Em dev, o React precisa de eval() pra reconstruir call stacks (debugging) —
 // "React will never use eval() in production mode", então isso não enfraquece
 // o CSP de verdade, só evita quebrar `next dev` localmente.
+// O widget do Cloudflare Turnstile (src/components/DesafioTurnstile.tsx)
+// carrega um script de challenges.cloudflare.com e renderiza o desafio num
+// iframe da própria Cloudflare, que por sua vez faz suas próprias chamadas de
+// rede pra lá — sem liberar esses três diretivas o widget nem carrega (script
+// bloqueado) ou carrega mas fica em branco (iframe/XHR bloqueados).
+const ORIGEM_TURNSTILE = "https://challenges.cloudflare.com";
+
 const scriptSrc =
   process.env.NODE_ENV === "production"
-    ? "script-src 'self' 'unsafe-inline'"
-    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+    ? `script-src 'self' 'unsafe-inline' ${ORIGEM_TURNSTILE}`
+    : `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${ORIGEM_TURNSTILE}`;
 
 const CSP = [
   "default-src 'self'",
@@ -20,7 +27,8 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self' data:",
-  "connect-src 'self'",
+  `connect-src 'self' ${ORIGEM_TURNSTILE}`,
+  `frame-src ${ORIGEM_TURNSTILE}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",

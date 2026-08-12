@@ -38,6 +38,9 @@ consumido por outras aplicações como camada intermediária de identidade.
 - **Rate limiting**: `src/lib/rateLimit.ts` reaproveita o `LogAuditoria` (sem
   tabela nova) para bloquear com `429` login (5 tentativas erradas/15 min),
   cadastro e recuperação de senha (5 tentativas/hora) do mesmo IP.
+- **CAPTCHA (Cloudflare Turnstile)**: fricção progressiva antes do bloqueio
+  duro em login/cadastro — depois de 3 falhas do mesmo IP, passa a exigir um
+  token válido do Turnstile além das credenciais (ver seção própria abaixo).
 - **Banco de dados**: Prisma + Postgres local (`autenticacao`), na mesma
   instância compartilhada com o serviço Django (`django/`), cada um com sua
   própria database (ver seção "Serviço de domínio" abaixo).
@@ -403,6 +406,42 @@ erradas/15 min), cadastro e recuperação de senha (5 tentativas/hora cada).
 efetivamente o sobrescreve (Vercel faz isso em produção) — sem um proxy
 confiável na frente, é possível forjar o header pra burlar o limite ou pra
 derrubar outra pessoa nele. Trade-off documentado, não escondido.
+
+### CAPTCHA (Cloudflare Turnstile)
+
+Fricção progressiva contra automação em `POST /api/auth/login` e
+`POST /api/auth/cadastro`: só depois de **3 tentativas falhas do mesmo IP**
+(`LIMITE_FALHAS_ANTES_DE_CAPTCHA`/`LIMITE_TENTATIVAS_ANTES_DE_CAPTCHA`) a rota
+passa a exigir um `turnstileToken` válido — antes disso, o fluxo normal nem
+sabe que o CAPTCHA existe.
+
+- **Backend** (`src/lib/turnstile.ts`): `verificarTurnstile` chama a API
+  `siteverify` do Cloudflare. Fail-closed quando `TURNSTILE_SECRET_KEY` está
+  configurada (token ausente, resposta negativa ou erro de rede => reprova) —
+  diferente do e-mail (best-effort), aqui a verificação É a barreira, então
+  "passar direto" numa falha anularia o propósito. Sem a chave, a verificação
+  é pulada (não trava dev/test sem conta Cloudflare).
+- **Frontend** (`src/components/DesafioTurnstile.tsx`): as telas de
+  `/login` e `/cadastro` só renderizam o widget depois que a API responde
+  `{ captchaNecessario: true }` (400) — o cliente reconhece essa resposta via
+  `ErroCaptchaNecessario` (`src/lib/clienteAuth.ts`) e diferencia de
+  "credenciais erradas". O componente carrega o script oficial
+  `challenges.cloudflare.com/turnstile/v0/api.js` e renderiza o widget num
+  container próprio; o botão de envio fica desabilitado até o callback do
+  Turnstile entregar um token. Como o token é de uso único, cada tentativa
+  reprovada remonta o widget (via `key`) para pedir um novo — inclusive
+  quando o CAPTCHA passou mas a senha estava errada, já que o token daquela
+  submissão foi consumido no `siteverify` de qualquer forma.
+- **As duas chaves são independentes e precisam ser configuradas juntas**:
+  `TURNSTILE_SECRET_KEY` (backend, nunca vai pro cliente) e
+  `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (frontend, embutida no bundle — é assim
+  que o Turnstile funciona, a site key não é secreta). Configurar só uma
+  trava quem passar do limite: com a secret key mas sem a site key, o widget
+  nunca renderiza e ninguém consegue gerar um token válido. As duas vêm do
+  mesmo widget em https://dash.cloudflare.com/?to=/:account/turnstile.
+- CSP (`next.config.ts`) libera `challenges.cloudflare.com` em `script-src`,
+  `connect-src` e `frame-src` — sem isso o script é bloqueado, ou carrega e o
+  iframe do desafio fica em branco.
 
 ### Headers de segurança HTTP
 
