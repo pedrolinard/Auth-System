@@ -36,11 +36,14 @@ consumido por outras aplicações como camada intermediária de identidade.
 - **Logs de auditoria**: `LogAuditoria` (`src/lib/auditoria.ts`) registra
   login (sucesso/falha), cadastro e logout com IP e user-agent.
 - **Rate limiting**: `src/lib/rateLimit.ts` reaproveita o `LogAuditoria` (sem
-  tabela nova) para bloquear com `429` login (5 tentativas erradas/15 min),
-  cadastro e recuperação de senha (5 tentativas/hora) do mesmo IP.
+  tabela nova) para bloquear com `429` login (20 tentativas erradas/15 min
+  por IP — ver nota sobre IP compartilhado abaixo — ou 20/15 min por conta,
+  o que estourar primeiro), cadastro e recuperação de senha (5 tentativas/
+  hora) do mesmo IP.
 - **CAPTCHA (Cloudflare Turnstile)**: fricção progressiva antes do bloqueio
-  duro em login/cadastro — depois de 3 falhas do mesmo IP, passa a exigir um
-  token válido do Turnstile além das credenciais (ver seção própria abaixo).
+  duro em login (5 falhas do mesmo IP) e cadastro (3 falhas do mesmo IP) —
+  passa a exigir um token válido do Turnstile além das credenciais (ver
+  seção própria abaixo).
 - **Banco de dados**: Prisma + Postgres local (`autenticacao`), na mesma
   instância compartilhada com o serviço Django (`django/`), cada um com sua
   própria database (ver seção "Serviço de domínio" abaixo).
@@ -410,20 +413,35 @@ segunda tentativa) sem precisar de uma tabela de tokens usados.
 `src/lib/rateLimit.ts` reaproveita `LogAuditoria` (sem tabela nova): conta
 quantos eventos de um tipo vieram do mesmo IP (extraído de
 `X-Forwarded-For`/`X-Real-IP`) dentro de uma janela de tempo e responde `429`
-antes mesmo de processar a requisição. Aplicado em login (5 tentativas
-erradas/15 min), cadastro e recuperação de senha (5 tentativas/hora cada).
-**Atenção**: `X-Forwarded-For` só é confiável atrás de um proxy que
-efetivamente o sobrescreve (Vercel faz isso em produção) — sem um proxy
-confiável na frente, é possível forjar o header pra burlar o limite ou pra
-derrubar outra pessoa nele. Trade-off documentado, não escondido.
+antes mesmo de processar a requisição. Aplicado em login (20 tentativas
+erradas/15 min por IP — ver nota de IP compartilhado abaixo — **e** 20/15 min
+por conta, o que vier primeiro), cadastro e recuperação de senha (5
+tentativas/hora cada, só por IP).
+
+**Atenção — IP não é sinônimo de pessoa**: várias contas atrás do mesmo NAT
+(rede doméstica, Wi-Fi de escritório, operadora de celular) compartilham o
+mesmo IP público de verdade, não é spoofing. O limite de login começou em 5
+tentativas/IP e travava a casa inteira quando uma única pessoa errava a
+senha algumas vezes — por isso subiu pra 20, generoso o bastante pra não
+incomodar uso legítimo em rede compartilhada, com o CAPTCHA (abaixo) e o
+limite por CONTA como as barreiras de verdade contra automação. Cadastro e
+recuperação de senha continuam em 5/IP: não têm um limite por conta
+equivalente (a conta ainda não existe), então o IP é a única linha de
+defesa ali — subir esse valor é uma troca de risco diferente, não incluída
+nesse ajuste.
+
+Também vale o aviso original: `X-Forwarded-For` só é confiável atrás de um
+proxy que efetivamente o sobrescreve (Vercel faz isso em produção) — sem um
+proxy confiável na frente, é possível forjar o header pra burlar o limite ou
+pra derrubar outra pessoa nele. Trade-off documentado, não escondido.
 
 ### CAPTCHA (Cloudflare Turnstile)
 
-Fricção progressiva contra automação em `POST /api/auth/login` e
-`POST /api/auth/cadastro`: só depois de **3 tentativas falhas do mesmo IP**
-(`LIMITE_FALHAS_ANTES_DE_CAPTCHA`/`LIMITE_TENTATIVAS_ANTES_DE_CAPTCHA`) a rota
-passa a exigir um `turnstileToken` válido — antes disso, o fluxo normal nem
-sabe que o CAPTCHA existe.
+Fricção progressiva contra automação em `POST /api/auth/login` (a partir de
+**5 falhas do mesmo IP**) e `POST /api/auth/cadastro` (a partir de **3**) —
+`LIMITE_FALHAS_ANTES_DE_CAPTCHA`/`LIMITE_TENTATIVAS_ANTES_DE_CAPTCHA` em cada
+rota. A partir daí a rota passa a exigir um `turnstileToken` válido; antes
+disso, o fluxo normal nem sabe que o CAPTCHA existe.
 
 - **Backend** (`src/lib/turnstile.ts`): `verificarTurnstile` chama a API
   `siteverify` do Cloudflare. Fail-closed quando `TURNSTILE_SECRET_KEY` está

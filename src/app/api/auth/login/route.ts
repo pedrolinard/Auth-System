@@ -14,19 +14,28 @@ import { gerarTokenDesafioMfa } from "@/lib/token";
 import { verificarTurnstile } from "@/lib/turnstile";
 import { esquemaLogin } from "@/lib/validacao";
 
-const MAX_TENTATIVAS_LOGIN = 5;
+// IP não é sinônimo de pessoa: várias contas atrás do mesmo NAT (rede
+// doméstica, Wi-Fi de escritório, operadora de celular) compartilham o
+// mesmo IP público de verdade — não é spoofing, é a topologia normal da
+// internet. Um limite por IP baixo demais (era 5) derruba a casa inteira
+// quando UMA pessoa erra a senha algumas vezes. Por isso o valor aqui é bem
+// mais generoso que antes; quem segura a linha contra automação de verdade
+// é o CAPTCHA (a partir de LIMITE_FALHAS_ANTES_DE_CAPTCHA) e o limite por
+// CONTA abaixo — este aqui existe só como rede de segurança contra
+// varredura maciça (muitas contas diferentes, mesmo IP).
+const MAX_TENTATIVAS_LOGIN = 20;
 const JANELA_LOGIN_MS = 15 * 60 * 1000;
 
 // Depois desse tanto de falhas do mesmo IP, exige um CAPTCHA válido além das
 // credenciais — antes do bloqueio duro (MAX_TENTATIVAS_LOGIN), como uma
 // fricção progressiva que atrasa automação sem travar todo mundo de cara.
-const LIMITE_FALHAS_ANTES_DE_CAPTCHA = 3;
+const LIMITE_FALHAS_ANTES_DE_CAPTCHA = 5;
 
 // Limite por CONTA (e-mail), independente de IP: pega um ataque distribuído
 // mirando uma única conta a partir de muitos IPs diferentes, cada um abaixo
-// do próprio limite por IP. Mais generoso que o limite por IP (20 vs. 5) —
-// aqui o alvo é um padrão bem mais anômalo (dezenas de falhas na mesma conta
-// vindas de origens diferentes), não só "alguém errou a senha algumas vezes".
+// do próprio limite por IP. Convergiu com MAX_TENTATIVAS_LOGIN (20) agora
+// que o limite por IP também ficou generoso — quem decide um bloqueio de
+// verdade contra uma conta específica é este, não mais o de IP sozinho.
 const MAX_TENTATIVAS_LOGIN_POR_CONTA = 20;
 const JANELA_LOGIN_POR_CONTA_MS = 15 * 60 * 1000;
 

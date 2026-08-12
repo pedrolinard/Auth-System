@@ -21,16 +21,16 @@ describe("Rate limiting", () => {
       });
     }
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 20; i++) {
       const resposta = await tentarLoginErrado();
       expect(resposta.status).toBe(401);
     }
 
-    const sexta = await tentarLoginErrado();
-    expect(sexta.status).toBe(429);
+    const vigesimaPrimeira = await tentarLoginErrado();
+    expect(vigesimaPrimeira.status).toBe(429);
 
     await apagarUsuariosTeste([usuario.email]);
-  }, 45000); // 6 chamadas sequenciais com bcrypt + 1ª compilação da rota no Turbopack
+  }, 60000); // 21 chamadas sequenciais com bcrypt + 1ª compilação da rota no Turbopack
 
   it("bloqueia login com 429 por CONTA quando as falhas vêm de IPs diferentes (cross-IP)", async () => {
     // O limite por IP sozinho não pegaria isso: cada IP abaixo faz só UMA
