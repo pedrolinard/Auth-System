@@ -15,6 +15,17 @@ enum Papel {
   admin
 }
 
+// Todo campo DateTime deste schema usa @db.Timestamptz — sem essa anotação
+// o Prisma mapeia pra `timestamp` (SEM fuso) no Postgres, que grava só os
+// números "de parede" sob o fuso da sessão (aqui sempre GMT, então o valor
+// bate com UTC) mas devolve texto sem nenhuma marca de fuso. O node-postgres
+// (postgres-date) então reconstrói esse texto com `new Date(ano, mes, dia, ...)`
+// — o construtor de HORÁRIO LOCAL do processo que está lendo — em vez de
+// UTC. Em Vercel (roda em UTC) isso coincide e não dá pra notar; rodando um
+// script local no Brasil (UTC-3) ou qualquer outro fuso, a mesma linha lida
+// chega ~3h adiantada. `timestamptz` elimina a ambiguidade: o valor sai do
+// banco com o offset embutido, e o parser usa `Date.UTC(...)`, correto
+// não importa o fuso de quem lê.
 model Usuario {
   id             String              @id @default(cuid())
   nome           String
@@ -34,15 +45,15 @@ model Usuario {
   // passado é tratado como suspensão expirada (login volta a funcionar sem
   // precisar de reativação manual nem de job de limpeza).
   suspenso       Boolean             @default(false)
-  suspensoAte    DateTime?
+  suspensoAte    DateTime?           @db.Timestamptz(3)
   suspensoMotivo String?
   // Marca a redefinição de senha mais recente: qualquer token de redefinição
   // emitido antes desse instante (comparado ao `iat` do JWT) deixa de valer.
   // É o que torna o token, que por si só é um JWT stateless reutilizável
   // dentro da janela de validade, de uso único na prática.
-  senhaAlteradaEm DateTime?
-  criadoEm       DateTime            @default(now())
-  atualizadoEm   DateTime            @updatedAt
+  senhaAlteradaEm DateTime?          @db.Timestamptz(3)
+  criadoEm       DateTime            @default(now()) @db.Timestamptz(3)
+  atualizadoEm   DateTime            @updatedAt @db.Timestamptz(3)
   tokens         TokenAtualizacao[]
   codigosBackup  CodigoBackupMfa[]
 
@@ -54,9 +65,9 @@ model TokenAtualizacao {
   tokenHash    String    @unique
   usuarioId    String
   usuario      Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  criadoEm     DateTime  @default(now())
-  expiraEm     DateTime
-  revogadoEm   DateTime?
+  criadoEm     DateTime  @default(now()) @db.Timestamptz(3)
+  expiraEm     DateTime  @db.Timestamptz(3)
+  revogadoEm   DateTime? @db.Timestamptz(3)
 
   @@index([usuarioId])
   @@map("tokens_atualizacao")
@@ -70,8 +81,8 @@ model CodigoBackupMfa {
   usuarioId  String
   usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   codigoHash String    @unique
-  usadoEm    DateTime?
-  criadoEm   DateTime  @default(now())
+  usadoEm    DateTime? @db.Timestamptz(3)
+  criadoEm   DateTime  @default(now()) @db.Timestamptz(3)
 
   @@index([usuarioId])
   @@map("codigos_backup_mfa")
@@ -85,7 +96,7 @@ model CodigoBackupMfa {
 // linhas já vencidas (o job de limpeza de tokens pode incluir esta tabela).
 model DesafioMfaConsumido {
   jti      String   @id
-  expiraEm DateTime
+  expiraEm DateTime @db.Timestamptz(3)
 
   @@map("desafios_mfa_consumidos")
 }
@@ -97,7 +108,7 @@ model LogAuditoria {
   evento    String
   ip        String?
   userAgent String?
-  criadoEm  DateTime @default(now())
+  criadoEm  DateTime @default(now()) @db.Timestamptz(3)
 
   @@index([usuarioId])
   @@index([evento, ip, criadoEm])

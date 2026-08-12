@@ -197,6 +197,22 @@ npx prisma migrate dev   # aplica as migrações do lado Next.js
 npx prisma studio        # inspeciona os dados
 ```
 
+### Todo `DateTime` é `timestamptz`
+
+Todas as colunas de data do schema (`prisma/schema.prisma`) usam `@db.Timestamptz`,
+nunca o `timestamp` (sem fuso) que é o default do Prisma pra Postgres. A
+diferença importa de verdade: um `timestamp` sem fuso grava só os números "de
+parede" sob o fuso da SESSÃO que fez o insert (neste app, sempre GMT — nenhuma
+conexão roda `SET TIME ZONE`) e devolve texto sem nenhuma marca de fuso; o
+parser do node-postgres (`postgres-date`) então reconstrói esse texto com o
+construtor de **horário local do processo que está lendo**, não UTC. Rodando
+em produção (Vercel roda em UTC) isso coincide por acaso e passa despercebido
+— mas qualquer script/ferramenta rodado de outro fuso (ex.: local no Brasil,
+UTC-3) lê a mesma linha deslocada em ~3h. `timestamptz` elimina a ambiguidade:
+o valor sai do banco com o offset embutido, e a leitura fica correta não
+importa o fuso de quem lê. Migration:
+`prisma/migrations/20260812195844_colunas_datetime_timestamptz`.
+
 ## Segurança em produção
 
 ### Gerar segredos fortes

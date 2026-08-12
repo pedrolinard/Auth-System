@@ -10,15 +10,6 @@ export async function registrarEvento(dados: {
   email?: string;
 }) {
   try {
-    console.error(
-      "[diagnostico-timezone-temporario]",
-      JSON.stringify({
-        TZ: process.env.TZ ?? null,
-        resolvedTz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        offsetMin: new Date().getTimezoneOffset(),
-        now: new Date().toISOString(),
-      }),
-    );
     const ip = obterIp(dados.req);
     const userAgent = dados.req.headers.get("user-agent");
 
