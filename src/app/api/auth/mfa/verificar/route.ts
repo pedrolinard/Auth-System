@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
-import { descriptografar } from "@/lib/cripto";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
+import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
-import { verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaVerificacaoMfa } from "@/lib/validacao";
@@ -58,12 +57,23 @@ export async function POST(req: Request) {
     );
   }
 
-  const codigoValido = await verificarCodigoMfaSemReplay(
-    usuario.id,
-    descriptografar(usuario.mfaSecret),
-    usuario.email,
-    codigo,
-  );
+  let codigoValido: boolean;
+  try {
+    codigoValido = await verificarCodigoMfaSemReplay(
+      usuario.id,
+      usuario.mfaSecret,
+      usuario.email,
+      codigo,
+    );
+  } catch (erro) {
+    if (erro instanceof ErroSegredoMfaIlegivel) {
+      return NextResponse.json(
+        { erro: "Não foi possível verificar o código agora. Tente novamente mais tarde." },
+        { status: 500 },
+      );
+    }
+    throw erro;
+  }
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });

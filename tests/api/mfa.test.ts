@@ -314,4 +314,41 @@ describe("Fluxo de MFA (TOTP)", () => {
     });
     expect(respostaValida.status).toBe(200);
   });
+
+  // Regressão de um incidente real: MFA_ENCRYPTION_KEY_ANTERIOR configurada
+  // errada em produção deixou o mfaSecret de uma conta indecifrável (nem a
+  // chave atual nem a anterior batiam). Sem tratamento, descriptografar()
+  // lançava sem try/catch e a rota crashava com corpo vazio — o cliente via
+  // "Unexpected end of JSON input" em vez de um erro decente. Simula a mesma
+  // situação corrompendo o mfaSecret direto no banco.
+  it("responde 500 com JSON (não crasha) quando o mfaSecret armazenado está indecifrável", async () => {
+    const usuario = await criarUsuarioTeste("mfa-segredo-indecifravel");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const respostaIniciar = await chamar("/api/auth/mfa/iniciar", cabecalhos);
+    const { segredo } = await respostaIniciar.json();
+    await chamar("/api/auth/mfa/confirmar", cabecalhos, { codigo: gerarCodigoTotp(segredo) });
+
+    await prisma.usuario.update({
+      where: { email: usuario.email },
+      data: { mfaSecret: "v1:aWx1bWluYWRv:c2VncmVkbw==:ZGFkb3M=" },
+    });
+
+    const respostaLogin = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
+      body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
+    });
+    const { mfaToken } = await respostaLogin.json();
+    expect(mfaToken).toBeTruthy();
+
+    const resposta = await chamar("/api/auth/mfa/verificar", {}, {
+      mfaToken,
+      codigo: "000000",
+    });
+    expect(resposta.status).toBe(500);
+    const corpo = await resposta.json();
+    expect(corpo.erro).toBeTruthy();
+  });
 });

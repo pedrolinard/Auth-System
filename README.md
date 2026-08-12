@@ -274,6 +274,16 @@ de segurança) usa uma chave anterior temporária como fallback de leitura:
 4. Confira a saída (0 falhas) e só então remova `MFA_ENCRYPTION_KEY_ANTERIOR`
    do ambiente.
 
+Se `descriptografar` falhar mesmo com o fallback (ex.: `MFA_ENCRYPTION_KEY_ANTERIOR`
+configurada com o valor errado, ou o script de rotação não foi rodado antes
+de trocar a chave), as quatro rotas que decifram `mfaSecret` (`mfa/confirmar`,
+`mfa/verificar`, `mfa/desativar`, `mfa/backup/regenerar`) capturam isso —
+`verificarCodigoMfaSemReplay` (`src/lib/mfa.ts`) lança `ErroSegredoMfaIlegivel`
+— e respondem `500` com uma mensagem genérica, logando o erro real no
+servidor. Sem esse tratamento, a exceção subia crua e o Vercel devolvia corpo
+vazio: o cliente via `Unexpected end of JSON input` em vez de qualquer
+mensagem, mascarando o problema real por trás de "código inválido".
+
 #### Códigos de backup (recovery codes)
 
 `POST /api/auth/mfa/confirmar` também emite **10 códigos de backup** (formato

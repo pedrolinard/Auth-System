@@ -5,9 +5,8 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { invalidarCodigosBackup, persistirCodigosBackup } from "@/lib/backupMfa";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { enviarEmailCodigosBackupRegenerados } from "@/lib/email";
-import { descriptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
-import { verificarCodigoMfaSemReplay } from "@/lib/mfa";
+import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
 
@@ -62,12 +61,23 @@ export async function POST(req: Request) {
   // atual) pra regenerar os códigos. Sem isso, uma sessão sequestrada
   // conseguiria rotacionar os códigos de backup silenciosamente e usá-los
   // depois — o dono legítimo nem ficaria sabendo que os códigos mudaram.
-  const codigoValido = await verificarCodigoMfaSemReplay(
-    usuario.id,
-    descriptografar(usuario.mfaSecret),
-    usuario.email,
-    dadosValidados.data.codigo,
-  );
+  let codigoValido: boolean;
+  try {
+    codigoValido = await verificarCodigoMfaSemReplay(
+      usuario.id,
+      usuario.mfaSecret,
+      usuario.email,
+      dadosValidados.data.codigo,
+    );
+  } catch (erro) {
+    if (erro instanceof ErroSegredoMfaIlegivel) {
+      return NextResponse.json(
+        { erro: "Não foi possível verificar o código agora. Tente novamente mais tarde." },
+        { status: 500 },
+      );
+    }
+    throw erro;
+  }
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
