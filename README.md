@@ -60,6 +60,10 @@ consumido por outras aplicações como camada intermediária de identidade.
 - **Logout automático por inatividade**: 5 minutos sem nenhuma interação em
   `/dashboard` derrubam a sessão de verdade e voltam pro login — ver seção
   "Logout automático por inatividade" abaixo.
+- **Sessões ativas com contexto**: a lista de sessões no dashboard mostra tipo
+  de dispositivo (desktop/tablet/mobile) e localização aproximada (cidade/UF/
+  país) de cada uma — ver seção "Tipo de dispositivo e localização nas
+  sessões ativas" abaixo.
 
 ## Serviço de domínio (Django)
 
@@ -122,7 +126,7 @@ apareceriam testando o ciclo completo de request/response, não com mocks.
   processos no teardown (`taskkill /t /f` no Windows).
 - Crie a database antes da primeira execução: `CREATE DATABASE
   autenticacao_test;`.
-- 88 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
+- 89 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
   AES-256-GCM incluindo o versionamento do formato cifrado e a rotação de
   `MFA_ENCRYPTION_KEY`, e geração/consumo/regeneração dos códigos de backup,
   incluindo uma corrida real de duas requisições simultâneas pelo mesmo
@@ -403,6 +407,36 @@ que revoga só uma. Como o token de acesso é um JWT stateless de vida curta
 já tinham até ele expirar naturalmente — só a **renovação** (refresh) é
 bloqueada imediatamente. Esse é o trade-off inerente a JWT sem blocklist, não
 uma falha da funcionalidade.
+
+### Tipo de dispositivo e localização nas sessões ativas
+
+`TokenAtualizacao` guarda `ip`, `userAgent` e geolocalização (`geoCidade`,
+`geoRegiao`, `geoPais`) capturados no momento em que a linha foi criada —
+login, conclusão de MFA (`/mfa/verificar`, `/mfa/backup`) ou rotação em
+`/atualizar`. `GET /api/auth/sessoes` devolve, por sessão, `tipoDispositivo`
+(`"desktop" | "tablet" | "mobile" | "desconhecido"`, derivado do User-Agent em
+`src/lib/dispositivo.ts` — classificação leve por regex, sem dependência tipo
+`ua-parser-js`) e `localizacao` (string pronta "Cidade, UF, País", montada em
+`src/lib/geo.ts`), exibidos na seção "Sessões ativas" do dashboard.
+
+A geolocalização não usa nenhum serviço externo de geo-IP: a Vercel já
+resolve o IP da requisição e injeta o resultado nos headers
+`x-vercel-ip-city`, `x-vercel-ip-country-region` e `x-vercel-ip-country`
+(https://vercel.com/docs/edge-network/headers#x-vercel-ip-city) — plataforma
+nativa, sem custo e sem chamada de rede extra por login. Fora da Vercel (dev
+local, outro host) esses headers simplesmente não existem, então
+`localizacao` vem `null` e a UI mostra "Localização desconhecida". O nome do
+país é resolvido do código ISO via `Intl.DisplayNames` nativo do Node
+(`pt-BR`), sem tabela própria; cidade e UF são exibidos como a Vercel os
+retorna.
+
+Como cada rotação de refresh token cria uma linha nova em `TokenAtualizacao`,
+IP/UA/geo são **recapturados a cada `/atualizar`** (não copiados do token
+anterior) — a lista reflete onde o dispositivo está agora, não só no login
+original. Sessões criadas antes desta migration (ou logadas fora da Vercel)
+ficam com "Dispositivo desconhecido"/"Localização desconhecida" até serem
+renovadas. Migration:
+`prisma/migrations/20260813182108_sessoes_ip_useragent_geo`.
 
 ### Recuperação de senha
 
