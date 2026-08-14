@@ -8,7 +8,7 @@ staticfiles/
 .vercel
 .env*
 
-# tooling/config local do Claude Code (não é código do projeto)
+# tooling/config local do agente de IA (não é código do projeto)
 .agents/
 .claude/
 skills-lock.json
