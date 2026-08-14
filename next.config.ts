@@ -72,6 +72,14 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      // O roadmap estático (public/roadmap.html) virou a página viva em
+      // /roadmap (src/app/roadmap/page.tsx), renderizada a partir de
+      // src/data/roadmap.ts — mantém quem tinha a URL antiga salva.
+      { source: "/roadmap.html", destination: "/roadmap", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;
