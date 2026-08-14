@@ -7,6 +7,8 @@ import {
   definirCookieCsrf,
 } from "@/lib/cookies";
 import { gerarTokenCsrf } from "@/lib/csrf";
+import { obterGeo } from "@/lib/geo";
+import { obterIp } from "@/lib/rateLimit";
 import {
   gerarTokenAcesso,
   gerarTokenAtualizacao,
@@ -25,7 +27,7 @@ type UsuarioParaSessao = {
 // atualização e seta o cookie httpOnly. Usado tanto pelo login direto quanto
 // pela conclusão do desafio de MFA, para os dois caminhos terminarem no mesmo
 // formato de sessão.
-export async function criarSessao(usuario: UsuarioParaSessao) {
+export async function criarSessao(usuario: UsuarioParaSessao, req: Request) {
   const tokenAcesso = await gerarTokenAcesso({
     sub: usuario.id,
     email: usuario.email,
@@ -34,12 +36,18 @@ export async function criarSessao(usuario: UsuarioParaSessao) {
   const { token: tokenAtualizacao, expiraEm } = await gerarTokenAtualizacao(
     usuario.id,
   );
+  const geo = obterGeo(req);
 
   await prisma.tokenAtualizacao.create({
     data: {
       tokenHash: hashToken(tokenAtualizacao),
       usuarioId: usuario.id,
       expiraEm,
+      ip: obterIp(req),
+      userAgent: req.headers.get("user-agent"),
+      geoCidade: geo.cidade,
+      geoRegiao: geo.regiao,
+      geoPais: geo.pais,
     },
   });
 

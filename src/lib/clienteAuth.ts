@@ -180,6 +180,8 @@ export type Sessao = {
   criadoEm: string;
   expiraEm: string;
   atual: boolean;
+  tipoDispositivo: "mobile" | "tablet" | "desktop" | "desconhecido";
+  localizacao: string | null;
 };
 
 export async function listarSessoes(): Promise<Sessao[]> {

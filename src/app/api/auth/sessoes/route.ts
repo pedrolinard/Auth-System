@@ -9,6 +9,8 @@ import {
   removerCookieCsrf,
 } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
+import { classificarDispositivo } from "@/lib/dispositivo";
+import { formatarLocalizacao } from "@/lib/geo";
 import { hashToken } from "@/lib/token";
 
 export async function GET(req: Request) {
@@ -27,15 +29,32 @@ export async function GET(req: Request) {
       expiraEm: { gt: new Date() },
     },
     orderBy: { criadoEm: "desc" },
-    select: { id: true, tokenHash: true, criadoEm: true, expiraEm: true },
+    select: {
+      id: true,
+      tokenHash: true,
+      criadoEm: true,
+      expiraEm: true,
+      userAgent: true,
+      geoCidade: true,
+      geoRegiao: true,
+      geoPais: true,
+    },
   });
 
-  const sessoes = tokens.map(({ id, tokenHash, criadoEm, expiraEm }) => ({
-    id,
-    criadoEm,
-    expiraEm,
-    atual: tokenHash === hashAtual,
-  }));
+  const sessoes = tokens.map(
+    ({ id, tokenHash, criadoEm, expiraEm, userAgent, geoCidade, geoRegiao, geoPais }) => ({
+      id,
+      criadoEm,
+      expiraEm,
+      atual: tokenHash === hashAtual,
+      tipoDispositivo: classificarDispositivo(userAgent),
+      localizacao: formatarLocalizacao({
+        cidade: geoCidade,
+        regiao: geoRegiao,
+        pais: geoPais,
+      }),
+    }),
+  );
 
   return NextResponse.json({ sessoes });
 }

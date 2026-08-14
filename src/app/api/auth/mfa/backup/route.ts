@@ -91,7 +91,7 @@ export async function POST(req: Request) {
 
   await registrarEvento({ req, evento: "mfa_backup_sucesso", usuarioId: usuario.id });
 
-  const sessao = await criarSessao(usuario);
+  const sessao = await criarSessao(usuario, req);
   const codigosBackupRestantes = await contarCodigosRestantes(usuario.id);
 
   return NextResponse.json({ ...sessao, codigosBackupRestantes });

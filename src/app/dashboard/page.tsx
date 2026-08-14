@@ -332,6 +332,13 @@ function SecaoMfa({
   );
 }
 
+const ROTULO_DISPOSITIVO: Record<Sessao["tipoDispositivo"], string> = {
+  desktop: "Computador",
+  mobile: "Celular",
+  tablet: "Tablet",
+  desconhecido: "Dispositivo desconhecido",
+};
+
 function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
   const [sessoes, setSessoes] = useState<Sessao[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -418,13 +425,17 @@ function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
             >
               <div className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span>Criada em {new Date(sessao.criadoEm).toLocaleString("pt-BR")}</span>
+                  <span className="font-medium text-foreground">
+                    {ROTULO_DISPOSITIVO[sessao.tipoDispositivo]}
+                  </span>
+                  <span>{sessao.localizacao ?? "Localização desconhecida"}</span>
                   {sessao.atual && (
                     <span className="whitespace-nowrap rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-black dark:bg-white/10 dark:text-white">
                       sessão atual
                     </span>
                   )}
                 </div>
+                <span>Criada em {new Date(sessao.criadoEm).toLocaleString("pt-BR")}</span>
                 <span>Expira em {new Date(sessao.expiraEm).toLocaleString("pt-BR")}</span>
               </div>
               <button

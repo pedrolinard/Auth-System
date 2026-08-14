@@ -65,6 +65,16 @@ model TokenAtualizacao {
   tokenHash    String    @unique
   usuarioId    String
   usuario      Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  // IP, User-Agent e geolocalização capturados no momento em que ESTA linha
+  // foi criada (login, conclusão de MFA ou rotação em /atualizar) — exibidos
+  // na lista de "sessões ativas" pra o usuário reconhecer cada dispositivo.
+  // Geolocalização vem dos headers `x-vercel-ip-*` que a Vercel injeta nas
+  // requisições (ver src/lib/geo.ts); ficam null fora da Vercel (dev local).
+  ip           String?
+  userAgent    String?
+  geoCidade    String?
+  geoRegiao    String?
+  geoPais      String?
   criadoEm     DateTime  @default(now()) @db.Timestamptz(3)
   expiraEm     DateTime  @db.Timestamptz(3)
   revogadoEm   DateTime? @db.Timestamptz(3)

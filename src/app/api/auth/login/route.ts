@@ -140,6 +140,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ mfaObrigatorio: true, mfaToken });
   }
 
-  const sessao = await criarSessao(usuario);
+  const sessao = await criarSessao(usuario, req);
   return NextResponse.json(sessao);
 }

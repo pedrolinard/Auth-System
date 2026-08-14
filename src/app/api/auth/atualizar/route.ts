@@ -10,6 +10,8 @@ import {
   obterCookieCsrf,
 } from "@/lib/cookies";
 import { csrfValido, gerarTokenCsrf } from "@/lib/csrf";
+import { obterGeo } from "@/lib/geo";
+import { obterIp } from "@/lib/rateLimit";
 import {
   gerarTokenAcesso,
   gerarTokenAtualizacao,
@@ -90,9 +92,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // Rotação: revoga o token usado e emite um novo par de tokens.
+  // Rotação: revoga o token usado e emite um novo par de tokens. IP/UA/geo
+  // são recapturados da requisição de refresh (não copiados do token
+  // antigo) pra a lista de sessões refletir onde o dispositivo está agora,
+  // não onde estava no login original.
   const { token: novoTokenAtualizacao, expiraEm: novaExpiracao } =
     await gerarTokenAtualizacao(registroToken.usuarioId);
+  const geo = obterGeo(req);
 
   try {
     await prisma.$transaction([
@@ -105,6 +111,11 @@ export async function POST(req: Request) {
           tokenHash: hashToken(novoTokenAtualizacao),
           usuarioId: registroToken.usuarioId,
           expiraEm: novaExpiracao,
+          ip: obterIp(req),
+          userAgent: req.headers.get("user-agent"),
+          geoCidade: geo.cidade,
+          geoRegiao: geo.regiao,
+          geoPais: geo.pais,
         },
       }),
     ]);
