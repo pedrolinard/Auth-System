@@ -38,6 +38,7 @@ export const concluido: GrupoConcluido[] = [
       "Recuperação de senha: token de 1h, resposta genérica anti-enumeração, revoga todas as sessões ao redefinir",
       "Checagem de senha vazada (Have I Been Pwned, k-anonymity) no cadastro e na redefinição de senha — recusa senhas já conhecidas em vazamentos reais",
       "Troca de senha estando logado (PUT /api/auth/senha), exigindo a senha atual — mantém a sessão de origem viva e derruba as demais",
+      "Alterar e-mail com confirmação em duas etapas — o endereço só muda depois de um link clicado no e-mail NOVO, e o e-mail ANTIGO recebe um aviso de segurança quando a troca se confirma",
     ],
   },
   {
@@ -75,13 +76,14 @@ export const concluido: GrupoConcluido[] = [
       "RBAC mínimo (usuario/admin) como claim no token de acesso",
       "Admin pode suspender (temporária ou permanente) ou excluir permanentemente a conta de outro usuário",
       "Suspensão revoga todas as sessões ativas na hora e bloqueia login imediatamente",
-      "E-mails de segurança: dispositivo novo, MFA ativado/desativado, senha alterada, códigos de backup regenerados, reuso de refresh token detectado",
+      "E-mails de segurança: dispositivo novo, MFA ativado/desativado, senha alterada, códigos de backup regenerados, reuso de refresh token detectado, viagem impossível (login em país diferente do último, tempo curto demais pra ser real)",
     ],
   },
   {
     categoria: "Auditoria & operação",
     itens: [
       "Logs de auditoria (login sucesso/falha, cadastro, logout, IP e user-agent)",
+      "Painel de auditoria para admins (/dashboard/auditoria) — consulta os últimos 200 logs com filtro por evento/e-mail, sem precisar acessar o banco direto",
       "Proteção CSRF explícita (double-submit cookie) em toda mutação autenticada por cookie",
       "Headers de segurança HTTP (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Permissions-Policy)",
       "Job de limpeza de tokens expirados/revogados antigos, protegido por CRON_SECRET",
@@ -160,7 +162,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Exigiria confirmação em duas etapas (link no e-mail novo) pra não permitir sequestro silencioso da conta.",
     categoria: "Conta",
     prioridade: "media",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-17",
   },
   {
     id: "painel-auditoria",
@@ -169,7 +172,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "LogAuditoria já tem os dados; falta uma tela em /dashboard pra consultar sem precisar acessar o banco direto.",
     categoria: "Admin",
     prioridade: "media",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-17",
   },
   {
     id: "viagem-impossivel",
@@ -178,7 +182,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Agora que sessões guardam cidade/UF/país, dá pra alertar quando duas sessões aparecem em locais incompatíveis num intervalo curto — reaproveitando o e-mail de dispositivo novo que já existe.",
     categoria: "Segurança",
     prioridade: "media",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-17",
   },
   {
     id: "limite-sessoes",

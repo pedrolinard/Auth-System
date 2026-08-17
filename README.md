@@ -72,6 +72,14 @@ consumido por outras aplicações como camada intermediária de identidade.
   "Troca de senha estando logado" abaixo.
 - **"Lembrar este dispositivo"**: pula o desafio de MFA por 30 dias num
   navegador já verificado — ver seção "Lembrar este dispositivo" abaixo.
+- **Alterar e-mail**: confirmação em duas etapas (link no e-mail novo) — ver
+  seção "Alterar e-mail" abaixo.
+- **Painel de auditoria para admins**: `/dashboard/auditoria` consulta os
+  logs de `LogAuditoria` sem acessar o banco direto — ver seção "Painel de
+  auditoria" abaixo.
+- **Detecção de "viagem impossível"**: alerta por e-mail quando duas sessões
+  aparecem em países diferentes num intervalo curto demais — ver seção
+  "Viagem impossível" abaixo.
 
 ## Serviço de domínio (Django)
 
@@ -138,19 +146,21 @@ apareceriam testando o ciclo completo de request/response, não com mocks.
 - `vitest.config.ts` exclui `tests-e2e/**` do escopo do Vitest — sem isso, o
   glob default (`**/*.spec.ts`) também casaria com as specs do Playwright
   abaixo, que usam a API `test.describe()` do Playwright, não a do Vitest.
-- 100 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
+- 112 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
   AES-256-GCM incluindo o versionamento do formato cifrado e a rotação de
   `MFA_ENCRYPTION_KEY`, e geração/consumo/regeneração dos códigos de backup,
   incluindo uma corrida real de duas requisições simultâneas pelo mesmo
   código) e `tests/api/*.test.ts` cobrindo cadastro, login (incluindo o
-  side-channel de timing entre e-mail inexistente e senha errada),
-  rotação/reuso de refresh token, sessões (incluindo o limite de 5
-  simultâneas), MFA (TOTP real via `otpauth` + bloqueio de replay/código
-  expirado no login + códigos de backup + regeneração + "lembrar este
-  dispositivo"), RBAC, troca de senha (logado e via e-mail, incluindo senha
-  vazada e o uso único do token de redefinição), verificação de e-mail, CSRF,
-  rate limiting, e suspensão/exclusão de conta pelo admin (incluindo a janela
-  entre desafio de MFA e suspensão).
+  side-channel de timing entre e-mail inexistente e senha errada e a
+  detecção de "viagem impossível"), rotação/reuso de refresh token, sessões
+  (incluindo o limite de 5 simultâneas), MFA (TOTP real via `otpauth` +
+  bloqueio de replay/código expirado no login + códigos de backup +
+  regeneração + "lembrar este dispositivo"), RBAC, troca de senha (logado e
+  via e-mail, incluindo senha vazada e o uso único do token de
+  redefinição), alteração de e-mail (confirmação em duas etapas), painel de
+  auditoria (admin), verificação de e-mail, CSRF, rate limiting, e
+  suspensão/exclusão de conta pelo admin (incluindo a janela entre desafio
+  de MFA e suspensão).
 
 **Playwright** dirige um Chromium de verdade contra o **próprio app renderizado**
 (`playwright.config.ts`, porta 3200 — diferente da 3100 do Vitest, pra rodar
@@ -175,6 +185,8 @@ efetivamente vê na tela (`tests-e2e/*.spec.ts`).
 | POST   | `/api/auth/logout`         | Revoga o token de atualização atual                                      |
 | GET    | `/api/auth/me`             | Retorna o usuário autenticado (rota protegida, exemplo)                  |
 | PUT    | `/api/auth/senha`          | Troca a senha estando logado, exigindo a senha atual (rota protegida)    |
+| POST   | `/api/auth/alterar-email`  | Envia link de confirmação para o e-mail NOVO (rota protegida)            |
+| POST   | `/api/auth/confirmar-alteracao-email` | Confirma o link e efetiva a troca de e-mail                   |
 | GET    | `/api/auth/sessoes`        | Lista as sessões (tokens de atualização) ativas do usuário autenticado   |
 | DELETE | `/api/auth/sessoes/[id]`   | Revoga uma sessão específica do usuário autenticado                      |
 | DELETE | `/api/auth/sessoes`        | "Sair de todos os dispositivos" — revoga todas as sessões do usuário     |
@@ -189,6 +201,7 @@ efetivamente vê na tela (`tests-e2e/*.spec.ts`).
 | POST   | `/api/auth/esqueci-senha`  | Gera o token de redefinição de senha e envia por e-mail                 |
 | POST   | `/api/auth/redefinir-senha`| Redefine a senha a partir do token; revoga todas as sessões ativas      |
 | GET    | `/api/auth/usuarios`       | Lista usuários — restrito a `papel = admin`                             |
+| GET    | `/api/auth/auditoria`      | Lista os últimos 200 logs de auditoria, com filtro por `evento`/`email` — restrito a `papel = admin` |
 | DELETE | `/api/auth/usuarios/[id]`  | Exclui permanentemente a conta de outro usuário (admin)                 |
 | POST   | `/api/auth/usuarios/[id]/suspender` | Suspende a conta de outro usuário, temporária ou permanentemente (admin) |
 | POST   | `/api/auth/usuarios/[id]/reativar` | Reativa uma conta suspensa (admin)                                |
@@ -211,7 +224,8 @@ Abra [http://localhost:3000](http://localhost:3000).
 Antes de rodar, copie `.env.example` para `.env`, gere o par de chaves RS256
 do token de acesso (`npm run gerar:chaves-rs256`) e defina segredos fortes
 para `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`, `JWT_VERIFICACAO_EMAIL_SECRET`,
-`JWT_REDEFINICAO_SENHA_SECRET`, `MFA_ENCRYPTION_KEY` e `CRON_SECRET`.
+`JWT_REDEFINICAO_SENHA_SECRET`, `JWT_ALTERACAO_EMAIL_SECRET`,
+`MFA_ENCRYPTION_KEY` e `CRON_SECRET`.
 
 ## Banco de dados
 
@@ -254,8 +268,8 @@ que preenche `JWT_ACCESS_PRIVATE_KEY_B64`/`JWT_ACCESS_PUBLIC_KEY_B64`).
 
 Os demais `*_SECRET` do `.env` precisam de um valor aleatório e único — nunca
 reuse o mesmo valor entre `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`,
-`JWT_VERIFICACAO_EMAIL_SECRET`, `JWT_REDEFINICAO_SENHA_SECRET` e
-`MFA_ENCRYPTION_KEY`, pois eles isolam os tipos de token/dado entre si (o
+`JWT_VERIFICACAO_EMAIL_SECRET`, `JWT_REDEFINICAO_SENHA_SECRET`,
+`JWT_ALTERACAO_EMAIL_SECRET` e `MFA_ENCRYPTION_KEY`, pois eles isolam os tipos de token/dado entre si (o
 `MFA_ENCRYPTION_KEY` em especial: é usado para **cifrar dados em repouso**
 no banco, não para assinar tokens efêmeros — ver seção "Verificação em duas
 etapas" abaixo).
@@ -398,6 +412,62 @@ Contas que não verificaram o e-mail veem um botão "Reenviar e-mail de
 verificação" no dashboard (`POST /api/auth/reenviar-verificacao`, autenticado,
 rate limited a 3 tentativas/hora por IP) — cobre o caso de contas criadas
 antes do envio real existir, ou de o e-mail original ter se perdido.
+
+### Alterar e-mail
+
+`POST /api/auth/alterar-email` (autenticado, `{ novoEmail }`) **não muda o
+e-mail na hora** — gera um token stateless próprio (`JWT_ALTERACAO_EMAIL_SECRET`,
+1h de validade, mesmo padrão dos outros) e manda um link de confirmação pro
+endereço **novo**. Só quando esse link é clicado (`POST
+/api/auth/confirmar-alteracao-email`, público, `/confirmar-alteracao-email?token=...`
+na UI) é que `Usuario.email` realmente troca — sem essa confirmação em duas
+etapas, um endpoint autenticado sozinho bastaria pra sequestrar
+silenciosamente uma conta com apenas o access token (ex. roubado por XSS
+antes do cookie httpOnly, ou uma sessão deixada aberta).
+
+- O e-mail antigo é liberado (`Usuario.email` é `@unique`) só depois da
+  confirmação — pedir a troca não bloqueia ninguém de cadastrar esse
+  endereço antigo de novo.
+- Confirmar o link também marca `emailVerificado = true`: o endereço acabou
+  de ser provado pelo clique, não faz sentido pedir uma segunda verificação.
+- O endereço **antigo** recebe um aviso de segurança
+  (`enviarEmailEmailAlterado`) assim que a troca se efetiva — se não foi o
+  dono da conta que pediu, é o único jeito de saber e reagir (trocar a
+  senha, revisar sessões).
+- Corrida entre o pedido e a confirmação (outra conta registra o mesmo
+  e-mail novo nesse meio-tempo): a constraint `@unique` do banco é quem
+  garante a segurança de verdade — a checagem prévia na rota de pedido é só
+  pra dar um erro mais cedo no caso comum, não a defesa contra a corrida.
+
+### Painel de auditoria (admin)
+
+`GET /api/auth/auditoria` (restrito a `papel = admin`) lista os últimos 200
+registros de `LogAuditoria` — mais recentes primeiro, com filtro opcional
+por `?evento=` e `?email=` (`contains`, case-sensitive pelo collation do
+Postgres). Não é uma tabela nova nem um pipeline novo: `LogAuditoria` já
+existia desde o rate limiting; esta rota só expõe o que já é gravado.
+`/dashboard/auditoria` é a tela correspondente, pro admin não precisar abrir
+o Prisma Studio ou uma conexão direta no banco pra investigar um incidente.
+
+### Viagem impossível
+
+Login route (`POST /api/auth/login`) compara o país da requisição atual
+(headers `x-vercel-ip-*`, mesma fonte da seção "Tipo de dispositivo e
+localização" abaixo) com o país da **sessão mais recente** do usuário
+(`TokenAtualizacao.geoPais`, já persistido por login/MFA/rotação — nenhuma
+tabela nova). Dois países **diferentes** em menos de **2 horas**
+(`JANELA_VIAGEM_IMPOSSIVEL_MS`) dispara `enviarEmailViagemImpossivel` em vez
+do e-mail de "dispositivo novo" (os dois juntos seriam redundantes pro mesmo
+login suspeito).
+
+**Limitação assumida, não escondida**: os headers da Vercel só dão
+país/região/cidade aproximados, sem latitude/longitude — não dá pra calcular
+distância ou velocidade de verdade. A heurística é grosseira por design
+(país diferente + janela curta), não uma reconstrução de trajeto real; existe
+pra pegar o caso óbvio (duas sessões em continentes diferentes minutos uma
+da outra), não pra detectar toda anomalia geográfica possível. Fora da
+Vercel (dev local), os headers não existem e a checagem simplesmente não
+dispara — sem falso positivo, mas também sem proteção nesse ambiente.
 
 ### RBAC mínimo
 
@@ -665,7 +735,8 @@ projeto Vercel). Variáveis configuradas em cada projeto:
 
 - **`auth-gateway`**: `JWT_ACCESS_PRIVATE_KEY_B64`, `JWT_ACCESS_PUBLIC_KEY_B64`,
   `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`, `JWT_VERIFICACAO_EMAIL_SECRET`,
-  `JWT_REDEFINICAO_SENHA_SECRET`, `MFA_ENCRYPTION_KEY`, `CRON_SECRET`,
+  `JWT_REDEFINICAO_SENHA_SECRET`, `JWT_ALTERACAO_EMAIL_SECRET`,
+  `MFA_ENCRYPTION_KEY`, `CRON_SECRET`,
   `BASE_URL`, `DJANGO_SERVICE_URL` (aponta para a URL de produção do projeto
   Django), além de `DATABASE_URL` (injetada automaticamente pela integração
   Neon).

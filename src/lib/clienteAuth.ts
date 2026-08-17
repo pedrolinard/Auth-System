@@ -156,6 +156,28 @@ export async function trocarSenha(dados: { senhaAtual: string; novaSenha: string
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao trocar a senha."));
 }
 
+export async function alterarEmail(novoEmail: string) {
+  const resposta = await fetch("/api/auth/alterar-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
+    credentials: "include",
+    body: JSON.stringify({ novoEmail }),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao pedir a troca de e-mail."));
+}
+
+export async function confirmarAlteracaoEmail(token: string): Promise<string> {
+  const resposta = await fetch("/api/auth/confirmar-alteracao-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao confirmar a troca de e-mail.");
+  return corpo.novoEmail;
+}
+
 export async function sair() {
   await fetch("/api/auth/logout", {
     method: "POST",
@@ -241,6 +263,31 @@ export async function suspenderUsuario(id: string, dados: { dias?: number; motiv
   });
   const corpo = await resposta.json();
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao suspender usuário."));
+}
+
+export type RegistroAuditoria = {
+  id: string;
+  usuarioId: string | null;
+  email: string | null;
+  evento: string;
+  ip: string | null;
+  userAgent: string | null;
+  criadoEm: string;
+};
+
+export async function listarAuditoria(filtros?: {
+  evento?: string;
+  email?: string;
+}): Promise<RegistroAuditoria[]> {
+  const query = new URLSearchParams();
+  if (filtros?.evento) query.set("evento", filtros.evento);
+  if (filtros?.email) query.set("email", filtros.email);
+  const resposta = await fetch(`/api/auth/auditoria?${query.toString()}`, {
+    credentials: "include",
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao carregar auditoria.");
+  return corpo.registros;
 }
 
 export async function reativarUsuario(id: string) {

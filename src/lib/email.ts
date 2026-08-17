@@ -218,6 +218,90 @@ export async function enviarEmailCodigosBackupRegenerados(destinatario: string) 
   }
 }
 
+export async function enviarEmailConfirmacaoAlteracaoEmail(destinatario: string, link: string) {
+  if (!resend) {
+    console.log(`[dev] Link de confirmação de alteração de e-mail para ${destinatario}: ${link}`);
+    return;
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: REMETENTE,
+      to: destinatario,
+      subject: "Confirme seu novo e-mail",
+      html: `
+        <p>Pediram a troca do e-mail desta conta para este endereço. Clique no link
+        abaixo para confirmar — o e-mail da conta só muda depois dessa confirmação:</p>
+        <p><a href="${link}">${link}</a></p>
+        <p style="color:#71717a;font-size:12px">O link expira em 1 hora. Se você não pediu essa troca, pode ignorar este e-mail.</p>
+      `,
+    });
+    if (error) console.error("Falha ao enviar e-mail de confirmação de alteração de e-mail:", error);
+  } catch (erro) {
+    console.error("Falha ao enviar e-mail de confirmação de alteração de e-mail:", erro);
+  }
+}
+
+export async function enviarEmailEmailAlterado(destinatarioAntigo: string, novoEmail: string) {
+  const novoEmailEscapado = escaparHtml(novoEmail);
+
+  if (!resend) {
+    console.log(`[dev] Aviso de e-mail alterado para ${destinatarioAntigo} (novo: ${novoEmailEscapado})`);
+    return;
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: REMETENTE,
+      to: destinatarioAntigo,
+      subject: "O e-mail da sua conta foi alterado",
+      html: `
+        <p>O e-mail desta conta foi trocado para <strong>${novoEmailEscapado}</strong>.</p>
+        <p>Se não foi você, alguém pode ter acesso à sua conta — troque sua senha imediatamente e revise as sessões ativas.</p>
+        ${RODAPE_PADRAO}
+      `,
+    });
+    if (error) console.error("Falha ao enviar e-mail de alerta de alteração de e-mail:", error);
+  } catch (erro) {
+    console.error("Falha ao enviar e-mail de alerta de alteração de e-mail:", erro);
+  }
+}
+
+export async function enviarEmailViagemImpossivel(
+  destinatario: string,
+  dados: { paisAnterior: string; paisAtual: string; quando: Date },
+) {
+  const quando = dados.quando.toLocaleString("pt-BR");
+  const paisAnterior = escaparHtml(dados.paisAnterior);
+  const paisAtual = escaparHtml(dados.paisAtual);
+
+  if (!resend) {
+    console.log(
+      `[dev] Alerta de viagem impossível para ${destinatario} (${paisAnterior} -> ${paisAtual})`,
+    );
+    return;
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: REMETENTE,
+      to: destinatario,
+      subject: "Login suspeito: locais incompatíveis detectados",
+      html: `
+        <p>Sua conta acabou de ser acessada de <strong>${paisAtual}</strong>, pouco tempo depois de
+        um acesso de <strong>${paisAnterior}</strong> — distância improvável de percorrer nesse
+        intervalo (${quando}).</p>
+        <p>Se foi você (ex.: usando uma VPN), pode ignorar este e-mail. Se não foi, troque sua
+        senha agora e revise as sessões ativas na sua conta.</p>
+        ${RODAPE_PADRAO}
+      `,
+    });
+    if (error) console.error("Falha ao enviar e-mail de viagem impossível:", error);
+  } catch (erro) {
+    console.error("Falha ao enviar e-mail de viagem impossível:", erro);
+  }
+}
+
 export async function enviarEmailReusoTokenDetectado(destinatario: string) {
   if (!resend) {
     console.log(`[dev] Alerta de reuso de token detectado para ${destinatario}`);

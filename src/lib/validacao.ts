@@ -79,6 +79,14 @@ export const esquemaRedefinirSenha = z.object({
   novaSenha: esquemaSenhaForte,
 });
 
+export const esquemaAlterarEmail = z.object({
+  novoEmail: z.email({ error: "Informe um e-mail válido." }).trim().toLowerCase(),
+});
+
+export const esquemaConfirmarAlteracaoEmail = z.object({
+  token: z.string({ error: "Informe o token de confirmação." }),
+});
+
 export const esquemaTrocarSenha = z.object({
   senhaAtual: z
     .string({ error: "Informe a senha atual." })

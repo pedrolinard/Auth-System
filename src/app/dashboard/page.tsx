@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  alterarEmail,
   confirmarMfa,
   desativarMfa,
   iniciarMfa,
@@ -128,15 +129,22 @@ export default function PaginaDashboard() {
             Meus projetos
           </Link>
           {usuario.papel === "admin" && (
-            <Link href="/dashboard/usuarios" className="btn-secondary">
-              Usuários
-            </Link>
+            <>
+              <Link href="/dashboard/usuarios" className="btn-secondary">
+                Usuários
+              </Link>
+              <Link href="/dashboard/auditoria" className="btn-secondary">
+                Auditoria
+              </Link>
+            </>
           )}
           <button onClick={aoSair} className="btn-secondary">
             Sair
           </button>
         </div>
       </div>
+
+      <SecaoAlterarEmail />
 
       <SecaoTrocarSenha />
 
@@ -152,6 +160,69 @@ export default function PaginaDashboard() {
           router.replace("/login");
         }}
       />
+    </div>
+  );
+}
+
+function SecaoAlterarEmail() {
+  const [novoEmail, setNovoEmail] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [sucesso, setSucesso] = useState(false);
+  const [carregando, setCarregando] = useState(false);
+
+  async function aoEnviar(evento: React.FormEvent) {
+    evento.preventDefault();
+    setErro(null);
+    setSucesso(false);
+    setCarregando(true);
+    try {
+      await alterarEmail(novoEmail);
+      setSucesso(true);
+      setNovoEmail("");
+    } catch (erroCapturado) {
+      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
+      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Conta</span>
+      <h2 className="text-lg font-semibold tracking-tight text-foreground">Alterar e-mail</h2>
+
+      <form onSubmit={aoEnviar} className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="novoEmail" className="text-sm text-zinc-600 dark:text-zinc-400">
+            Novo e-mail
+          </label>
+          <input
+            id="novoEmail"
+            name="novoEmail"
+            type="email"
+            required
+            value={novoEmail}
+            onChange={(e) => setNovoEmail(e.target.value)}
+            className="input-field"
+          />
+        </div>
+
+        {sucesso && (
+          <p className="text-sm text-green-600 dark:text-green-400">
+            Enviamos um link de confirmação pro novo endereço. O e-mail da conta só muda
+            depois que ele for confirmado.
+          </p>
+        )}
+        {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+
+        <button
+          type="submit"
+          disabled={carregando || !novoEmail}
+          className="btn-primary-sm self-start"
+        >
+          {carregando ? "Enviando..." : "Pedir troca de e-mail"}
+        </button>
+      </form>
     </div>
   );
 }

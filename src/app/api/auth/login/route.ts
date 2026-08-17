@@ -3,7 +3,8 @@ import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { obterCookieDispositivoConfiavel } from "@/lib/cookies";
 import { dispositivoEhConfiavel } from "@/lib/dispositivoConfiavel";
-import { enviarEmailDispositivoNovo } from "@/lib/email";
+import { enviarEmailDispositivoNovo, enviarEmailViagemImpossivel } from "@/lib/email";
+import { formatarLocalizacao, obterGeo } from "@/lib/geo";
 import {
   contarEventosPorIp,
   limiteExcedidoPorEmail,
@@ -48,6 +49,14 @@ const JANELA_LOGIN_POR_CONTA_MS = 15 * 60 * 1000;
 // enumerar contas cadastradas pelo tempo de resposta.
 const HASH_FALSO_PARA_EQUALIZAR_TEMPO =
   "$2b$12$.htri/WdfmHPQtzi/DBiXuElm0r9h1/i6mxt.MzuUkwQq9LqQ6iku";
+
+// "Viagem impossível": os headers de geo da Vercel só dão país/região/cidade
+// aproximados, sem lat/long — não dá pra calcular distância/velocidade de
+// verdade. Heurística grosseira mas honesta: dois países DIFERENTES num
+// intervalo curto demais pra viajar de verdade entre eles (2h cobre o caso
+// comum sem gerar falso positivo o tempo todo pra quem troca de rede/VPN
+// esporadicamente).
+const JANELA_VIAGEM_IMPOSSIVEL_MS = 2 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
   const ip = obterIp(req);
@@ -131,9 +140,35 @@ export async function POST(req: Request) {
     where: { usuarioId: usuario.id, evento: "login_sucesso", ip, userAgent },
   });
 
+  // Compara com a sessão (TokenAtualizacao) mais recente do usuário, que já
+  // guarda país + o instante em que foi criada — reaproveita o dado das
+  // "sessões ativas" em vez de precisar de tabela ou coluna nova. Roda ANTES
+  // de criar a sessão desta requisição, senão compararia o login atual
+  // consigo mesmo.
+  const geoAtual = obterGeo(req);
+  const ultimaSessao = await prisma.tokenAtualizacao.findFirst({
+    where: { usuarioId: usuario.id },
+    orderBy: { criadoEm: "desc" },
+    select: { criadoEm: true, geoPais: true },
+  });
+  const viagemImpossivel =
+    !!ultimaSessao?.geoPais &&
+    !!geoAtual.pais &&
+    ultimaSessao.geoPais !== geoAtual.pais &&
+    Date.now() - ultimaSessao.criadoEm.getTime() < JANELA_VIAGEM_IMPOSSIVEL_MS;
+
   await registrarEvento({ req, evento: "login_sucesso", usuarioId: usuario.id, email });
 
-  if (!loginAnteriorMesmoDispositivo) {
+  if (viagemImpossivel) {
+    // Alerta mais específico que o de "dispositivo novo" — evita mandar os
+    // dois e-mails pro mesmo login suspeito.
+    await registrarEvento({ req, evento: "viagem_impossivel_detectada", usuarioId: usuario.id, email });
+    await enviarEmailViagemImpossivel(usuario.email, {
+      paisAnterior: formatarLocalizacao({ cidade: null, regiao: null, pais: ultimaSessao!.geoPais }) ?? ultimaSessao!.geoPais!,
+      paisAtual: formatarLocalizacao({ cidade: null, regiao: null, pais: geoAtual.pais }) ?? geoAtual.pais!,
+      quando: new Date(),
+    });
+  } else if (!loginAnteriorMesmoDispositivo) {
     await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando: new Date() });
   }
 
