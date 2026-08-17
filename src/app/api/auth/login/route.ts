@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { obterCookieDispositivoConfiavel } from "@/lib/cookies";
+import { dispositivoEhConfiavel } from "@/lib/dispositivoConfiavel";
 import { enviarEmailDispositivoNovo } from "@/lib/email";
 import {
   contarEventosPorIp,
@@ -136,6 +138,21 @@ export async function POST(req: Request) {
   }
 
   if (usuario.mfaAtivado) {
+    // "Lembrar este dispositivo": pula o desafio de MFA se este navegador já
+    // completou um antes e marcou a opção — a senha continua sendo exigida
+    // sempre, só o segundo fator é dispensado num dispositivo já verificado.
+    const tokenDispositivo = await obterCookieDispositivoConfiavel();
+    if (await dispositivoEhConfiavel(usuario.id, tokenDispositivo)) {
+      await registrarEvento({
+        req,
+        evento: "login_mfa_pulado_dispositivo_confiavel",
+        usuarioId: usuario.id,
+        email,
+      });
+      const sessao = await criarSessao(usuario, req);
+      return NextResponse.json(sessao);
+    }
+
     const { token: mfaToken } = await gerarTokenDesafioMfa(usuario.id);
     return NextResponse.json({ mfaObrigatorio: true, mfaToken });
   }

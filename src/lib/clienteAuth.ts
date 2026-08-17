@@ -132,6 +132,7 @@ export async function entrar(dados: {
 export async function verificarMfaLogin(dados: {
   mfaToken: string;
   codigo: string;
+  lembrarDispositivo?: boolean;
 }) {
   const resposta = await fetch("/api/auth/mfa/verificar", {
     method: "POST",
@@ -142,6 +143,17 @@ export async function verificarMfaLogin(dados: {
   const corpo = await resposta.json();
   if (!resposta.ok) throw new Error(corpo.erro ?? "Código inválido.");
   return corpo;
+}
+
+export async function trocarSenha(dados: { senhaAtual: string; novaSenha: string }) {
+  const resposta = await fetch("/api/auth/senha", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
+    credentials: "include",
+    body: JSON.stringify(dados),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao trocar a senha."));
 }
 
 export async function sair() {

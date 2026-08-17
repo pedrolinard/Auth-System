@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { revogarDispositivosConfiaveis } from "@/lib/dispositivoConfiavel";
 import { enviarEmailSenhaAlterada } from "@/lib/email";
 import { gerarHashSenha } from "@/lib/senha";
+import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { verificarTokenRedefinicaoSenha } from "@/lib/token";
 import { esquemaRedefinirSenha } from "@/lib/validacao";
 
@@ -42,6 +44,15 @@ export async function POST(req: Request) {
     );
   }
 
+  if (await senhaFoiVazada(novaSenha)) {
+    return NextResponse.json(
+      {
+        erro: "Essa senha apareceu em vazamentos de dados conhecidos. Escolha outra.",
+      },
+      { status: 400 },
+    );
+  }
+
   const senhaHash = await gerarHashSenha(novaSenha);
 
   await prisma.usuario.update({
@@ -50,11 +61,13 @@ export async function POST(req: Request) {
   });
 
   // A senha antiga pode ter sido comprometida — derruba todas as sessões
-  // ativas, igual ao "sair de todos os dispositivos".
+  // ativas, igual ao "sair de todos os dispositivos", e qualquer
+  // "dispositivo confiável" que pularia o MFA no próximo login.
   await prisma.tokenAtualizacao.updateMany({
     where: { usuarioId: payload.sub, revogadoEm: null },
     data: { revogadoEm: new Date() },
   });
+  await revogarDispositivosConfiaveis(payload.sub);
 
   await registrarEvento({ req, evento: "senha_redefinida", usuarioId: payload.sub });
   await enviarEmailSenhaAlterada(usuario.email);

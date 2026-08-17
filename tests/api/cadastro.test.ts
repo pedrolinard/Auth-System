@@ -67,4 +67,12 @@ describe("POST /api/auth/cadastro", () => {
     const resposta = await cadastrar({ nome: "Teste", email, senha: senhaNoLimite });
     expect(resposta.status).toBe(201);
   });
+
+  it("rejeita senha conhecida em vazamentos (Have I Been Pwned)", async () => {
+    const email = proximoEmail("cadastro-senha-vazada");
+    // "Password1" está entre as senhas mais comuns em vazamentos reais — serve
+    // de fixture estável pra exercitar a checagem contra a API real do HIBP.
+    const resposta = await cadastrar({ nome: "Teste", email, senha: "Password1" });
+    expect(resposta.status).toBe(400);
+  });
 });

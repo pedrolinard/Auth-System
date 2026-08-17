@@ -48,6 +48,9 @@ export const esquemaVerificacaoMfa = z.object({
   codigo: z
     .string({ error: "Informe o código de verificação." })
     .regex(/^\d{6}$/, { error: "O código deve ter 6 dígitos." }),
+  // "Lembrar este dispositivo": opcional, default false — pular o MFA nos
+  // próximos logins é uma escolha explícita do usuário, nunca o padrão.
+  lembrarDispositivo: z.boolean().optional(),
 });
 
 // Mesmo alfabeto de src/lib/backupMfa.ts (A-Z e 2-9, sem O/0, I/1, L) —
@@ -73,6 +76,13 @@ export const esquemaEsqueciSenha = z.object({
 
 export const esquemaRedefinirSenha = z.object({
   token: z.string({ error: "Informe o token de redefinição." }),
+  novaSenha: esquemaSenhaForte,
+});
+
+export const esquemaTrocarSenha = z.object({
+  senhaAtual: z
+    .string({ error: "Informe a senha atual." })
+    .min(1, { error: "Informe a senha atual." }),
   novaSenha: esquemaSenhaForte,
 });
 

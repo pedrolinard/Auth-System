@@ -82,3 +82,25 @@ export async function obterCookieCsrf() {
   const cookieStore = await cookies();
   return cookieStore.get(NOME_COOKIE_CSRF)?.value;
 }
+
+// "Lembrar este dispositivo": sobrevive a logout de propósito (é sobre o
+// NAVEGADOR ser reconhecido, não sobre uma sessão específica) — só é
+// derrubado por eventos que já invalidam tudo (troca de senha), ver
+// src/lib/dispositivoConfiavel.ts.
+export const NOME_COOKIE_DISPOSITIVO_CONFIAVEL = "dispositivoConfiavel";
+
+export async function definirCookieDispositivoConfiavel(token: string, expiraEm: Date) {
+  const cookieStore = await cookies();
+  cookieStore.set(NOME_COOKIE_DISPOSITIVO_CONFIAVEL, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    expires: expiraEm,
+  });
+}
+
+export async function obterCookieDispositivoConfiavel() {
+  const cookieStore = await cookies();
+  return cookieStore.get(NOME_COOKIE_DISPOSITIVO_CONFIAVEL)?.value;
+}

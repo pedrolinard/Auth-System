@@ -56,6 +56,7 @@ model Usuario {
   atualizadoEm   DateTime            @updatedAt @db.Timestamptz(3)
   tokens         TokenAtualizacao[]
   codigosBackup  CodigoBackupMfa[]
+  dispositivosConfiaveis DispositivoConfiavel[]
 
   @@map("usuarios")
 }
@@ -109,6 +110,21 @@ model DesafioMfaConsumido {
   expiraEm DateTime @db.Timestamptz(3)
 
   @@map("desafios_mfa_consumidos")
+}
+
+// "Lembrar este dispositivo": pula o desafio de MFA por N dias num navegador
+// já verificado (a senha ainda é exigida em todo login) — token de posse
+// comum, mesmo padrão do TokenAtualizacao (só o hash fica no banco).
+model DispositivoConfiavel {
+  id        String   @id @default(cuid())
+  usuarioId String
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  criadoEm  DateTime @default(now()) @db.Timestamptz(3)
+  expiraEm  DateTime @db.Timestamptz(3)
+
+  @@index([usuarioId])
+  @@map("dispositivos_confiaveis")
 }
 
 model LogAuditoria {

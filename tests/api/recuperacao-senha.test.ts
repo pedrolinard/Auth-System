@@ -124,4 +124,21 @@ describe("Recuperação de senha", () => {
     });
     expect(loginComPrimeiraSenha.status).toBe(200);
   });
+
+  it("rejeita redefinir para uma senha conhecida em vazamentos (Have I Been Pwned)", async () => {
+    const usuario = await criarUsuarioTeste("redefinir-senha-vazada");
+    emailsCriados.push(usuario.email);
+
+    const token = await gerarTokenRedefinicaoSenha(
+      (await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } })).id,
+    );
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/redefinir-senha`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
+      // "Password1" está entre as senhas mais comuns em vazamentos reais.
+      body: JSON.stringify({ token, novaSenha: "Password1" }),
+    });
+    expect(resposta.status).toBe(400);
+  });
 });

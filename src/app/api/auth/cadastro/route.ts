@@ -5,6 +5,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { enviarEmailVerificacao } from "@/lib/email";
 import { contarEventosPorIp, obterIp } from "@/lib/rateLimit";
 import { gerarHashSenha } from "@/lib/senha";
+import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { gerarTokenVerificacaoEmail } from "@/lib/token";
 import { verificarTurnstile } from "@/lib/turnstile";
 import { esquemaCadastro } from "@/lib/validacao";
@@ -52,6 +53,16 @@ export async function POST(req: Request) {
       );
     }
   }
+
+  if (await senhaFoiVazada(senha)) {
+    return NextResponse.json(
+      {
+        erro: "Essa senha apareceu em vazamentos de dados conhecidos. Escolha outra.",
+      },
+      { status: 400 },
+    );
+  }
+
   const senhaHash = await gerarHashSenha(senha);
 
   try {

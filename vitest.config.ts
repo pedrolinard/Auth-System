@@ -1,6 +1,6 @@
 import path from "node:path";
 import { config as carregarEnv } from "dotenv";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // Carrega os segredos JWT/etc. do .env real da raiz — os arquivos de teste
 // importam funções de src/lib/token.ts diretamente (ex.: pra gerar um token
@@ -17,6 +17,10 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Sem isso, o glob default do Vitest (**/*.spec.ts) também casa com as
+    // specs do Playwright em tests-e2e/ — que usam test.describe() da API do
+    // Playwright, não a do Vitest, e quebram a coleta.
+    exclude: [...configDefaults.exclude, "tests-e2e/**"],
     globalSetup: ["tests/globalSetup.ts"],
     // Todos os arquivos batem no MESMO servidor `next dev` real (não mocado).
     // Rodando em paralelo, requisições concorrentes contra o Turbopack dev

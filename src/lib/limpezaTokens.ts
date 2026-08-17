@@ -20,5 +20,10 @@ export async function limparTokensExpirados() {
     },
   });
 
+  // Mesma lógica de expiração dos tokens de atualização, aplicada aos
+  // cookies de "dispositivo confiável" — sem TTL nem revogação parcial (só
+  // existem "válido" ou "expirado"), então só a condição de expiraEm importa.
+  await prisma.dispositivoConfiavel.deleteMany({ where: { expiraEm: { lt: agora } } });
+
   return resultado.count;
 }

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { definirCookieDispositivoConfiavel } from "@/lib/cookies";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
+import { criarDispositivoConfiavel } from "@/lib/dispositivoConfiavel";
 import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
@@ -102,5 +104,11 @@ export async function POST(req: Request) {
   }
 
   const sessao = await criarSessao(usuario, req);
+
+  if (dadosValidados.data.lembrarDispositivo) {
+    const { token: tokenDispositivo, expiraEm } = await criarDispositivoConfiavel(usuario.id);
+    await definirCookieDispositivoConfiavel(tokenDispositivo, expiraEm);
+  }
+
   return NextResponse.json(sessao);
 }

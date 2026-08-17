@@ -14,6 +14,7 @@ export default function PaginaLogin() {
   const [senha, setSenha] = useState("");
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [codigo, setCodigo] = useState("");
+  const [lembrarDispositivo, setLembrarDispositivo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
@@ -63,7 +64,7 @@ export default function PaginaLogin() {
     setErro(null);
     setCarregando(true);
     try {
-      await verificarMfaLogin({ mfaToken, codigo });
+      await verificarMfaLogin({ mfaToken, codigo, lembrarDispositivo });
       router.push("/dashboard");
       router.refresh();
     } catch (erroCapturado) {
@@ -112,6 +113,16 @@ export default function PaginaLogin() {
               className="input-field text-center font-mono text-lg tracking-[0.5em]"
             />
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+            <input
+              type="checkbox"
+              checked={lembrarDispositivo}
+              onChange={(e) => setLembrarDispositivo(e.target.checked)}
+              className="h-4 w-4 rounded border-black/[.2] dark:border-white/[.2]"
+            />
+            Lembrar este dispositivo por 30 dias
+          </label>
 
           {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
 

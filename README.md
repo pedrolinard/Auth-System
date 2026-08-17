@@ -64,6 +64,14 @@ consumido por outras aplicações como camada intermediária de identidade.
   de dispositivo (desktop/tablet/mobile) e localização aproximada (cidade/UF/
   país) de cada uma — ver seção "Tipo de dispositivo e localização nas
   sessões ativas" abaixo.
+- **Limite de sessões simultâneas**: no máximo 5 sessões ativas por usuário —
+  ver seção "Limite de sessões simultâneas" abaixo.
+- **Senha vazada (Have I Been Pwned)**: cadastro e troca de senha recusam
+  senhas já conhecidas em vazamentos reais — ver seção "Senha vazada" abaixo.
+- **Troca de senha estando logado**: `PUT /api/auth/senha` — ver seção
+  "Troca de senha estando logado" abaixo.
+- **"Lembrar este dispositivo"**: pula o desafio de MFA por 30 dias num
+  navegador já verificado — ver seção "Lembrar este dispositivo" abaixo.
 
 ## Serviço de domínio (Django)
 
@@ -111,10 +119,11 @@ isolamento de dados por usuário, e a proteção CSRF de ponta a ponta).
 ### Testes automatizados (Next.js)
 
 ```bash
-npm run test
+npm run test       # Vitest — rotas de API
+npm run test:e2e   # Playwright — UI de verdade no navegador
 ```
 
-Roda com **Vitest contra um servidor `next dev` real** (não mocka
+**Vitest** roda contra um **servidor `next dev` real** (não mocka
 `next/headers`/cookies) — decisão consciente: os bugs reais encontrados nesta
 sessão (cache do Turbopack corrompido, 403 em vez de 401 por falta de
 `authenticate_header`, `permission_classes` sobrescrevendo o default) só
@@ -126,17 +135,35 @@ apareceriam testando o ciclo completo de request/response, não com mocks.
   processos no teardown (`taskkill /t /f` no Windows).
 - Crie a database antes da primeira execução: `CREATE DATABASE
   autenticacao_test;`.
-- 89 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
+- `vitest.config.ts` exclui `tests-e2e/**` do escopo do Vitest — sem isso, o
+  glob default (`**/*.spec.ts`) também casaria com as specs do Playwright
+  abaixo, que usam a API `test.describe()` do Playwright, não a do Vitest.
+- 100 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
   AES-256-GCM incluindo o versionamento do formato cifrado e a rotação de
   `MFA_ENCRYPTION_KEY`, e geração/consumo/regeneração dos códigos de backup,
   incluindo uma corrida real de duas requisições simultâneas pelo mesmo
   código) e `tests/api/*.test.ts` cobrindo cadastro, login (incluindo o
   side-channel de timing entre e-mail inexistente e senha errada),
-  rotação/reuso de refresh token, sessões, MFA (TOTP real via `otpauth` +
-  bloqueio de replay/código expirado no login + códigos de backup +
-  regeneração), RBAC, recuperação de senha (incluindo o uso único do token),
-  verificação de e-mail, CSRF, rate limiting, e suspensão/exclusão de conta
-  pelo admin (incluindo a janela entre desafio de MFA e suspensão).
+  rotação/reuso de refresh token, sessões (incluindo o limite de 5
+  simultâneas), MFA (TOTP real via `otpauth` + bloqueio de replay/código
+  expirado no login + códigos de backup + regeneração + "lembrar este
+  dispositivo"), RBAC, troca de senha (logado e via e-mail, incluindo senha
+  vazada e o uso único do token de redefinição), verificação de e-mail, CSRF,
+  rate limiting, e suspensão/exclusão de conta pelo admin (incluindo a janela
+  entre desafio de MFA e suspensão).
+
+**Playwright** dirige um Chromium de verdade contra o **próprio app renderizado**
+(`playwright.config.ts`, porta 3200 — diferente da 3100 do Vitest, pra rodar
+os dois em paralelo sem os servidores `next dev` colidirem), cobrindo o que a
+suíte de API não alcança: formulários, navegação, e o que o usuário
+efetivamente vê na tela (`tests-e2e/*.spec.ts`).
+
+- Mesma database `autenticacao_test` do Vitest — os dois tipos de teste nunca
+  rodam ao mesmo tempo no fluxo normal, então compartilhar não gera conflito.
+- `tests-e2e/global-setup.ts` aplica as migrations antes da suíte;
+  `tests-e2e/helpers.ts` cria/apaga usuários de teste direto via `pg` (não
+  `@/lib/db`/Prisma — o guard `server-only` e o `import.meta` do client
+  gerado não funcionam fora do bundler do Next.js).
 
 ## Rotas de API
 
@@ -147,6 +174,7 @@ apareceriam testando o ciclo completo de request/response, não com mocks.
 | POST   | `/api/auth/atualizar`      | Rotaciona o token de atualização e emite novo acesso                     |
 | POST   | `/api/auth/logout`         | Revoga o token de atualização atual                                      |
 | GET    | `/api/auth/me`             | Retorna o usuário autenticado (rota protegida, exemplo)                  |
+| PUT    | `/api/auth/senha`          | Troca a senha estando logado, exigindo a senha atual (rota protegida)    |
 | GET    | `/api/auth/sessoes`        | Lista as sessões (tokens de atualização) ativas do usuário autenticado   |
 | DELETE | `/api/auth/sessoes/[id]`   | Revoga uma sessão específica do usuário autenticado                      |
 | DELETE | `/api/auth/sessoes`        | "Sair de todos os dispositivos" — revoga todas as sessões do usuário     |
@@ -332,6 +360,24 @@ requisições concorrentes tentando o mesmo código).
   não usados, ou `null` se o MFA não está ativo) para a UI avisar quando o
   estoque estiver acabando.
 
+### Lembrar este dispositivo
+
+Ao concluir o desafio de MFA (`POST /api/auth/mfa/verificar`), marcar
+`lembrarDispositivo: true` no corpo emite um cookie httpOnly
+(`dispositivoConfiavel`, 30 dias) cujo token só existe hasheado (SHA-256,
+`hashToken` — mesmo esquema do token de atualização) na tabela
+`DispositivoConfiavel` (`src/lib/dispositivoConfiavel.ts`). Nos próximos
+logins nesse navegador, `POST /api/auth/login` reconhece o cookie e pula
+direto para a criação da sessão — **a senha continua sendo exigida sempre**,
+só o segundo fator é dispensado. Um dispositivo novo (sem o cookie, ou com um
+expirado) continua passando pelo desafio normalmente.
+
+Trocar a senha (redefinição por e-mail ou `PUT /api/auth/senha`) **revoga
+todos os dispositivos confiáveis** do usuário, junto das sessões ativas — uma
+senha comprometida não pode deixar um atalho antigo pra pular o MFA depois da
+recuperação. A limpeza periódica de tokens (`npm run limpeza:tokens`) também
+remove os registros já expirados.
+
 ### Verificação de e-mail
 
 `POST /api/auth/cadastro` gera um token stateless (mesmo padrão do desafio
@@ -437,6 +483,43 @@ original. Sessões criadas antes desta migration (ou logadas fora da Vercel)
 ficam com "Dispositivo desconhecido"/"Localização desconhecida" até serem
 renovadas. Migration:
 `prisma/migrations/20260813182108_sessoes_ip_useragent_geo`.
+
+### Senha vazada (Have I Been Pwned)
+
+Cadastro (`POST /api/auth/cadastro`) e troca de senha (`POST
+/api/auth/redefinir-senha`, `PUT /api/auth/senha`) recusam qualquer senha já
+vista em vazamentos de dados reais, via a API pública do
+[Have I Been Pwned](https://haveibeenpwned.com/API/v3#PwnedPasswords)
+(`src/lib/senhaVazada.ts`). Usa **k-anonymity**: só os 5 primeiros caracteres
+do hash SHA-1 da senha saem do servidor — o HIBP nunca recebe a senha nem o
+hash completo, só um prefixo compartilhado por milhares de outras senhas, e a
+comparação do sufixo acontece localmente na resposta.
+
+Diferente do Turnstile (que É a barreira contra automação), essa checagem é
+**best-effort, fail-open**: uma falha de rede ou o serviço fora do ar não
+bloqueia cadastro/troca de senha, só deixa passar sem o aviso extra.
+
+### Troca de senha estando logado
+
+`PUT /api/auth/senha` (autenticado, `{ senhaAtual, novaSenha }`) complementa o
+fluxo "esqueci a senha" (que só funciona por e-mail) — o usuário troca a
+senha de dentro do dashboard, provando ser dono da conta com a senha atual em
+vez de um link. Passa pela mesma checagem de senha vazada da seção acima.
+
+Diferente da redefinição por e-mail (que não sabe quem está pedindo e por
+isso derruba **todas** as sessões), aqui quem chamou já se autenticou com a
+senha atual — a sessão de origem continua valendo, e só as **outras**
+sessões (e qualquer "dispositivo confiável", ver seção própria abaixo) são
+revogadas.
+
+### Limite de sessões simultâneas
+
+No máximo **5 sessões ativas por usuário** (`MAX_SESSOES_SIMULTANEAS`,
+`src/lib/sessao.ts`) — a cada sessão nova (login ou conclusão de MFA), a
+mais antiga além do limite é revogada automaticamente. Roda dentro de
+`criarSessao` (o mesmo ponto usado por login, MFA e futuras formas de criar
+sessão), não só na leitura da lista de "sessões ativas" — a sessão excedente
+já não vale mais mesmo que o usuário nunca abra essa tela.
 
 ### Recuperação de senha
 

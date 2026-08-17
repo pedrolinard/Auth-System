@@ -26,7 +26,7 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-08-14";
+export const atualizadoEm = "2026-08-17";
 
 export const concluido: GrupoConcluido[] = [
   {
@@ -36,6 +36,8 @@ export const concluido: GrupoConcluido[] = [
       "bcrypt.compare roda mesmo com e-mail inexistente (hash falso fixo) — sem side-channel de timing pra enumerar contas",
       "Verificação de e-mail por link com token stateless, reenvio protegido por rate limit",
       "Recuperação de senha: token de 1h, resposta genérica anti-enumeração, revoga todas as sessões ao redefinir",
+      "Checagem de senha vazada (Have I Been Pwned, k-anonymity) no cadastro e na redefinição de senha — recusa senhas já conhecidas em vazamentos reais",
+      "Troca de senha estando logado (PUT /api/auth/senha), exigindo a senha atual — mantém a sessão de origem viva e derruba as demais",
     ],
   },
   {
@@ -46,6 +48,7 @@ export const concluido: GrupoConcluido[] = [
       "Sessões ativas: listar, revogar uma ou todas de uma vez (\"sair de todos os dispositivos\")",
       "Sessões mostram tipo de dispositivo (desktop/tablet/mobile) e localização aproximada (cidade/UF/país via headers de geo da Vercel)",
       "Logout automático após 5 min de inatividade no dashboard, revogando a sessão de verdade no banco",
+      "Limite de 5 sessões simultâneas por usuário — a mais antiga é revogada automaticamente ao passar do limite",
     ],
   },
   {
@@ -55,6 +58,7 @@ export const concluido: GrupoConcluido[] = [
       "Bloqueio de replay de código TOTP e desafio de MFA de uso único",
       "10 códigos de backup (recovery codes) por ativação, hash SHA-256, uso único, regeneração exige reautenticação",
       "Rotação de MFA_ENCRYPTION_KEY sem downtime (fallback de leitura pra chave anterior)",
+      "\"Lembrar este dispositivo\" por 30 dias — pula o desafio de MFA em navegadores já verificados (a senha continua sendo exigida sempre)",
     ],
   },
   {
@@ -146,7 +150,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Hoje só existe o fluxo \"esqueci a senha\" (via e-mail); falta um PUT /api/auth/senha autenticado pedindo a senha atual.",
     categoria: "Conta",
     prioridade: "media",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-17",
   },
   {
     id: "alterar-email",
@@ -182,7 +187,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Hoje um usuário pode ter sessões ativas ilimitadas ao mesmo tempo.",
     categoria: "Segurança",
     prioridade: "media",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-17",
   },
   {
     id: "lembrar-dispositivo",
@@ -191,7 +197,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Pular o desafio de MFA por N dias num dispositivo já verificado, reduzindo fricção sem abrir mão de segurança nos dispositivos novos.",
     categoria: "MFA",
     prioridade: "media",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-17",
   },
   {
     id: "testes-e2e",
@@ -218,7 +225,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Have I Been Pwned (k-anonymity) no cadastro/troca de senha, pra recusar senhas já conhecidas em vazamentos.",
     categoria: "Segurança",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-14",
   },
   {
     id: "rate-limit-distribuido",

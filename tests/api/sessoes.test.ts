@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { MAX_SESSOES_SIMULTANEAS } from "@/lib/sessao";
 import {
   apagarUsuariosTeste,
   BASE_URL,
@@ -71,6 +72,38 @@ describe("Gestão de sessões", () => {
       headers: dispositivo1.cabecalhos,
     });
     expect(respostaAtualizar.status).toBe(401);
+  });
+
+  it(`limita a ${MAX_SESSOES_SIMULTANEAS} sessões simultâneas, revogando a mais antiga`, async () => {
+    const usuario = await criarUsuarioTeste("sessoes-limite");
+    emailsCriados.push(usuario.email);
+
+    const dispositivos = [];
+    for (let i = 0; i < MAX_SESSOES_SIMULTANEAS; i++) {
+      dispositivos.push(await loginTeste(usuario.email, usuario.senha));
+    }
+
+    const listaNoLimite = await (
+      await fetch(`${BASE_URL}/api/auth/sessoes`, { headers: dispositivos[0].cabecalhos })
+    ).json();
+    expect(listaNoLimite.sessoes).toHaveLength(MAX_SESSOES_SIMULTANEAS);
+
+    // Um login a mais estoura o limite — a sessão do dispositivo 0 (a mais
+    // antiga) deve ser revogada automaticamente, e a contagem total continua
+    // no limite (não MAX_SESSOES_SIMULTANEAS + 1).
+    const dispositivoExtra = await loginTeste(usuario.email, usuario.senha);
+
+    const listaDepoisDoExtra = await (
+      await fetch(`${BASE_URL}/api/auth/sessoes`, { headers: dispositivoExtra.cabecalhos })
+    ).json();
+    expect(listaDepoisDoExtra.sessoes).toHaveLength(MAX_SESSOES_SIMULTANEAS);
+
+    // Prova direta: o refresh token do dispositivo 0 não funciona mais.
+    const atualizarDispositivo0 = await fetch(`${BASE_URL}/api/auth/atualizar`, {
+      method: "POST",
+      headers: dispositivos[0].cabecalhos,
+    });
+    expect(atualizarDispositivo0.status).toBe(401);
   });
 
   it("mutação sem header X-CSRF-Token (mas com cookie CSRF) é bloqueada com 403", async () => {
