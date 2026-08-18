@@ -3,6 +3,7 @@ import {
   apagarUsuariosTeste,
   BASE_URL,
   criarUsuarioTeste,
+  ipAleatorio,
   loginTeste,
   SENHA_TESTE,
 } from "../helpers";
@@ -107,4 +108,40 @@ describe("Troca de senha estando logado (PUT /api/auth/senha)", () => {
     });
     expect(resposta.status).toBe(401);
   });
+
+  it("rejeita nova senha igual à atual", async () => {
+    const usuario = await criarUsuarioTeste("trocar-senha-igual");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/senha`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...cabecalhos },
+      body: JSON.stringify({ senhaAtual: usuario.senha, novaSenha: usuario.senha }),
+    });
+    expect(resposta.status).toBe(400);
+  });
+
+  it("bloqueia com 429 após estourar tentativas de senha atual errada", async () => {
+    const usuario = await criarUsuarioTeste("trocar-senha-rate-limit");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+    const ip = ipAleatorio();
+
+    async function tentarSenhaErrada() {
+      return fetch(`${BASE_URL}/api/auth/senha`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...cabecalhos, "X-Forwarded-For": ip },
+        body: JSON.stringify({ senhaAtual: "SenhaErrada999!", novaSenha: "OutraSenhaForte789!" }),
+      });
+    }
+
+    for (let i = 0; i < 5; i++) {
+      const resposta = await tentarSenhaErrada();
+      expect(resposta.status).toBe(401);
+    }
+
+    const sexta = await tentarSenhaErrada();
+    expect(sexta.status).toBe(429);
+  }, 45000);
 });

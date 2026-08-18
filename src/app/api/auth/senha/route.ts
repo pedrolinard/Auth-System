@@ -6,10 +6,18 @@ import { obterCookieAtualizacao, obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { revogarDispositivosConfiaveis } from "@/lib/dispositivoConfiavel";
 import { enviarEmailSenhaAlterada } from "@/lib/email";
+import { limiteExcedido, limiteExcedidoPorEmail, obterIp } from "@/lib/rateLimit";
 import { gerarHashSenha, verificarSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { hashToken } from "@/lib/token";
 import { esquemaTrocarSenha } from "@/lib/validacao";
+
+// Mesma fricção dos outros endpoints que exigem reprovar uma credencial numa
+// sessão já autenticada (mfa/verificar, mfa/desativar, mfa/backup): sem
+// limite aqui, um access token roubado (ex.: XSS de vida curta) bastaria pra
+// tentar `senhaAtual` sem parar até acertar por força bruta.
+const MAX_TENTATIVAS_SENHA_ATUAL = 5;
+const JANELA_SENHA_ATUAL_MS = 5 * 60 * 1000;
 
 export async function PUT(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
@@ -19,6 +27,21 @@ export async function PUT(req: Request) {
   const payload = await autenticarRequisicao(req);
   if (!payload) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  }
+
+  const ip = obterIp(req);
+  if (
+    await limiteExcedido({
+      ip,
+      evento: "senha_atual_falha",
+      maximo: MAX_TENTATIVAS_SENHA_ATUAL,
+      janelaMs: JANELA_SENHA_ATUAL_MS,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
   }
 
   const corpo = await req.json().catch(() => null);
@@ -36,8 +59,38 @@ export async function PUT(req: Request) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
 
+  // Limite por CONTA além do de IP, mesmo raciocínio do login: sem ele, um
+  // ataque distribuído (vários IPs) contra a mesma conta furaria o limite
+  // por IP sozinho.
+  if (
+    await limiteExcedidoPorEmail({
+      email: usuario.email,
+      evento: "senha_atual_falha",
+      maximo: MAX_TENTATIVAS_SENHA_ATUAL,
+      janelaMs: JANELA_SENHA_ATUAL_MS,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
   if (!(await verificarSenha(senhaAtual, usuario.senhaHash))) {
+    await registrarEvento({
+      req,
+      evento: "senha_atual_falha",
+      usuarioId: usuario.id,
+      email: usuario.email,
+    });
     return NextResponse.json({ erro: "Senha atual incorreta." }, { status: 401 });
+  }
+
+  if (senhaAtual === novaSenha) {
+    return NextResponse.json(
+      { erro: "A nova senha deve ser diferente da senha atual." },
+      { status: 400 },
+    );
   }
 
   if (await senhaFoiVazada(novaSenha)) {
