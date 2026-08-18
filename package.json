@@ -8,6 +8,7 @@
     "build": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "limpeza:tokens": "node -r dotenv/config scripts/limpar-tokens.mjs dotenv_config_path=.env",
     "gerar:chaves-rs256": "node scripts/gerar-chaves-rs256.mjs",
     "rotacionar:chave-mfa": "node -r dotenv/config scripts/rotacionar-chave-mfa.mjs dotenv_config_path=.env",
@@ -17,6 +18,8 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.2",
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.3",
     "next": "16.2.10",

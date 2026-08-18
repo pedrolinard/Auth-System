@@ -86,6 +86,7 @@ export default function PaginaAuditoria() {
                   <th className="px-4 py-3 font-medium">Quando</th>
                   <th className="px-4 py-3 font-medium">Evento</th>
                   <th className="px-4 py-3 font-medium">E-mail</th>
+                  <th className="px-4 py-3 font-medium">Admin responsável</th>
                   <th className="px-4 py-3 font-medium">IP</th>
                   <th className="px-4 py-3 font-medium">User-Agent</th>
                 </tr>
@@ -102,6 +103,9 @@ export default function PaginaAuditoria() {
                     <td className="px-4 py-3 font-mono text-xs text-foreground">{registro.evento}</td>
                     <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
                       {registro.email ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                      {registro.autorEmail ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
                       {registro.ip ?? "—"}

@@ -16,7 +16,7 @@ test.describe("Cadastro e login (UI)", () => {
 
     await page.getByLabel("E-mail").fill(email);
     await page.getByLabel("Senha", { exact: true }).fill(SENHA_TESTE);
-    await page.getByRole("button", { name: "Entrar" }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
     await expect(page).toHaveURL(/\/dashboard$/);
     await expect(page.getByRole("heading", { name: "Olá, Usuária E2E" })).toBeVisible();
@@ -39,7 +39,7 @@ test.describe("Cadastro e login (UI)", () => {
 
     await page.getByLabel("E-mail").fill(email);
     await page.getByLabel("Senha", { exact: true }).fill("SenhaErrada999!");
-    await page.getByRole("button", { name: "Entrar" }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
 
     await expect(page.getByText("E-mail ou senha inválidos.")).toBeVisible();
     await expect(page).toHaveURL(/\/login$/);

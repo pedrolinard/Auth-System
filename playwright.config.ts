@@ -45,6 +45,12 @@ export default defineConfig({
       ...envRaiz,
       DATABASE_URL: DATABASE_URL_TESTE,
       VITEST_NEXT_DIST_DIR: ".next-e2e",
+      // .env fixa PASSKEY_ORIGIN pro `next dev` manual (porta 3000) — sem
+      // sobrescrever aqui, toda cerimônia WebAuthn de verdade feita pelo
+      // browser do Playwright (porta 3200) seria rejeitada por origem
+      // incompatível (verifyRegistrationResponse/verifyAuthenticationResponse
+      // comparam a origem exata que o browser reportou).
+      PASSKEY_ORIGIN: BASE_URL,
     },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

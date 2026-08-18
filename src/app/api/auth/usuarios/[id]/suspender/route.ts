@@ -72,6 +72,8 @@ export async function POST(
     evento: "usuario_suspenso_por_admin",
     usuarioId: id,
     email: usuario.email,
+    autorId: payload.sub,
+    autorEmail: payload.email,
   });
 
   return NextResponse.json({ sucesso: true });

@@ -40,6 +40,7 @@ const SEGREDO_REDEFINICAO_SENHA = new TextEncoder().encode(
 const SEGREDO_ALTERACAO_EMAIL = new TextEncoder().encode(
   process.env.JWT_ALTERACAO_EMAIL_SECRET,
 );
+const SEGREDO_PASSKEY = new TextEncoder().encode(process.env.JWT_PASSKEY_SECRET);
 
 export const DURACAO_TOKEN_ACESSO = "15m";
 export const DURACAO_TOKEN_ACESSO_SEGUNDOS = 15 * 60;
@@ -49,6 +50,11 @@ export const DURACAO_TOKEN_DESAFIO_MFA_MS = 5 * 60 * 1000;
 export const DURACAO_TOKEN_VERIFICACAO_EMAIL = "1d";
 export const DURACAO_TOKEN_REDEFINICAO_SENHA = "1h";
 export const DURACAO_TOKEN_ALTERACAO_EMAIL = "1h";
+// Curta de propósito: é só a janela entre pedir o desafio WebAuthn (opções)
+// e o browser devolver a resposta assinada — segundos na prática, mesmo
+// contando a interação do usuário com o authenticator.
+export const DURACAO_TOKEN_DESAFIO_PASSKEY = "2m";
+export const DURACAO_TOKEN_DESAFIO_PASSKEY_MS = 2 * 60 * 1000;
 
 export type Papel = "usuario" | "admin";
 
@@ -85,6 +91,18 @@ export type PayloadAlteracaoEmail = {
   novoEmail: string;
 };
 
+export type PayloadDesafioPasskey = {
+  // Presente só no registro (usuário já autenticado, adicionando uma
+  // passkey nova). Ausente no login: com credencial "descobrível" (resident
+  // key), ainda não sabemos QUEM está logando até o browser devolver qual
+  // credencial foi escolhida — é assim que o login sem digitar e-mail
+  // funciona.
+  sub?: string;
+  challenge: string;
+  tipo: "passkey_desafio";
+  jti: string;
+};
+
 if (
   !process.env.JWT_ACCESS_PRIVATE_KEY_B64 ||
   !process.env.JWT_ACCESS_PUBLIC_KEY_B64 ||
@@ -93,10 +111,11 @@ if (
   !process.env.JWT_VERIFICACAO_EMAIL_SECRET ||
   !process.env.JWT_REDEFINICAO_SENHA_SECRET ||
   !process.env.JWT_ALTERACAO_EMAIL_SECRET ||
+  !process.env.JWT_PASSKEY_SECRET ||
   !process.env.MFA_ENCRYPTION_KEY
 ) {
   throw new Error(
-    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET, JWT_MFA_SECRET, JWT_VERIFICACAO_EMAIL_SECRET, JWT_REDEFINICAO_SENHA_SECRET, JWT_ALTERACAO_EMAIL_SECRET e MFA_ENCRYPTION_KEY precisam estar definidas.",
+    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET, JWT_MFA_SECRET, JWT_VERIFICACAO_EMAIL_SECRET, JWT_REDEFINICAO_SENHA_SECRET, JWT_ALTERACAO_EMAIL_SECRET, JWT_PASSKEY_SECRET e MFA_ENCRYPTION_KEY precisam estar definidas.",
   );
 }
 
@@ -259,6 +278,40 @@ export async function verificarTokenAlteracaoEmail(token: string) {
       { algorithms: ["HS256"] },
     );
     if (payload.tipo !== "alteracao_email") return null;
+    return payload;
+  } catch (erro) {
+    if (erro instanceof errors.JOSEError) return null;
+    throw erro;
+  }
+}
+
+// Token de desafio WebAuthn: carrega o `challenge` gerado pelo
+// @simplewebauthn/server entre a etapa de "opções" e a de "confirmar" (o
+// browser precisa assinar esse challenge exato) — sem guardar nada em
+// sessão/DB pra isso, mesmo padrão stateless do desafio de MFA. O jti é
+// consumido via a mesma tabela de uso único do MFA (consumirDesafioMfaJti):
+// mesmo sendo um JWT de vida curta (2 min), sem consumo de uso único a
+// resposta assinada capturada em trânsito poderia ser reapresentada até o
+// token expirar.
+export async function gerarTokenDesafioPasskey(challenge: string, usuarioId?: string) {
+  const jti = crypto.randomUUID();
+  const expiraEm = new Date(Date.now() + DURACAO_TOKEN_DESAFIO_PASSKEY_MS);
+
+  const token = await new SignJWT({ sub: usuarioId, challenge, tipo: "passkey_desafio", jti })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(DURACAO_TOKEN_DESAFIO_PASSKEY)
+    .sign(SEGREDO_PASSKEY);
+
+  return { token, jti, expiraEm };
+}
+
+export async function verificarTokenDesafioPasskey(token: string) {
+  try {
+    const { payload } = await jwtVerify<PayloadDesafioPasskey>(token, SEGREDO_PASSKEY, {
+      algorithms: ["HS256"],
+    });
+    if (payload.tipo !== "passkey_desafio") return null;
     return payload;
   } catch (erro) {
     if (erro instanceof errors.JOSEError) return null;

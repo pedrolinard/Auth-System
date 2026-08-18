@@ -46,6 +46,8 @@ export async function DELETE(
     evento: "usuario_excluido_por_admin",
     usuarioId: id,
     email: usuario.email,
+    autorId: payload.sub,
+    autorEmail: payload.email,
   });
 
   return NextResponse.json({ sucesso: true });

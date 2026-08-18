@@ -146,7 +146,7 @@ apareceriam testando o ciclo completo de request/response, não com mocks.
 - `vitest.config.ts` exclui `tests-e2e/**` do escopo do Vitest — sem isso, o
   glob default (`**/*.spec.ts`) também casaria com as specs do Playwright
   abaixo, que usam a API `test.describe()` do Playwright, não a do Vitest.
-- 112 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
+- 129 testes: `tests/lib/*.test.ts` (unitários — round-trip da criptografia
   AES-256-GCM incluindo o versionamento do formato cifrado e a rotação de
   `MFA_ENCRYPTION_KEY`, e geração/consumo/regeneração dos códigos de backup,
   incluindo uma corrida real de duas requisições simultâneas pelo mesmo
@@ -175,6 +175,21 @@ efetivamente vê na tela (`tests-e2e/*.spec.ts`).
   `@/lib/db`/Prisma — o guard `server-only` e o `import.meta` do client
   gerado não funcionam fora do bundler do Next.js).
 
+### CI (GitHub Actions)
+
+`.github/workflows/ci.yml` roda em todo PR e push na `main` — antes disso,
+nada impedia um PR quebrado de ir pra `main`, que já tem deploy automático de
+produção nos dois projetos Vercel (Next.js e Django).
+
+- **Job `nextjs`**: sobe um Postgres de serviço, gera um par de chaves RS256 e
+  uma `MFA_ENCRYPTION_KEY` novos só pra esse job (nunca os segredos reais de
+  produção), roda `npm run lint`, `npm run typecheck` e `npm test`.
+- **Job `django`**: roda `pytest` contra SQLite (sem precisar subir Postgres
+  nesse job — `comum/autenticacao.py` só valida o JWT, não tem model de
+  usuário próprio).
+- Os testes E2E (Playwright) não rodam no CI ainda — ficam só como suíte
+  local por enquanto (mais lentos, exigem um Chromium completo).
+
 ## Rotas de API
 
 | Método | Rota                       | Descrição                                                              |
@@ -200,6 +215,14 @@ efetivamente vê na tela (`tests-e2e/*.spec.ts`).
 | POST   | `/api/auth/reenviar-verificacao` | Reenvia o e-mail de verificação (rota protegida, rate limited)     |
 | POST   | `/api/auth/esqueci-senha`  | Gera o token de redefinição de senha e envia por e-mail                 |
 | POST   | `/api/auth/redefinir-senha`| Redefine a senha a partir do token; revoga todas as sessões ativas      |
+| GET    | `/api/auth/minha-conta`    | Exporta os dados que este serviço guarda sobre o titular (rota protegida) |
+| DELETE | `/api/auth/minha-conta`    | Exclui a própria conta, exigindo a senha atual (rota protegida)          |
+| GET    | `/api/auth/passkeys`       | Lista as passkeys do usuário autenticado (sem publicKey/credentialId)   |
+| DELETE | `/api/auth/passkeys/[id]`  | Remove uma passkey do usuário autenticado                               |
+| POST   | `/api/auth/passkeys/registro/opcoes` | Gera as opções de registro WebAuthn (rota protegida)           |
+| POST   | `/api/auth/passkeys/registro/confirmar` | Verifica a attestation e persiste a passkey nova (rota protegida) |
+| POST   | `/api/auth/passkeys/login/opcoes` | Gera as opções de login "descobrível" (público, sem `allowCredentials`) |
+| POST   | `/api/auth/passkeys/login/confirmar` | Verifica a assertion e conclui o login sem senha                |
 | GET    | `/api/auth/usuarios`       | Lista usuários — restrito a `papel = admin`                             |
 | GET    | `/api/auth/auditoria`      | Lista os últimos 200 logs de auditoria, com filtro por `evento`/`email` — restrito a `papel = admin` |
 | DELETE | `/api/auth/usuarios/[id]`  | Exclui permanentemente a conta de outro usuário (admin)                 |
@@ -392,6 +415,44 @@ senha comprometida não pode deixar um atalho antigo pra pular o MFA depois da
 recuperação. A limpeza periódica de tokens (`npm run limpeza:tokens`) também
 remove os registros já expirados.
 
+### Passkeys (WebAuthn)
+
+Login sem senha (`@simplewebauthn/server` + `@simplewebauthn/browser`),
+resistente a phishing: a assinatura fica atrelada à origem que o browser
+verificou de verdade, então uma página clonada não consegue arrancar uma
+assinatura válida. Complementa a senha — quem cadastra uma passkey continua
+com a senha funcionando normalmente.
+
+- **Cadastrar** (autenticado, no dashboard): `POST /api/auth/passkeys/registro/opcoes`
+  gera as opções (`generateRegistrationOptions`, `residentKey: "required"`)
+  e um `passkeyToken` de curta duração (2 min) carregando o `challenge`;
+  `POST /api/auth/passkeys/registro/confirmar` verifica a attestation
+  (`verifyRegistrationResponse`) e persiste a credencial em `PasskeyCredencial`
+  (chave pública, contador, transportes — nunca a chave privada, que não sai
+  do authenticator).
+- **Login sem e-mail**: `POST /api/auth/passkeys/login/opcoes` é público e
+  não recebe `allowCredentials` — é o que faz o browser oferecer as passkeys
+  já salvas pra este site sem precisar digitar nada antes. `POST
+  /api/auth/passkeys/login/confirmar` acha a credencial pelo `id` que veio na
+  resposta, valida a assinatura (`verifyAuthenticationResponse`) contra o
+  `challenge` do `passkeyToken` e conclui o login — **sem** passar pelo
+  desafio de TOTP separado, mesmo com MFA ativado: posse do authenticator +
+  presença do usuário (biometria/PIN local) já equivale a um segundo fator.
+- O `challenge` de cada cerimônia é de uso único (mesma tabela de
+  `consumirDesafioMfaJti` usada pelo desafio de MFA) — sem isso, uma resposta
+  assinada capturada em trânsito poderia ser reapresentada até o token
+  expirar.
+- O contador do authenticator (`PasskeyCredencial.contador`) precisa SUBIR a
+  cada uso; um authenticator genuíno nunca reusa/retrocede o valor — é o sinal
+  clássico de detecção de clonagem de credencial.
+- Configuração: `JWT_PASSKEY_SECRET`, `PASSKEY_RP_ID` (domínio exato, sem
+  porta/protocolo), `PASSKEY_RP_NAME` e `PASSKEY_ORIGIN` (origem completa) —
+  ver `.env.example`. `RP_ID`/`ORIGIN` precisam bater exatamente com o que o
+  browser reportou, senão a cerimônia é recusada.
+- Login por passkey passa pelas mesmas checagens de suspensão, "dispositivo
+  novo" e "viagem impossível" do login por senha, e conta para o mesmo limite
+  de sessões simultâneas.
+
 ### Verificação de e-mail
 
 `POST /api/auth/cadastro` gera um token stateless (mesmo padrão do desafio
@@ -449,6 +510,11 @@ existia desde o rate limiting; esta rota só expõe o que já é gravado.
 `/dashboard/auditoria` é a tela correspondente, pro admin não precisar abrir
 o Prisma Studio ou uma conexão direta no banco pra investigar um incidente.
 
+Ações administrativas sobre OUTRA conta (suspender, reativar, excluir)
+gravam também `autorId`/`autorEmail` no mesmo registro — sem isso, o log só
+dizia O QUE aconteceu com o alvo, não QUEM (qual admin) fez a mutação.
+`usuarioId`/`email` continuam descrevendo o alvo da ação, como sempre.
+
 ### Viagem impossível
 
 Login route (`POST /api/auth/login`) compara o país da requisição atual
@@ -501,6 +567,28 @@ conta.
 - A checagem de suspensão roda tanto em `POST /api/auth/login` quanto em
   `POST /api/auth/mfa/verificar` — cobre o caso de um admin suspender a conta
   durante os até 5 min entre o desafio de MFA e a confirmação do código.
+
+### Autoatendimento LGPD (exportar/excluir a própria conta)
+
+Até então só um admin conseguia excluir a conta de outra pessoa
+(`DELETE /api/auth/usuarios/[id]`) — o próprio titular não tinha como
+exportar nem apagar os próprios dados sem pedir pra um admin.
+
+- `GET /api/auth/minha-conta` (autenticado) exporta o que este serviço
+  guarda sobre o titular: dados pessoais, sessões (sem `tokenHash`),
+  dispositivos confiáveis, códigos de backup de MFA (só `criadoEm`/`usadoEm`,
+  nunca o hash) e os últimos 500 logs de auditoria sobre a conta. **Não**
+  inclui Projeto/Tarefa do serviço de domínio (`django/`) — é uma database
+  separada sem FK real com o usuário (só o claim `sub` do JWT como
+  referência opaca); juntar os dois exigiria o Next.js chamar o Django
+  internamente, escopo maior que o deste item.
+- `DELETE /api/auth/minha-conta` (`{ senha }`) exclui a conta
+  permanentemente — mesma fricção de `PUT /api/auth/senha`: exige a senha
+  atual (com rate limit e log de falha compartilhados com a troca de senha,
+  ver "Rate limiting" abaixo), porque um access token roubado sozinho não
+  deveria bastar pra apagar a conta inteira.
+- A tela correspondente fica em `/dashboard`, seção "Meus dados" — exportar
+  baixa um `.json`; excluir pede a senha antes de confirmar.
 
 ### Logout automático por inatividade
 
@@ -637,6 +725,13 @@ Também vale o aviso original: `X-Forwarded-For` só é confiável atrás de um
 proxy que efetivamente o sobrescreve (Vercel faz isso em produção) — sem um
 proxy confiável na frente, é possível forjar o header pra burlar o limite ou
 pra derrubar outra pessoa nele. Trade-off documentado, não escondido.
+
+`PUT /api/auth/senha` e `DELETE /api/auth/minha-conta` compartilham o mesmo
+evento (`senha_atual_falha`, 5 tentativas/5 min por IP **e** por conta) — as
+duas rotas pedem a senha atual pra confirmar uma ação sensível numa sessão já
+autenticada, então o orçamento de tentativas erradas é o mesmo em ambas, não
+um limite dobrado. `POST /api/auth/passkeys/login/confirmar` tem seu próprio
+limite (20/15 min, mesmo valor do login por senha).
 
 ### CAPTCHA (Cloudflare Turnstile)
 

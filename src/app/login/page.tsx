@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { entrar, ErroCaptchaNecessario, verificarMfaLogin } from "@/lib/clienteAuth";
+import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
+import { entrar, entrarComPasskey, ErroCaptchaNecessario, verificarMfaLogin } from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
 import { DesafioTurnstile } from "@/components/DesafioTurnstile";
 import { Marca } from "@/components/Marca";
@@ -17,6 +18,28 @@ export default function PaginaLogin() {
   const [lembrarDispositivo, setLembrarDispositivo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+
+  const [suportaPasskey, setSuportaPasskey] = useState(false);
+  const [entrandoComPasskey, setEntrandoComPasskey] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSuportaPasskey(browserSupportsWebAuthn());
+  }, []);
+
+  async function aoEntrarComPasskey() {
+    setErro(null);
+    setEntrandoComPasskey(true);
+    try {
+      await entrarComPasskey();
+      router.push("/dashboard");
+      router.refresh();
+    } catch (erroCapturado) {
+      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setEntrandoComPasskey(false);
+    }
+  }
 
   // Só aparece depois que o servidor recusa por falta de CAPTCHA
   // (`captchaNecessario`) — fricção progressiva, ver src/app/api/auth/login.
@@ -206,6 +229,17 @@ export default function PaginaLogin() {
         >
           {carregando ? "Entrando..." : "Entrar"}
         </button>
+
+        {suportaPasskey && (
+          <button
+            type="button"
+            onClick={aoEntrarComPasskey}
+            disabled={entrandoComPasskey}
+            className="btn-secondary"
+          >
+            {entrandoComPasskey ? "Aguardando..." : "Entrar com uma passkey"}
+          </button>
+        )}
 
         <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
           Ainda não tem conta?{" "}

@@ -20,7 +20,7 @@ test.describe("Dashboard protegido (UI)", () => {
 
     await page.getByLabel("E-mail").fill(email);
     await page.getByLabel("Senha", { exact: true }).fill(SENHA_TESTE);
-    await page.getByRole("button", { name: "Entrar" }).click();
+    await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
 
     await page.getByRole("button", { name: "Sair", exact: true }).click();

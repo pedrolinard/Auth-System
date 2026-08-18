@@ -87,11 +87,32 @@ export const esquemaConfirmarAlteracaoEmail = z.object({
   token: z.string({ error: "Informe o token de confirmação." }),
 });
 
+export const esquemaExcluirConta = z.object({
+  senha: z
+    .string({ error: "Informe a senha." })
+    .min(1, { error: "Informe a senha." }),
+});
+
 export const esquemaTrocarSenha = z.object({
   senhaAtual: z
     .string({ error: "Informe a senha atual." })
     .min(1, { error: "Informe a senha atual." }),
   novaSenha: esquemaSenhaForte,
+});
+
+// `resposta` é o objeto que @simplewebauthn/browser devolve (attestation ou
+// assertion, conforme o fluxo) — validado de verdade por
+// verifyRegistrationResponse/verifyAuthenticationResponse do lado servidor,
+// não faz sentido duplicar aqui o formato exato de um objeto WebAuthn.
+export const esquemaPasskeyRegistroConfirmar = z.object({
+  passkeyToken: z.string({ error: "Informe o token do desafio." }),
+  resposta: z.record(z.string(), z.unknown()),
+  nome: z.string().trim().max(60).optional(),
+});
+
+export const esquemaPasskeyLoginConfirmar = z.object({
+  passkeyToken: z.string({ error: "Informe o token do desafio." }),
+  resposta: z.record(z.string(), z.unknown()),
 });
 
 export const esquemaSuspensao = z.object({

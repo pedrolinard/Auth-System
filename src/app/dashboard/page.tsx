@@ -3,18 +3,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
 import {
   alterarEmail,
   confirmarMfa,
   desativarMfa,
+  excluirMinhaConta,
+  excluirPasskey,
+  exportarMeusDados,
   iniciarMfa,
+  listarPasskeys,
   listarSessoes,
   obterUsuarioAtual,
+  registrarPasskey,
   reenviarVerificacaoEmail,
   revogarSessao,
   revogarTodasSessoes,
   sair,
   trocarSenha,
+  type Passkey,
   type Sessao,
 } from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
@@ -155,8 +162,16 @@ export default function PaginaDashboard() {
         }
       />
 
+      <SecaoPasskeys />
+
       <SecaoSessoes
         aoRevogarAtual={() => {
+          router.replace("/login");
+        }}
+      />
+
+      <SecaoDadosDaConta
+        aoExcluirConta={() => {
           router.replace("/login");
         }}
       />
@@ -476,6 +491,240 @@ function SecaoMfa({
           </div>
         </form>
       )}
+    </div>
+  );
+}
+
+function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => void }) {
+  const [exportando, setExportando] = useState(false);
+  const [erroExportar, setErroExportar] = useState<string | null>(null);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [senha, setSenha] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+  const [erroExcluir, setErroExcluir] = useState<string | null>(null);
+
+  async function aoExportar() {
+    setErroExportar(null);
+    setExportando(true);
+    try {
+      const dados = await exportarMeusDados();
+      const blob = new Blob([JSON.stringify(dados, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "meus-dados.json";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (erroCapturado) {
+      setErroExportar(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  async function aoConfirmarExclusao(evento: React.FormEvent) {
+    evento.preventDefault();
+    setErroExcluir(null);
+    setExcluindo(true);
+    try {
+      await excluirMinhaConta(senha);
+      aoExcluirConta();
+    } catch (erroCapturado) {
+      setErroExcluir(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
+      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Conta</span>
+      <h2 className="text-lg font-semibold tracking-tight text-foreground">Meus dados</h2>
+
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Baixe uma cópia de tudo que guardamos sobre a sua conta (perfil, sessões, dispositivos
+          confiáveis e histórico de segurança).
+        </p>
+        {erroExportar && <p className="text-sm text-red-600 dark:text-red-400">{erroExportar}</p>}
+        <button onClick={aoExportar} disabled={exportando} className="btn-secondary self-start">
+          {exportando ? "Exportando..." : "Exportar meus dados"}
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-black/[.08] pt-4 dark:border-white/[.1]">
+        <h3 className="text-sm font-medium text-red-600 dark:text-red-400">Excluir conta</h3>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Remove permanentemente sua conta e todos os dados associados. Essa ação não pode ser
+          desfeita.
+        </p>
+
+        {!confirmandoExclusao && (
+          <button
+            onClick={() => setConfirmandoExclusao(true)}
+            className="self-start rounded-full border border-red-600/30 px-4 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 dark:text-red-400"
+          >
+            Excluir minha conta
+          </button>
+        )}
+
+        {confirmandoExclusao && (
+          <form onSubmit={aoConfirmarExclusao} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="senhaExcluirConta" className="text-sm text-zinc-600 dark:text-zinc-400">
+                Digite sua senha atual para confirmar
+              </label>
+              <CampoSenha
+                id="senhaExcluirConta"
+                value={senha}
+                onChange={setSenha}
+                autoComplete="current-password"
+              />
+            </div>
+            {erroExcluir && <p className="text-sm text-red-600 dark:text-red-400">{erroExcluir}</p>}
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={excluindo || !senha}
+                className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition-all duration-150 hover:-translate-y-px hover:bg-red-700 active:translate-y-0 active:scale-[.97] disabled:pointer-events-none disabled:opacity-50"
+              >
+                {excluindo ? "Excluindo..." : "Confirmar exclusão permanente"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmandoExclusao(false);
+                  setSenha("");
+                  setErroExcluir(null);
+                }}
+                className="btn-secondary-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SecaoPasskeys() {
+  const [suportaPasskey, setSuportaPasskey] = useState(false);
+  const [passkeys, setPasskeys] = useState<Passkey[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [adicionando, setAdicionando] = useState(false);
+  const [removendoId, setRemovendoId] = useState<string | null>(null);
+  const [nomeNovaPasskey, setNomeNovaPasskey] = useState("");
+
+  const carregar = useCallback(async () => {
+    try {
+      setPasskeys(await listarPasskeys());
+    } catch (erroCapturado) {
+      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSuportaPasskey(browserSupportsWebAuthn());
+    carregar();
+  }, [carregar]);
+
+  async function aoAdicionar(evento: React.FormEvent) {
+    evento.preventDefault();
+    setErro(null);
+    setAdicionando(true);
+    try {
+      await registrarPasskey(nomeNovaPasskey.trim() || undefined);
+      setNomeNovaPasskey("");
+      await carregar();
+    } catch (erroCapturado) {
+      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setAdicionando(false);
+    }
+  }
+
+  async function aoRemover(passkey: Passkey) {
+    setErro(null);
+    setRemovendoId(passkey.id);
+    try {
+      await excluirPasskey(passkey.id);
+      await carregar();
+    } catch (erroCapturado) {
+      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setRemovendoId(null);
+    }
+  }
+
+  if (!suportaPasskey) return null;
+
+  return (
+    <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
+      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Segurança</span>
+      <h2 className="text-lg font-semibold tracking-tight text-foreground">Passkeys</h2>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        Entre sem digitar senha usando biometria, PIN do dispositivo ou uma chave de segurança —
+        resistente a phishing. Sua senha continua funcionando normalmente.
+      </p>
+
+      {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+
+      {passkeys === null && (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">Carregando...</p>
+      )}
+
+      {passkeys && passkeys.length === 0 && (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">Nenhuma passkey cadastrada.</p>
+      )}
+
+      {passkeys && passkeys.length > 0 && (
+        <ul className="flex flex-col gap-3">
+          {passkeys.map((passkey) => (
+            <li
+              key={passkey.id}
+              className="flex flex-col gap-2 rounded-lg border border-black/[.06] bg-black/[.02] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[.06] dark:bg-white/[.03]"
+            >
+              <div className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+                <span className="font-medium text-foreground">{passkey.nome || "Passkey sem nome"}</span>
+                <span>Criada em {new Date(passkey.criadoEm).toLocaleString("pt-BR")}</span>
+                <span>
+                  {passkey.ultimoUsoEm
+                    ? `Último uso em ${new Date(passkey.ultimoUsoEm).toLocaleString("pt-BR")}`
+                    : "Nunca usada"}
+                </span>
+              </div>
+              <button
+                onClick={() => aoRemover(passkey)}
+                disabled={removendoId === passkey.id}
+                className="btn-secondary-sm shrink-0 self-start sm:self-auto"
+              >
+                {removendoId === passkey.id ? "Removendo..." : "Remover"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form onSubmit={aoAdicionar} className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-1 flex-col gap-1.5">
+          <label htmlFor="nomeNovaPasskey" className="text-sm text-zinc-600 dark:text-zinc-400">
+            Apelido (opcional)
+          </label>
+          <input
+            id="nomeNovaPasskey"
+            value={nomeNovaPasskey}
+            onChange={(e) => setNomeNovaPasskey(e.target.value)}
+            placeholder="ex.: Touch ID do MacBook"
+            className="input-field text-sm"
+          />
+        </div>
+        <button type="submit" disabled={adicionando} className="btn-primary-sm">
+          {adicionando ? "Adicionando..." : "Adicionar passkey"}
+        </button>
+      </form>
     </div>
   );
 }

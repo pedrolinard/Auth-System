@@ -1,5 +1,7 @@
 "use client";
 
+import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+
 // Lê o cookie CSRF (não-httpOnly de propósito) pra ecoar no header
 // X-CSRF-Token nas mutações autenticadas — ver src/lib/csrf.ts no servidor
 // (Next.js) e comum/autenticacao.py (Django, mesma regra).
@@ -156,6 +158,108 @@ export async function trocarSenha(dados: { senhaAtual: string; novaSenha: string
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao trocar a senha."));
 }
 
+export type Passkey = {
+  id: string;
+  nome: string | null;
+  criadoEm: string;
+  ultimoUsoEm: string | null;
+};
+
+export async function listarPasskeys(): Promise<Passkey[]> {
+  const resposta = await fetch("/api/auth/passkeys", { credentials: "include" });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao listar passkeys."));
+  return corpo.passkeys;
+}
+
+// Orquestra as duas chamadas ao servidor (opções -> ), com a interação do
+// browser (navigator.credentials.create) no meio — se o usuário cancelar o
+// prompt do authenticator, startRegistration rejeita e nem chega a chamar
+// /confirmar.
+export async function registrarPasskey(nome?: string) {
+  const respostaOpcoes = await fetch("/api/auth/passkeys/registro/opcoes", {
+    method: "POST",
+    headers: cabecalhoCsrf(),
+    credentials: "include",
+  });
+  const corpoOpcoes = await respostaOpcoes.json();
+  if (!respostaOpcoes.ok) {
+    throw new Error(mensagemErro(corpoOpcoes, "Falha ao iniciar o registro da passkey."));
+  }
+
+  const respostaAtestacao = await startRegistration({ optionsJSON: corpoOpcoes.options });
+
+  const respostaConfirmar = await fetch("/api/auth/passkeys/registro/confirmar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
+    credentials: "include",
+    body: JSON.stringify({
+      passkeyToken: corpoOpcoes.passkeyToken,
+      resposta: respostaAtestacao,
+      nome,
+    }),
+  });
+  const corpoConfirmar = await respostaConfirmar.json();
+  if (!respostaConfirmar.ok) {
+    throw new Error(mensagemErro(corpoConfirmar, "Falha ao confirmar a passkey."));
+  }
+}
+
+export async function excluirPasskey(id: string) {
+  const resposta = await fetch(`/api/auth/passkeys/${id}`, {
+    method: "DELETE",
+    headers: cabecalhoCsrf(),
+    credentials: "include",
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao excluir a passkey."));
+}
+
+// Login sem senha: /login/opcoes nem pede e-mail (credencial "descobrível" —
+// ver gerarOpcoesLoginPasskey no servidor); o browser mostra as passkeys
+// salvas pra este site e o usuário escolhe qual usar.
+export async function entrarComPasskey() {
+  const respostaOpcoes = await fetch("/api/auth/passkeys/login/opcoes", { method: "POST" });
+  const corpoOpcoes = await respostaOpcoes.json();
+  if (!respostaOpcoes.ok) {
+    throw new Error(mensagemErro(corpoOpcoes, "Falha ao iniciar o login com passkey."));
+  }
+
+  const respostaAsserto = await startAuthentication({ optionsJSON: corpoOpcoes.options });
+
+  const respostaConfirmar = await fetch("/api/auth/passkeys/login/confirmar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ passkeyToken: corpoOpcoes.passkeyToken, resposta: respostaAsserto }),
+  });
+  const corpoConfirmar = await respostaConfirmar.json();
+  if (!respostaConfirmar.ok) {
+    throw new Error(mensagemErro(corpoConfirmar, "Falha ao entrar com a passkey."));
+  }
+  return corpoConfirmar;
+}
+
+export async function exportarMeusDados(): Promise<unknown> {
+  const resposta = await fetch("/api/auth/minha-conta", {
+    credentials: "include",
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao exportar os dados da conta."));
+  return corpo;
+}
+
+export async function excluirMinhaConta(senha: string) {
+  const resposta = await fetch("/api/auth/minha-conta", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
+    credentials: "include",
+    body: JSON.stringify({ senha }),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao excluir a conta."));
+}
+
 export async function alterarEmail(novoEmail: string) {
   const resposta = await fetch("/api/auth/alterar-email", {
     method: "POST",
@@ -273,6 +377,10 @@ export type RegistroAuditoria = {
   ip: string | null;
   userAgent: string | null;
   criadoEm: string;
+  // Só preenchidos quando o ator difere do alvo (ex.: admin agindo sobre
+  // outra conta) — email acima continua sendo o do ALVO.
+  autorId: string | null;
+  autorEmail: string | null;
 };
 
 export async function listarAuditoria(filtros?: {

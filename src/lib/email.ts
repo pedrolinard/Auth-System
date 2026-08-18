@@ -302,6 +302,55 @@ export async function enviarEmailViagemImpossivel(
   }
 }
 
+export async function enviarEmailPasskeyAlterada(
+  destinatario: string,
+  acao: "adicionada" | "removida",
+) {
+  if (!resend) {
+    console.log(`[dev] Aviso de passkey ${acao} para ${destinatario}`);
+    return;
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: REMETENTE,
+      to: destinatario,
+      subject: acao === "adicionada" ? "Nova passkey adicionada" : "Passkey removida",
+      html: `
+        <p>Uma passkey foi ${acao} na sua conta.</p>
+        <p>Se não foi você, revise as passkeys e sessões ativas da sua conta e troque sua senha.</p>
+        ${RODAPE_PADRAO}
+      `,
+    });
+    if (error) console.error(`Falha ao enviar e-mail de passkey ${acao}:`, error);
+  } catch (erro) {
+    console.error(`Falha ao enviar e-mail de passkey ${acao}:`, erro);
+  }
+}
+
+export async function enviarEmailContaExcluida(destinatario: string) {
+  if (!resend) {
+    console.log(`[dev] Confirmação de conta excluída para ${destinatario}`);
+    return;
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: REMETENTE,
+      to: destinatario,
+      subject: "Sua conta foi excluída",
+      html: `
+        <p>Confirmamos a exclusão permanente da sua conta e de todos os dados associados a ela (sessões, MFA, dispositivos confiáveis).</p>
+        <p>Se você não pediu essa exclusão, entre em contato com o suporte imediatamente — não é possível desfazer essa ação sozinho, já que a conta não existe mais para fazer login.</p>
+        ${RODAPE_PADRAO}
+      `,
+    });
+    if (error) console.error("Falha ao enviar e-mail de confirmação de exclusão de conta:", error);
+  } catch (erro) {
+    console.error("Falha ao enviar e-mail de confirmação de exclusão de conta:", erro);
+  }
+}
+
 export async function enviarEmailReusoTokenDetectado(destinatario: string) {
   if (!resend) {
     console.log(`[dev] Alerta de reuso de token detectado para ${destinatario}`);

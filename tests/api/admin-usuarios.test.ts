@@ -202,12 +202,47 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
     expect(respostaVerificar.status).toBe(403);
   });
 
+  it("registra o admin autor em suspensão/reativação, não só o alvo", async () => {
+    const admin = await criarUsuarioTeste("admin-autor-log");
+    const alvo = await criarUsuarioTeste("alvo-autor-log");
+    emailsCriados.push(admin.email, alvo.email);
+    await promoverAdmin(admin.email);
+    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
+    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
+    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+
+    await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...cabecalhos },
+      body: JSON.stringify({}),
+    });
+    await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/reativar`, {
+      method: "POST",
+      headers: cabecalhos,
+    });
+
+    const logSuspensao = await prisma.logAuditoria.findFirst({
+      where: { evento: "usuario_suspenso_por_admin", usuarioId: alvoRegistro.id },
+      orderBy: { criadoEm: "desc" },
+    });
+    expect(logSuspensao?.autorId).toBe(adminRegistro.id);
+    expect(logSuspensao?.autorEmail).toBe(admin.email);
+
+    const logReativacao = await prisma.logAuditoria.findFirst({
+      where: { evento: "usuario_reativado_por_admin", usuarioId: alvoRegistro.id },
+      orderBy: { criadoEm: "desc" },
+    });
+    expect(logReativacao?.autorId).toBe(adminRegistro.id);
+    expect(logReativacao?.autorEmail).toBe(admin.email);
+  });
+
   it("admin exclui a conta de outro usuário permanentemente", async () => {
     const admin = await criarUsuarioTeste("admin-excluir");
     const alvo = await criarUsuarioTeste("alvo-excluir");
     emailsCriados.push(admin.email, alvo.email);
     await promoverAdmin(admin.email);
     const { cabecalhos } = await loginTeste(admin.email, admin.senha);
+    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
     const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
 
     const respostaExcluir = await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}`, {
@@ -218,6 +253,15 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
 
     const registroApagado = await prisma.usuario.findUnique({ where: { id: alvoRegistro.id } });
     expect(registroApagado).toBeNull();
+
+    // LogAuditoria não tem FK pro usuário (de propósito, ver comentário na
+    // rota DELETE) — o registro de QUEM excluiu sobrevive à exclusão da conta.
+    const logExclusao = await prisma.logAuditoria.findFirst({
+      where: { evento: "usuario_excluido_por_admin", usuarioId: alvoRegistro.id },
+      orderBy: { criadoEm: "desc" },
+    });
+    expect(logExclusao?.autorId).toBe(adminRegistro.id);
+    expect(logExclusao?.autorEmail).toBe(admin.email);
 
     const loginApagado = await fetch(`${BASE_URL}/api/auth/login`, {
       method: "POST",

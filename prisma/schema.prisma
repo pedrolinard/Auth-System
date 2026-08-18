@@ -57,6 +57,7 @@ model Usuario {
   tokens         TokenAtualizacao[]
   codigosBackup  CodigoBackupMfa[]
   dispositivosConfiaveis DispositivoConfiavel[]
+  passkeys       PasskeyCredencial[]
 
   @@map("usuarios")
 }
@@ -127,6 +128,40 @@ model DispositivoConfiavel {
   @@map("dispositivos_confiaveis")
 }
 
+// Passkey (WebAuthn) — login sem senha, resistente a phishing (a assinatura
+// é atrelada à origem verificada pelo browser, então uma página clonada não
+// consegue arrancar uma assinatura válida). Complementa a senha: quem
+// cadastra uma passkey continua com a senha funcionando também (ela não é
+// desativada), e o login por passkey já vale como sessão completa, sem
+// precisar do desafio de TOTP separado — a posse do autenticador + presença
+// do usuário (biometria/PIN local) já cobre o segundo fator.
+model PasskeyCredencial {
+  id        String  @id @default(cuid())
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  // ID do credential (base64url) gerado pelo authenticator — é o que o
+  // browser manda de volta em cada login, usado pra achar a linha certa
+  // ANTES de saber quem está logando (login sem digitar e-mail).
+  credentialId String   @unique
+  // Chave pública COSE (formato binário) usada pra verificar a assinatura em
+  // cada autenticação futura — nunca a chave privada, que não sai do
+  // authenticator.
+  publicKey String
+  // Contador de assinaturas do authenticator: precisa SUBIR a cada uso. Se
+  // vier igual ou menor que o salvo, é sinal de um clone da credencial
+  // (authenticator genuíno nunca reusa/retrocede o contador).
+  contador    Int      @default(0)
+  transportes String[]
+  // Apelido escolhido pelo usuário (ex.: "Touch ID do MacBook") — sem isso,
+  // a lista de passkeys na tela de segurança seria só uma lista de datas.
+  nome        String?
+  criadoEm    DateTime  @default(now()) @db.Timestamptz(3)
+  ultimoUsoEm DateTime? @db.Timestamptz(3)
+
+  @@index([usuarioId])
+  @@map("passkeys")
+}
+
 model LogAuditoria {
   id        String   @id @default(cuid())
   usuarioId String?
@@ -135,6 +170,12 @@ model LogAuditoria {
   ip        String?
   userAgent String?
   criadoEm  DateTime @default(now()) @db.Timestamptz(3)
+  // Preenchidos só quando o ator é diferente do alvo (ex.: admin suspendendo
+  // OUTRA conta) — nesses eventos usuarioId/email acima seguem descrevendo o
+  // ALVO da ação, como já faziam antes; sem autorId não dava pra saber QUEM
+  // suspendeu/reativou/excluiu, só o quê aconteceu com quem.
+  autorId    String?
+  autorEmail String?
 
   @@index([usuarioId])
   @@index([evento, ip, criadoEm])

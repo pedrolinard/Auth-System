@@ -26,7 +26,7 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-08-17";
+export const atualizadoEm = "2026-08-18";
 
 export const concluido: GrupoConcluido[] = [
   {
@@ -76,6 +76,8 @@ export const concluido: GrupoConcluido[] = [
       "RBAC mínimo (usuario/admin) como claim no token de acesso",
       "Admin pode suspender (temporária ou permanente) ou excluir permanentemente a conta de outro usuário",
       "Suspensão revoga todas as sessões ativas na hora e bloqueia login imediatamente",
+      "Auditoria de ações administrativas registra também QUEM (qual admin) suspendeu/reativou/excluiu, não só o alvo",
+      "Autoatendimento LGPD: GET/DELETE /api/auth/minha-conta — o próprio titular exporta os dados que o serviço guarda sobre ele ou exclui a conta (exige senha atual, mesma fricção da troca de senha)",
       "E-mails de segurança: dispositivo novo, MFA ativado/desativado, senha alterada, códigos de backup regenerados, reuso de refresh token detectado, viagem impossível (login em país diferente do último, tempo curto demais pra ser real)",
     ],
   },
@@ -103,7 +105,17 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django), cada um com Postgres via Neon Marketplace",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "89 testes Next.js (Vitest contra servidor next dev real, não mocka cookies) + 23 testes Django (pytest-django)",
+      "129 testes Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 testes E2E (Playwright, incluindo passkey via virtual authenticator) + 23 testes Django (pytest-django)",
+      "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck e testes em todo PR/push na main, antes do deploy automático de produção",
+    ],
+  },
+  {
+    categoria: "Passkeys (WebAuthn)",
+    itens: [
+      "Login sem senha via @simplewebauthn — resistente a phishing, complementa a senha (que continua funcionando)",
+      "Login por passkey pula o desafio de TOTP separado mesmo com MFA ativado: posse do authenticator + biometria/PIN local já equivale a um segundo fator",
+      "Cadastrar/listar/remover passkeys em /dashboard; login sem digitar e-mail (credencial descobrível)",
+      "Mesmas checagens do login por senha: suspensão, dispositivo novo, viagem impossível, limite de sessões simultâneas",
     ],
   },
 ];
@@ -116,7 +128,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Rodar lint, typecheck e a suíte de testes em todo PR antes de permitir merge — hoje nada impede um PR quebrado de ir pra main, que já tem deploy automático de produção.",
     categoria: "Infraestrutura",
     prioridade: "alta",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-18",
   },
   {
     id: "auditoria-admin",
@@ -125,7 +138,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Registrar QUEM (qual admin) suspendeu, reativou ou excluiu uma conta, não só o alvo da ação — hoje o LogAuditoria não guarda o autor dessas mutações.",
     categoria: "Segurança",
     prioridade: "alta",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-18",
   },
   {
     id: "lgpd-autoatendimento",
@@ -134,7 +148,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Hoje só um admin exclui a conta de outra pessoa; o próprio usuário não consegue excluir nem exportar os próprios dados.",
     categoria: "Conformidade",
     prioridade: "alta",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-18",
   },
   {
     id: "passkeys",
@@ -143,7 +158,8 @@ export const proximosPassos: ItemProximoPasso[] = [
       "Complemento ou substituto do TOTP, resistente a phishing e sem fricção de app autenticador — next step natural depois do MFA que já existe.",
     categoria: "Segurança",
     prioridade: "alta",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-18",
   },
   {
     id: "trocar-senha-logado",

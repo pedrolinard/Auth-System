@@ -8,6 +8,10 @@ export async function registrarEvento(dados: {
   evento: string;
   usuarioId?: string;
   email?: string;
+  // Só faz sentido quando o ator difere do alvo (ex.: admin agindo sobre
+  // outra conta) — usuarioId/email acima continuam descrevendo o ALVO.
+  autorId?: string;
+  autorEmail?: string;
 }) {
   try {
     const ip = obterIp(dados.req);
@@ -20,6 +24,8 @@ export async function registrarEvento(dados: {
         evento: dados.evento,
         ip,
         userAgent,
+        autorId: dados.autorId,
+        autorEmail: dados.autorEmail,
       },
     });
   } catch (erro) {
