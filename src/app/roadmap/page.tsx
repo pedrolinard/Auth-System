@@ -10,7 +10,7 @@ import {
 export const metadata: Metadata = {
   title: "Roadmap — Sistema de Autenticação",
   description:
-    "O que já foi entregue e o que ainda falta no gateway de autenticação.",
+    "O que já foi entregue e as decisões de escopo do gateway de autenticação.",
 };
 
 const ROTULO_PRIORIDADE: Record<PrioridadeRoadmap, string> = {
@@ -31,7 +31,10 @@ const COR_PRIORIDADE: Record<PrioridadeRoadmap, string> = {
 
 const totalConcluido = concluido.reduce((soma, grupo) => soma + grupo.itens.length, 0);
 const totalPendente = proximosPassos.filter((item) => item.status === "pendente").length;
-const totalFeitoProximosPassos = proximosPassos.length - totalPendente;
+// "Resolvido" cobre tanto "feito" (virou código) quanto "descartado" (decisão
+// consciente de não fazer) — os dois tiram o item da fila de pendências, só
+// não da mesma forma, daí o rótulo do card não dizer "concluídos".
+const totalResolvidoProximosPassos = proximosPassos.length - totalPendente;
 
 export default function PaginaRoadmap() {
   const pendentesPorPrioridade = (["alta", "media", "baixa"] as const).map(
@@ -51,8 +54,8 @@ export default function PaginaRoadmap() {
         <p className="max-w-2xl text-zinc-600 dark:text-zinc-400">
           Gateway de cadastro, login e emissão de tokens JWT (acesso +
           atualização) para outras aplicações, com um serviço de domínio em
-          Django/DRF por trás. Estado atual do que foi entregue e do que vem a
-          seguir.
+          Django/DRF por trás. Estado atual do que foi entregue e das decisões
+          de escopo tomadas ao longo do caminho.
         </p>
         <span className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
           atualizado em {atualizadoEm} · gerado a partir de{" "}
@@ -75,9 +78,9 @@ export default function PaginaRoadmap() {
         </div>
         <div className="flex flex-col gap-1 bg-white p-5 dark:bg-zinc-900">
           <span className="font-mono text-2xl tabular-nums text-foreground">
-            {totalFeitoProximosPassos}/{proximosPassos.length}
+            {totalResolvidoProximosPassos}/{proximosPassos.length}
           </span>
-          <span className="text-xs text-zinc-500 dark:text-zinc-500">próximos passos concluídos</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-500">próximos passos resolvidos</span>
         </div>
       </div>
 
@@ -114,6 +117,11 @@ export default function PaginaRoadmap() {
                           {item.status === "feito" && (
                             <span className="whitespace-nowrap rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-black dark:bg-white/10 dark:text-white">
                               ✓ Feito{item.concluidoEm ? ` em ${item.concluidoEm}` : ""}
+                            </span>
+                          )}
+                          {item.status === "descartado" && (
+                            <span className="whitespace-nowrap rounded-full border border-zinc-500/30 bg-zinc-500/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+                              ○ Escopo descartado{item.concluidoEm ? ` em ${item.concluidoEm}` : ""}
                             </span>
                           )}
                         </div>
@@ -158,9 +166,9 @@ export default function PaginaRoadmap() {
         <span>
           Este roadmap é renderizado ao vivo a partir de{" "}
           <code>src/data/roadmap.ts</code> — cada item de &ldquo;Próximos
-          passos&rdquo; é marcado como feito no mesmo commit que entrega a
-          mudança, então esta página reflete o deploy mais recente
-          automaticamente.
+          passos&rdquo; é marcado como feito (ou descartado, quando a decisão
+          é conscientemente não fazer) no mesmo commit que entrega a mudança,
+          então esta página reflete o deploy mais recente automaticamente.
         </span>
         <Link href="/" className="text-zinc-600 underline underline-offset-2 dark:text-zinc-400">
           ← Voltar

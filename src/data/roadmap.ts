@@ -1,14 +1,18 @@
-// Fonte única de verdade do roadmap público (`/roadmap`). Ao entregar um item
-// de `proximosPassos`, atualize o `status`/`concluidoEm` dele (e mova um
-// resumo pra `concluido`, se fizer sentido) NO MESMO COMMIT que entrega a
-// mudança de código — como a Vercel faz deploy automático a cada push na
-// `main`, a página pública já sobe atualizada no próximo deploy, sem precisar
-// de nenhum passo manual de "regenerar o roadmap" (era exatamente esse passo
+// Fonte única de verdade do roadmap público (`/roadmap`). Ao entregar (ou
+// descartar conscientemente) um item de `proximosPassos`, atualize o
+// `status`/`concluidoEm` dele (e mova um resumo pra `concluido`, se fizer
+// sentido pra um item "feito") NO MESMO COMMIT que entrega a mudança de
+// código — como a Vercel faz deploy automático a cada push na `main`, a
+// página pública já sobe atualizada no próximo deploy, sem precisar de
+// nenhum passo manual de "regenerar o roadmap" (era exatamente esse passo
 // manual, sempre esquecido, que deixava o antigo public/roadmap.html e o
 // ROADMAP.md desatualizados).
 
 export type PrioridadeRoadmap = "alta" | "media" | "baixa";
-export type StatusRoadmap = "pendente" | "feito";
+// "descartado": decisão consciente registrada de NÃO fazer (por ora) — não é
+// "pendente" (não está na fila) nem "feito" (nada foi construído). Existe pra
+// fechar um item do roadmap sem fingir que virou código.
+export type StatusRoadmap = "pendente" | "feito" | "descartado";
 
 export type ItemProximoPasso = {
   id: string;
@@ -17,7 +21,7 @@ export type ItemProximoPasso = {
   categoria: string;
   prioridade: PrioridadeRoadmap;
   status: StatusRoadmap;
-  /** YYYY-MM-DD — preenchido só quando status vira "feito". */
+  /** YYYY-MM-DD — preenchido quando status vira "feito" ou "descartado". */
   concluidoEm?: string;
 };
 
@@ -255,9 +259,10 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "rate-limit-distribuido",
     titulo: "Rate limiting distribuído (Redis/Upstash)",
     descricao:
-      "Só relevante se o tráfego crescer a ponto do LogAuditoria/Postgres virar gargalo — hoje é decisão consciente de escopo, já documentada no README.",
+      "src/lib/rateLimit.ts já usa Postgres (LogAuditoria), compartilhado entre instâncias — não é em memória, não tem gap técnico hoje. Migrar pra Redis/Upstash só faria sentido se o tráfego crescesse a ponto dessa tabela virar gargalo, o que ainda não aconteceu. Decisão de escopo registrada (não uma tarefa esquecida), documentada no README.",
     categoria: "Infraestrutura",
     prioridade: "baixa",
-    status: "pendente",
+    status: "descartado",
+    concluidoEm: "2026-08-19",
   },
 ];
