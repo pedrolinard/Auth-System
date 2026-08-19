@@ -235,10 +235,11 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "observabilidade",
     titulo: "Observabilidade em produção",
     descricao:
-      "Sentry ou Vercel Observability — hoje erros inesperados só vão pro console.error/logs da Vercel, sem alerta nem agregação.",
+      "Rollbar (via Vercel Marketplace) captura erro inesperado de servidor (instrumentation.ts/onRequestError) e de cliente (error.tsx/global-error.tsx) — só no app Next.js por enquanto, o Django ainda não está coberto.",
     categoria: "Infraestrutura",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-19",
   },
   {
     id: "senha-vazada",

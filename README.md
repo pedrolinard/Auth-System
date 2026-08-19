@@ -70,6 +70,9 @@ consumido por outras aplicações como camada intermediária de identidade.
   senhas já conhecidas em vazamentos reais — ver seção "Senha vazada" abaixo.
 - **Troca de senha estando logado**: `PUT /api/auth/senha` — ver seção
   "Troca de senha estando logado" abaixo.
+- **Observabilidade (Rollbar)**: erros inesperados de servidor e de cliente
+  são capturados automaticamente (não só logados no console) — ver seção
+  "Observabilidade (Rollbar)" abaixo.
 - **"Lembrar este dispositivo"**: pula o desafio de MFA por 30 dias num
   navegador já verificado — ver seção "Lembrar este dispositivo" abaixo.
 - **Alterar e-mail**: confirmação em duas etapas (link no e-mail novo) — ver
@@ -814,6 +817,34 @@ npm run limpeza:tokens
 O script lê `BASE_URL` e `CRON_SECRET` do `.env` (por padrão usa
 `http://localhost:3000`) e chama `POST /api/cron/limpar-tokens`.
 
+### Observabilidade (Rollbar)
+
+Antes disso, um erro inesperado (não um `console.error` de um catch já
+tratado — esses continuam só logando, de propósito) só ia parar nos logs da
+Vercel: sem alerta, sem agregação, sem saber se um erro é novo ou já
+conhecido. `rollbar` + `@rollbar/react` cobrem os dois lados:
+
+- **Servidor**: `src/instrumentation.ts` exporta `onRequestError`, hook
+  nativo do Next.js (estável desde a v15) chamado automaticamente pro
+  servidor sempre que ele mesmo captura um erro não tratado — em Server
+  Components, Route Handlers ou Server Actions — sem precisar de try/catch
+  espalhado em cada rota de API. A instância fica em `src/lib/rollbarServidor.ts`
+  (`"server-only"`, nunca vai pro bundle do cliente).
+- **Cliente**: `src/app/error.tsx` (erro de render dentro do layout raiz) e
+  `src/app/global-error.tsx` (erro no próprio layout raiz — precisa da sua
+  própria instância do Rollbar, já que o `RollbarProvider` do layout não
+  está disponível nesse caso) reportam via `rollbar.error(error)`. O layout
+  raiz (`src/app/layout.tsx`) envolve a árvore inteira num `RollbarProvider`
+  (`src/lib/rollbar.ts`) pra qualquer componente cliente poder usar
+  `useRollbar()`.
+
+Provisionado via Vercel Marketplace (`vercel integration add
+rollbar/error-tracking`, tier gratuito de 5.000 eventos/mês), que já criou
+as env vars `ROLLBAR_AUTH_GATEWAY_SERVER_TOKEN_1787151157` e
+`NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157` — sem essas
+variáveis (dev local sem `vercel env pull`, ou CI) o Rollbar só não envia
+nada, não quebra a aplicação.
+
 ### Deploy (Vercel)
 
 O sistema está em produção como dois projetos Vercel separados, cada um com
@@ -837,7 +868,10 @@ projeto Vercel). Variáveis configuradas em cada projeto:
   `MFA_ENCRYPTION_KEY`, `CRON_SECRET`,
   `BASE_URL`, `DJANGO_SERVICE_URL` (aponta para a URL de produção do projeto
   Django), além de `DATABASE_URL` (injetada automaticamente pela integração
-  Neon).
+  Neon) e `ROLLBAR_AUTH_GATEWAY_SERVER_TOKEN_1787151157`/
+  `NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157` (injetadas
+  automaticamente pela integração Rollbar, nos 3 ambientes — production,
+  preview e development).
 - **`auth-gateway-django`**: `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`
   (`auth-gateway-django.vercel.app` — o domínio exato de produção, não um
   wildcard `*.vercel.app`; ajustar se um domínio próprio for configurado),
