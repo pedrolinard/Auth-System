@@ -1,8 +1,9 @@
 name: CI
 
-# Roda lint, typecheck e as duas suítes de testes (Next.js + Django) em todo
-# PR e push na main — antes disso, nada impedia um PR quebrado de ir pra
-# main, que já tem deploy automático de produção nos dois projetos Vercel.
+# Roda lint, typecheck e as três suítes de testes (Vitest + Playwright no
+# Next.js, pytest no Django) em todo PR e push na main — antes disso, nada
+# impedia um PR quebrado de ir pra main, que já tem deploy automático de
+# produção nos dois projetos Vercel.
 on:
   pull_request:
   push:
@@ -85,6 +86,23 @@ jobs:
 
       - name: Testes
         run: npm test
+
+      - name: Instalar navegador do Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Testes E2E (Playwright)
+        run: npm run test:e2e
+
+      - name: Upload das traces do Playwright em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          # reporter é "list" (playwright.config.ts) — não gera playwright-report/
+          # HTML. trace: "retain-on-failure" grava em test-results/ mesmo assim,
+          # que é o que dá pra abrir com `npx playwright show-trace` depois.
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
 
   django:
     name: Django — testes

@@ -26,7 +26,7 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-08-18";
+export const atualizadoEm = "2026-08-19";
 
 export const concluido: GrupoConcluido[] = [
   {
@@ -225,10 +225,11 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "testes-e2e",
     titulo: "Testes E2E de navegador (Playwright)",
     descricao:
-      "A suíte atual cobre rotas de API via Vitest, não a UI renderizada de verdade (formulários, fluxos completos no navegador).",
+      "Cadastro/login, dashboard protegido e passkeys cobertos via UI renderizada de verdade (não só as rotas de API via Vitest), rodando no CI a cada PR/push na main.",
     categoria: "Testes",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-19",
   },
   {
     id: "observabilidade",

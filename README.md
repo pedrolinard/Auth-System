@@ -183,12 +183,15 @@ produção nos dois projetos Vercel (Next.js e Django).
 
 - **Job `nextjs`**: sobe um Postgres de serviço, gera um par de chaves RS256 e
   uma `MFA_ENCRYPTION_KEY` novos só pra esse job (nunca os segredos reais de
-  produção), roda `npm run lint`, `npm run typecheck` e `npm test`.
+  produção), roda `npm run lint`, `npm run typecheck`, `npm test` e, na
+  sequência, `npx playwright install --with-deps chromium` + `npm run
+  test:e2e` (reaproveita o mesmo Postgres/segredos do job — os testes E2E
+  sobem seu próprio `next dev` na porta 3200, ver `playwright.config.ts`). Em
+  falha, as traces (`test-results/`) sobem como artifact do job pra depurar
+  com `npx playwright show-trace`.
 - **Job `django`**: roda `pytest` contra SQLite (sem precisar subir Postgres
   nesse job — `comum/autenticacao.py` só valida o JWT, não tem model de
   usuário próprio).
-- Os testes E2E (Playwright) não rodam no CI ainda — ficam só como suíte
-  local por enquanto (mais lentos, exigem um Chromium completo).
 
 ## Rotas de API
 

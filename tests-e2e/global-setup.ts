@@ -37,10 +37,15 @@ export default async function globalSetup() {
   };
 
   console.log(`[e2e] Aquecendo rotas na porta ${PORTA_E2E}...`);
+  // detached (fora do Windows) faz o processo virar líder do próprio grupo,
+  // condição pra matar a árvore inteira com `kill(-pid)` no finally abaixo —
+  // sem isso, mata só o shell (`shell: true`) e o `next dev`/node filhos
+  // ficam órfãos segurando a porta 3200.
   const servidor = spawn(`npx next dev -p ${PORTA_E2E}`, {
     cwd: RAIZ,
     env: envServidor,
     shell: true,
+    detached: process.platform !== "win32",
   });
   servidor.stdout?.on("data", () => {});
   servidor.stderr?.on("data", () => {});
@@ -52,7 +57,14 @@ export default async function globalSetup() {
   } finally {
     if (servidor.pid) {
       try {
-        execSync(`taskkill /pid ${servidor.pid} /t /f`, { stdio: "ignore" });
+        if (process.platform === "win32") {
+          // taskkill /t mata a árvore inteira do processo (next dev sobe
+          // vários node.exe filhos no Windows — matar só o PID raiz deixa
+          // órfãos).
+          execSync(`taskkill /pid ${servidor.pid} /t /f`, { stdio: "ignore" });
+        } else {
+          process.kill(-servidor.pid, "SIGKILL");
+        }
       } catch {
         // processo já pode ter encerrado sozinho
       }
