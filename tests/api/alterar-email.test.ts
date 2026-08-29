@@ -66,6 +66,64 @@ describe("Alterar e-mail (confirmação em duas etapas)", () => {
     expect(loginNovo.status).toBe(200);
   });
 
+  it("confirmar a troca revoga todas as sessões ativas e os dispositivos confiáveis", async () => {
+    const usuario = await criarUsuarioTeste("alterar-email-revoga");
+    emailsCriados.push(usuario.email);
+    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    // Duas sessões (dois logins) + um dispositivo confiável fabricado.
+    await loginTeste(usuario.email, usuario.senha);
+    await loginTeste(usuario.email, usuario.senha);
+    await prisma.dispositivoConfiavel.create({
+      data: {
+        usuarioId: registro.id,
+        tokenHash: `hash-teste-${registro.id}`,
+        expiraEm: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const novoEmail = gerarEmailTeste("alterar-email-revoga-novo");
+    emailsCriados.push(novoEmail);
+    const token = await gerarTokenAlteracaoEmail(registro.id, novoEmail);
+    const resposta = await fetch(`${BASE_URL}/api/auth/confirmar-alteracao-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(resposta.status).toBe(200);
+
+    const sessoesAtivas = await prisma.tokenAtualizacao.count({
+      where: { usuarioId: registro.id, revogadoEm: null },
+    });
+    expect(sessoesAtivas).toBe(0);
+    const dispositivos = await prisma.dispositivoConfiavel.count({
+      where: { usuarioId: registro.id },
+    });
+    expect(dispositivos).toBe(0);
+  });
+
+  it("o link de confirmação é de uso único", async () => {
+    const usuario = await criarUsuarioTeste("alterar-email-uso-unico");
+    emailsCriados.push(usuario.email);
+    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const novoEmail = gerarEmailTeste("alterar-email-uso-unico-novo");
+    emailsCriados.push(novoEmail);
+
+    const token = await gerarTokenAlteracaoEmail(registro.id, novoEmail);
+    const primeira = await fetch(`${BASE_URL}/api/auth/confirmar-alteracao-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(primeira.status).toBe(200);
+
+    const segunda = await fetch(`${BASE_URL}/api/auth/confirmar-alteracao-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(segunda.status).toBe(401);
+  });
+
   it("rejeita quando o novo e-mail já está em uso por outra conta", async () => {
     const usuario = await criarUsuarioTeste("alterar-email-conflito-a");
     const outro = await criarUsuarioTeste("alterar-email-conflito-b");

@@ -32,7 +32,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
 
-  const [sessoes, dispositivosConfiaveis, codigosBackup, logsAuditoria] = await Promise.all([
+  const [sessoes, dispositivosConfiaveis, codigosBackup, passkeys, logsAuditoria] = await Promise.all([
     prisma.tokenAtualizacao.findMany({
       where: { usuarioId: usuario.id },
       orderBy: { criadoEm: "desc" },
@@ -55,6 +55,15 @@ export async function GET(req: Request) {
       where: { usuarioId: usuario.id },
       orderBy: { criadoEm: "desc" },
       select: { criadoEm: true, usadoEm: true },
+    }),
+    // credentialId/publicKey ficam de fora: são material de credencial (o
+    // par de chaves WebAuthn), não dado pessoal útil num export — mesma
+    // lógica do tokenHash omitido das sessões. O que interessa ao titular é
+    // quando cada dispositivo foi registrado, de que tipo e quando foi usado.
+    prisma.passkeyCredencial.findMany({
+      where: { usuarioId: usuario.id },
+      orderBy: { criadoEm: "desc" },
+      select: { nome: true, transportes: true, criadoEm: true, ultimoUsoEm: true },
     }),
     prisma.logAuditoria.findMany({
       where: { usuarioId: usuario.id },
@@ -85,6 +94,7 @@ export async function GET(req: Request) {
     })),
     dispositivosConfiaveis,
     codigosBackupMfa: codigosBackup,
+    passkeys,
     logsAuditoria,
   });
 }

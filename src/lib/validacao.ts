@@ -1,12 +1,26 @@
 import * as z from "zod";
 
+// bcryptjs trunca silenciosamente qualquer BYTE além do 72º — sem esse
+// limite, "SenhaGigante...(73+ bytes)X" e a mesma senha com o último
+// caractere trocado gerariam o mesmo hash, e o usuário nunca perceberia. A
+// contagem tem que ser em bytes UTF-8, não em caracteres: `.max(72)` do Zod
+// conta code units UTF-16, então uma senha de 72 caracteres com acento ou
+// emoji passaria batido e ainda seria truncada pelo bcrypt.
+const LIMITE_BYTES_SENHA = 72;
+function bytesUtf8(texto: string): number {
+  return new TextEncoder().encode(texto).length;
+}
+
 const esquemaSenhaForte = z
   .string({ error: "Informe a senha." })
   .min(8, { error: "A senha deve ter pelo menos 8 caracteres." })
-  // bcryptjs trunca silenciosamente qualquer byte além do 72º — sem esse
-  // limite, "SenhaGigante...(73+ bytes)X" e a mesma senha com o último
-  // caractere trocado gerariam o mesmo hash, e o usuário nunca perceberia.
-  .max(72, { error: "A senha deve ter no máximo 72 caracteres." })
+  // Teto barato em caracteres antes do refine em bytes — nenhuma senha
+  // legítima passa de 72 caracteres (o limite real é 72 bytes), e isso evita
+  // rodar o TextEncoder sobre um payload gigante forjado.
+  .max(200, { error: "A senha é longa demais." })
+  .refine((senha) => bytesUtf8(senha) <= LIMITE_BYTES_SENHA, {
+    error: "A senha é longa demais (máximo de 72 bytes; acentos e emoji contam como 2+).",
+  })
   .regex(/[a-zA-Z]/, { error: "A senha deve conter pelo menos uma letra." })
   .regex(/[0-9]/, { error: "A senha deve conter pelo menos um número." });
 

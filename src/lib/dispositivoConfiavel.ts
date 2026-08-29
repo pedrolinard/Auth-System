@@ -35,9 +35,9 @@ export async function dispositivoEhConfiavel(
 }
 
 // Chamado nos mesmos pontos que já derrubam todas as sessões ativas
-// (redefinição de senha, troca de senha logado) — uma senha comprometida
-// não pode deixar um "dispositivo confiável" antigo como atalho pra pular o
-// MFA depois da recuperação.
+// (redefinição de senha, troca de senha logado, confirmação de troca de
+// e-mail) — uma conta possivelmente comprometida não pode deixar um
+// "dispositivo confiável" antigo como atalho pra pular o MFA depois.
 export async function revogarDispositivosConfiaveis(usuarioId: string) {
   await prisma.dispositivoConfiavel.deleteMany({ where: { usuarioId } });
 }

@@ -43,9 +43,39 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     expect(corpo.dadosPessoais).not.toHaveProperty("mfaSecret");
     expect(Array.isArray(corpo.sessoes)).toBe(true);
     expect(Array.isArray(corpo.logsAuditoria)).toBe(true);
+    expect(Array.isArray(corpo.passkeys)).toBe(true);
+    expect(Array.isArray(corpo.dispositivosConfiaveis)).toBe(true);
+    expect(Array.isArray(corpo.codigosBackupMfa)).toBe(true);
     // A sessão usada pra chamar a rota já deve aparecer no próprio export.
     expect(corpo.sessoes.length).toBeGreaterThan(0);
     expect(JSON.stringify(corpo)).not.toContain(usuario.senha);
+  });
+
+  it("o export inclui os metadados das passkeys, sem credentialId nem publicKey", async () => {
+    const usuario = await criarUsuarioTeste("minha-conta-passkey-export");
+    emailsCriados.push(usuario.email);
+    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    await prisma.passkeyCredencial.create({
+      data: {
+        usuarioId: registro.id,
+        credentialId: `cred-${registro.id}`,
+        publicKey: "chave-publica-cose-fake",
+        transportes: ["internal", "hybrid"],
+        nome: "Touch ID do teste",
+      },
+    });
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/minha-conta`, { headers: cabecalhos });
+    expect(resposta.status).toBe(200);
+    const corpo = await resposta.json();
+
+    expect(corpo.passkeys).toHaveLength(1);
+    expect(corpo.passkeys[0].nome).toBe("Touch ID do teste");
+    expect(corpo.passkeys[0].transportes).toEqual(["internal", "hybrid"]);
+    expect(corpo.passkeys[0]).not.toHaveProperty("credentialId");
+    expect(corpo.passkeys[0]).not.toHaveProperty("publicKey");
+    expect(JSON.stringify(corpo)).not.toContain("chave-publica-cose-fake");
   });
 
   it("exclui a própria conta com a senha correta e derruba a sessão", async () => {

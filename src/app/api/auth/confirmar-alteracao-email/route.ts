@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { revogarDispositivosConfiaveis } from "@/lib/dispositivoConfiavel";
 import { enviarEmailEmailAlterado } from "@/lib/email";
 import { verificarTokenAlteracaoEmail } from "@/lib/token";
 import { esquemaConfirmarAlteracaoEmail } from "@/lib/validacao";
@@ -32,6 +33,21 @@ export async function POST(req: Request) {
     );
   }
 
+  // O token de alteração é um JWT stateless válido por 1h inteira: sem essa
+  // checagem, o mesmo link poderia ser usado mais de uma vez na janela.
+  // Comparar o `iat` do token com o instante da última troca de e-mail
+  // invalida qualquer token emitido antes dela — incluindo o que acabou de
+  // ser usado nesta própria requisição (mesmo padrão de `redefinir-senha`).
+  if (
+    usuario.emailAlteradoEm &&
+    (payload.iat ?? 0) * 1000 < usuario.emailAlteradoEm.getTime()
+  ) {
+    return NextResponse.json(
+      { erro: "Link de confirmação inválido ou expirado." },
+      { status: 401 },
+    );
+  }
+
   const emailAntigo = usuario.email;
 
   try {
@@ -44,7 +60,13 @@ export async function POST(req: Request) {
       where: { id: usuario.id },
       // O endereço acabou de ser confirmado clicando no link enviado pra
       // ele — não faz sentido pedir uma segunda verificação de e-mail.
-      data: { email: payload.novoEmail, emailVerificado: true },
+      // `emailAlteradoEm` marca o instante da troca (torna o link de uso
+      // único, ver checagem de `iat` acima).
+      data: {
+        email: payload.novoEmail,
+        emailVerificado: true,
+        emailAlteradoEm: new Date(),
+      },
     });
   } catch (erro) {
     if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
@@ -52,6 +74,19 @@ export async function POST(req: Request) {
     }
     throw erro;
   }
+
+  // Trocar o e-mail troca o canal de recuperação da conta — se quem pediu
+  // não foi o dono (ex.: access token roubado antes do cookie httpOnly),
+  // toda sessão e todo "dispositivo confiável" que pularia o MFA precisam
+  // cair, igual ao "esqueci a senha". Este endpoint é público (o link é
+  // clicado de qualquer navegador, não dá pra saber qual sessão pediu a
+  // troca), então derruba TODAS — o dono legítimo só reentra com o e-mail
+  // novo.
+  await prisma.tokenAtualizacao.updateMany({
+    where: { usuarioId: usuario.id, revogadoEm: null },
+    data: { revogadoEm: new Date() },
+  });
+  await revogarDispositivosConfiaveis(usuario.id);
 
   await registrarEvento({
     req,

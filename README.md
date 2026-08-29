@@ -7,8 +7,10 @@ consumido por outras aplicações como camada intermediária de identidade.
 ## Arquitetura
 
 - **Cadastro/Login**: senha com hash `bcrypt` (`src/lib/senha.ts`, máximo de
-  72 caracteres — limite de bytes do próprio bcrypt, truncamento silencioso
-  além disso). Login roda o `bcrypt.compare` mesmo quando o e-mail não existe
+  72 **bytes UTF-8** — o bcrypt trunca em silêncio além disso; a validação
+  conta bytes, não caracteres, senão uma senha curta com acentos/emoji
+  passaria e seria truncada mesmo assim). Login roda o `bcrypt.compare`
+  mesmo quando o e-mail não existe
   (contra um hash falso fixo) para não vazar, pelo tempo de resposta, quais
   e-mails têm conta.
 - **Tokens**: JWT assinado com `jose` (`src/lib/token.ts`, `algorithms` fixo
@@ -499,8 +501,18 @@ antes do cookie httpOnly, ou uma sessão deixada aberta).
   de ser provado pelo clique, não faz sentido pedir uma segunda verificação.
 - O endereço **antigo** recebe um aviso de segurança
   (`enviarEmailEmailAlterado`) assim que a troca se efetiva — se não foi o
-  dono da conta que pediu, é o único jeito de saber e reagir (trocar a
-  senha, revisar sessões).
+  dono da conta que pediu, é o único jeito de saber e reagir.
+- Confirmar a troca **revoga todas as sessões ativas e os dispositivos
+  confiáveis** do usuário, igual ao "esqueci a senha": trocar o e-mail troca
+  o canal de recuperação da conta, então se um access token roubado chegou a
+  pedir a troca, toda sessão (a do atacante e a do dono) cai e o dono
+  reentra com o e-mail novo. Como este endpoint é público (o link é clicado
+  de qualquer navegador), não dá pra preservar só a sessão que pediu — como
+  a troca de senha logado faz — então derruba todas.
+- O link é de **uso único**: `Usuario.emailAlteradoEm` marca o instante da
+  troca e qualquer token de alteração com `iat` anterior a ele é rejeitado
+  (mesma técnica do `senhaAlteradaEm` na redefinição de senha), então o
+  próprio uso invalida o link para uma segunda vez.
 - Corrida entre o pedido e a confirmação (outra conta registra o mesmo
   e-mail novo nesse meio-tempo): a constraint `@unique` do banco é quem
   garante a segurança de verdade — a checagem prévia na rota de pedido é só
@@ -583,9 +595,11 @@ exportar nem apagar os próprios dados sem pedir pra um admin.
 - `GET /api/auth/minha-conta` (autenticado) exporta o que este serviço
   guarda sobre o titular: dados pessoais, sessões (sem `tokenHash`),
   dispositivos confiáveis, códigos de backup de MFA (só `criadoEm`/`usadoEm`,
-  nunca o hash) e os últimos 500 logs de auditoria sobre a conta. **Não**
-  inclui Projeto/Tarefa do serviço de domínio (`django/`) — é uma database
-  separada sem FK real com o usuário (só o claim `sub` do JWT como
+  nunca o hash), passkeys (apelido, transportes, `criadoEm`/`ultimoUsoEm` —
+  sem o `credentialId` nem a chave pública, que são material de credencial,
+  não dado pessoal útil) e os últimos 500 logs de auditoria sobre a conta.
+  **Não** inclui Projeto/Tarefa do serviço de domínio (`django/`) — é uma
+  database separada sem FK real com o usuário (só o claim `sub` do JWT como
   referência opaca); juntar os dois exigiria o Next.js chamar o Django
   internamente, escopo maior que o deste item.
 - `DELETE /api/auth/minha-conta` (`{ senha }`) exclui a conta
@@ -708,9 +722,8 @@ segunda tentativa) sem precisar de uma tabela de tokens usados.
 ### Rate limiting / proteção contra força bruta
 
 `src/lib/rateLimit.ts` reaproveita `LogAuditoria` (sem tabela nova): conta
-quantos eventos de um tipo vieram do mesmo IP (extraído de
-`X-Forwarded-For`/`X-Real-IP`) dentro de uma janela de tempo e responde `429`
-antes mesmo de processar a requisição. Aplicado em login (20 tentativas
+quantos eventos de um tipo vieram do mesmo IP dentro de uma janela de tempo
+e responde `429` antes mesmo de processar a requisição. Aplicado em login (20 tentativas
 erradas/15 min por IP — ver nota de IP compartilhado abaixo — **e** 20/15 min
 por conta, o que vier primeiro), cadastro e recuperação de senha (5
 tentativas/hora cada, só por IP).
@@ -727,10 +740,15 @@ equivalente (a conta ainda não existe), então o IP é a única linha de
 defesa ali — subir esse valor é uma troca de risco diferente, não incluída
 nesse ajuste.
 
-Também vale o aviso original: `X-Forwarded-For` só é confiável atrás de um
-proxy que efetivamente o sobrescreve (Vercel faz isso em produção) — sem um
-proxy confiável na frente, é possível forjar o header pra burlar o limite ou
-pra derrubar outra pessoa nele. Trade-off documentado, não escondido.
+**Fonte do IP** (`obterIp` em `src/lib/rateLimit.ts`): usa
+`x-vercel-forwarded-for` (ou `x-real-ip`), que a Vercel injeta com o IP real
+resolvido pela edge network e o cliente não consegue sobrescrever. O
+`x-forwarded-for` "cru" só entra como último recurso (proxy não-Vercel,
+`next dev` local): na Vercel esse header é `<valor do cliente>, <IP real>` —
+a Vercel **anexa** em vez de substituir, então confiar no item à esquerda
+deixaria alguém girar valores pra burlar o limite ou plantar o IP de outra
+pessoa pra bloqueá-la. Fora de um proxy confiável (dev), qualquer header de
+IP é forjável — trade-off inevitável desse tipo de rate limit.
 
 `PUT /api/auth/senha` e `DELETE /api/auth/minha-conta` compartilham o mesmo
 evento (`senha_atual_falha`, 5 tentativas/5 min por IP **e** por conta) — as
@@ -829,7 +847,8 @@ conhecido. `rollbar` + `@rollbar/react` cobrem os dois lados:
   servidor sempre que ele mesmo captura um erro não tratado — em Server
   Components, Route Handlers ou Server Actions — sem precisar de try/catch
   espalhado em cada rota de API. A instância fica em `src/lib/rollbarServidor.ts`
-  (`"server-only"`, nunca vai pro bundle do cliente).
+  (`"server-only"`, nunca vai pro bundle do cliente). O mesmo arquivo também
+  exporta `register()` (ver "Checagem de config de produção" abaixo).
 - **Cliente**: `src/app/error.tsx` (erro de render dentro do layout raiz) e
   `src/app/global-error.tsx` (erro no próprio layout raiz — precisa da sua
   própria instância do Rollbar, já que o `RollbarProvider` do layout não
@@ -844,6 +863,29 @@ as env vars `ROLLBAR_AUTH_GATEWAY_SERVER_TOKEN_1787151157` e
 `NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157` — sem essas
 variáveis (dev local sem `vercel env pull`, ou CI) o Rollbar só não envia
 nada, não quebra a aplicação.
+
+### Checagem de config de produção
+
+Vários recursos degradam **em silêncio** quando falta a env var
+correspondente — por design, pra não travar quem roda localmente sem conta
+na Cloudflare/Resend/Rollbar. Num deploy de produção que esqueceu de
+configurar algo, isso passa despercebido. `src/lib/configProducao.ts`
+(chamado por `register()` em `src/instrumentation.ts`, só quando
+`NODE_ENV === "production"`) fecha essa lacuna:
+
+- **Aborta o boot** (o `register` precisa terminar antes de o servidor
+  aceitar requisições, então lançar aqui derruba a instância) quando a config
+  deixaria a aplicação quebrada: `BASE_URL` ausente (links de e-mail
+  apontariam pra `localhost`) ou Turnstile configurado pela metade (depois de
+  algumas tentativas o login exige um CAPTCHA que o front, sem a site key,
+  não consegue renderizar — a pessoa fica trancada pra fora).
+- **Loga um aviso** e segue quando é degradação tolerável: sem
+  `RESEND_API_KEY` (e-mails só no log), sem token do Rollbar (erros não
+  reportados), sem `CRON_SECRET` (limpeza de tokens não roda), Turnstile
+  totalmente ausente (CAPTCHA desativado).
+
+Os segredos JWT e a `MFA_ENCRYPTION_KEY` não entram aqui porque já falham o
+boot por conta própria (`throw` em `src/lib/token.ts`).
 
 ### Deploy (Vercel)
 

@@ -2,16 +2,22 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 
-// Atenção: X-Forwarded-For é confiável apenas atrás de um proxy que o
-// define/sobrescreve de verdade (Vercel faz isso em produção). Sem um proxy
-// confiável na frente, um cliente pode forjar esse header pra burlar o
-// limite (girando valores) ou pra derrubar outra pessoa nele (usando o IP
-// real de outra pessoa) — trade-off padrão desse tipo de rate limit,
-// documentado aqui em vez de escondido.
+// Ordem de confiança dos headers de IP:
+//
+// 1. `x-vercel-forwarded-for` / `x-real-ip` — injetados pela Vercel com o IP
+//    real que a edge network resolveu. O cliente NÃO consegue forjá-los: a
+//    Vercel sobrescreve qualquer valor que venha na requisição.
+// 2. `x-forwarded-for` (item mais à esquerda) — só como fallback pra proxies
+//    não-Vercel e pro `next dev` local. Na Vercel esse header é
+//    `<valor que o cliente mandou>, <ip real>`: a Vercel ANEXA o IP real em
+//    vez de substituir, então o item à esquerda é controlado pelo cliente e
+//    daria pra girar valores (furar o limite) ou plantar o IP de outra
+//    pessoa (bloquear ela). Por isso ele vem por último, não primeiro.
 export function obterIp(req: Request): string | null {
   return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    req.headers.get("x-real-ip") ??
+    req.headers.get("x-vercel-forwarded-for")?.trim() ||
+    req.headers.get("x-real-ip")?.trim() ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     null
   );
 }

@@ -30,19 +30,19 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-08-19";
+export const atualizadoEm = "2026-08-28";
 
 export const concluido: GrupoConcluido[] = [
   {
     categoria: "Cadastro & login",
     itens: [
-      "Senha com hash bcrypt (12 rounds), limite de 72 bytes explícito no schema Zod (trunca silencioso do bcryptjs além disso)",
+      "Senha com hash bcrypt (12 rounds), limite de 72 bytes UTF-8 no schema Zod contado em bytes, não em caracteres (senão acentos/emoji furariam o limite e o bcryptjs truncaria em silêncio)",
       "bcrypt.compare roda mesmo com e-mail inexistente (hash falso fixo) — sem side-channel de timing pra enumerar contas",
       "Verificação de e-mail por link com token stateless, reenvio protegido por rate limit",
       "Recuperação de senha: token de 1h, resposta genérica anti-enumeração, revoga todas as sessões ao redefinir",
       "Checagem de senha vazada (Have I Been Pwned, k-anonymity) no cadastro e na redefinição de senha — recusa senhas já conhecidas em vazamentos reais",
       "Troca de senha estando logado (PUT /api/auth/senha), exigindo a senha atual — mantém a sessão de origem viva e derruba as demais",
-      "Alterar e-mail com confirmação em duas etapas — o endereço só muda depois de um link clicado no e-mail NOVO, e o e-mail ANTIGO recebe um aviso de segurança quando a troca se confirma",
+      "Alterar e-mail com confirmação em duas etapas — o endereço só muda depois de um link clicado no e-mail NOVO; o e-mail ANTIGO recebe aviso de segurança, o link é de uso único e confirmar a troca revoga todas as sessões e dispositivos confiáveis (mesma proteção da redefinição de senha)",
     ],
   },
   {
@@ -72,6 +72,7 @@ export const concluido: GrupoConcluido[] = [
       "Rate limiting por IP e por conta em login, cadastro e recuperação de senha (reaproveita LogAuditoria)",
       "CAPTCHA (Cloudflare Turnstile) como fricção progressiva antes do bloqueio duro",
       "Limite de IP generoso (20 tentativas/15 min) pra não travar redes compartilhadas — CAPTCHA e limite por conta seguram a barra de verdade",
+      "IP extraído de x-vercel-forwarded-for / x-real-ip (a Vercel controla, cliente não forja); o x-forwarded-for cru só como fallback de dev, porque na Vercel o item à esquerda é controlado pelo cliente",
     ],
   },
   {
@@ -81,7 +82,7 @@ export const concluido: GrupoConcluido[] = [
       "Admin pode suspender (temporária ou permanente) ou excluir permanentemente a conta de outro usuário",
       "Suspensão revoga todas as sessões ativas na hora e bloqueia login imediatamente",
       "Auditoria de ações administrativas registra também QUEM (qual admin) suspendeu/reativou/excluiu, não só o alvo",
-      "Autoatendimento LGPD: GET/DELETE /api/auth/minha-conta — o próprio titular exporta os dados que o serviço guarda sobre ele ou exclui a conta (exige senha atual, mesma fricção da troca de senha)",
+      "Autoatendimento LGPD: GET/DELETE /api/auth/minha-conta — o próprio titular exporta os dados que o serviço guarda sobre ele (dados pessoais, sessões, dispositivos confiáveis, códigos de backup, passkeys, auditoria) ou exclui a conta (exige senha atual, mesma fricção da troca de senha)",
       "E-mails de segurança: dispositivo novo, MFA ativado/desativado, senha alterada, códigos de backup regenerados, reuso de refresh token detectado, viagem impossível (login em país diferente do último, tempo curto demais pra ser real)",
     ],
   },
@@ -93,6 +94,7 @@ export const concluido: GrupoConcluido[] = [
       "Proteção CSRF explícita (double-submit cookie) em toda mutação autenticada por cookie",
       "Headers de segurança HTTP (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Permissions-Policy)",
       "Job de limpeza de tokens expirados/revogados antigos, protegido por CRON_SECRET",
+      "Checagem de config de produção no boot (src/instrumentation.ts → register): aborta o boot se BASE_URL faltar ou o Turnstile estiver configurado pela metade; loga aviso pra degradações toleráveis (sem Resend, sem Rollbar, sem CRON_SECRET)",
       "Todas as colunas de data usam timestamptz — elimina ambiguidade de fuso horário entre o runtime da Vercel (UTC) e leituras de outros fusos",
     ],
   },

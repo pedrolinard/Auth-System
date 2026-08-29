@@ -53,19 +53,30 @@ describe("POST /api/auth/cadastro", () => {
     expect(resposta.status).toBe(400);
   });
 
-  it("rejeita senha com mais de 72 caracteres (limite de bytes do bcrypt)", async () => {
+  it("rejeita senha com mais de 72 bytes (limite de truncamento do bcrypt)", async () => {
     const email = proximoEmail("cadastro-senha-longa");
-    const senhaGigante = `Senha1${"a".repeat(70)}`; // 76 caracteres
+    const senhaGigante = `Senha1${"a".repeat(70)}`; // 76 bytes ASCII
     const resposta = await cadastrar({ nome: "Teste", email, senha: senhaGigante });
     expect(resposta.status).toBe(400);
   });
 
-  it("aceita senha de exatamente 72 caracteres", async () => {
+  it("aceita senha de exatamente 72 bytes ASCII", async () => {
     const email = proximoEmail("cadastro-senha-72");
-    const senhaNoLimite = `Senha1${"a".repeat(66)}`; // 72 caracteres
-    expect(senhaNoLimite).toHaveLength(72);
+    const senhaNoLimite = `Senha1${"a".repeat(66)}`; // 72 bytes ASCII
+    expect(Buffer.byteLength(senhaNoLimite, "utf8")).toBe(72);
     const resposta = await cadastrar({ nome: "Teste", email, senha: senhaNoLimite });
     expect(resposta.status).toBe(201);
+  });
+
+  it("rejeita senha curta em caracteres mas longa em bytes (acentos contam 2+)", async () => {
+    const email = proximoEmail("cadastro-senha-multibyte");
+    // 40 caracteres, mas 78 bytes UTF-8 — o `.max(72)` do Zod (que conta
+    // caracteres) deixaria passar e o bcrypt truncaria em silêncio.
+    const senhaMultibyte = `a1${"é".repeat(38)}`;
+    expect(senhaMultibyte).toHaveLength(40);
+    expect(Buffer.byteLength(senhaMultibyte, "utf8")).toBeGreaterThan(72);
+    const resposta = await cadastrar({ nome: "Teste", email, senha: senhaMultibyte });
+    expect(resposta.status).toBe(400);
   });
 
   it("rejeita senha conhecida em vazamentos (Have I Been Pwned)", async () => {

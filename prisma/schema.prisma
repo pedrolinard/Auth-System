@@ -52,6 +52,10 @@ model Usuario {
   // É o que torna o token, que por si só é um JWT stateless reutilizável
   // dentro da janela de validade, de uso único na prática.
   senhaAlteradaEm DateTime?          @db.Timestamptz(3)
+  // Mesma ideia do senhaAlteradaEm, para o link de confirmação de troca de
+  // e-mail (JWT stateless de 1h): qualquer token de alteração com `iat`
+  // anterior a esse instante é rejeitado, tornando o link de uso único.
+  emailAlteradoEm DateTime?          @db.Timestamptz(3)
   criadoEm       DateTime            @default(now()) @db.Timestamptz(3)
   atualizadoEm   DateTime            @updatedAt @db.Timestamptz(3)
   tokens         TokenAtualizacao[]
