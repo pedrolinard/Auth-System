@@ -97,9 +97,10 @@ ele só valida o token de acesso (RS256) emitido pelo Next.js e usa o claim
 - Alcançado de forma transparente via `next.config.ts` (`rewrites()`
   encaminha `/api/dominio/*` para `DJANGO_SERVICE_URL`), então o browser
   nunca fala com o Django diretamente — mesma origem, sem CORS.
-- Postgres **local compartilhado** com o Next.js (mesma instância), em uma
-  database própria (`autenticacao_dominio`) — não há FK real entre os dois
-  serviços, só o claim `sub` como referência opaca de usuário.
+- Postgres **compartilhado** com o Next.js (mesma instância): local, uma
+  database própria (`autenticacao_dominio`); em produção, o mesmo Supabase
+  num schema próprio (`dominio`). Não há FK real entre os dois serviços, só
+  o claim `sub` como referência opaca de usuário.
 - Telas no Next.js em `/dashboard/projetos` (listar/criar/excluir projetos) e
   `/dashboard/projetos/[id]` (listar/criar tarefas, mudar status, excluir) —
   `src/lib/clienteDominio.ts` centraliza as chamadas, mesmo padrão de
@@ -929,12 +930,25 @@ projeto Vercel). Variáveis configuradas em cada projeto:
   `NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157` (injetadas
   automaticamente pela integração Rollbar, nos 3 ambientes — production,
   preview e development).
-- **`auth-gateway-django`**: `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`
+- **`auth-gateway-django`**: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`
+  (explícita — ver abaixo), `DJANGO_ALLOWED_HOSTS`
   (`auth-gateway-django.vercel.app` — o domínio exato de produção, não um
   wildcard `*.vercel.app`; ajustar se um domínio próprio for configurado),
   `JWT_ACCESS_PUBLIC_KEY_B64` (mesma chave pública do projeto Next.js, para
-  validar o mesmo token), além de `DATABASE_URL` própria (Neon separado do
-  Next.js — sem FK entre os dois bancos, só o claim `sub` do JWT).
+  validar o mesmo token), `DATABASE_URL` (a **mesma instância Supabase** do
+  `auth-gateway`) e `DATABASE_SCHEMA=dominio`. As tabelas deste serviço
+  ficam no schema `dominio` (via `-c search_path=dominio,public` nas OPTIONS,
+  ver `config/settings.py`), isoladas do `public` do Next.js — mantém a
+  separação lógica de antes (nenhuma FK entre os dois, só o claim `sub`) sem
+  precisar de uma segunda instância. `migrate` deste lado é manual (não roda
+  no deploy).
+
+  `config/settings.py` só chama `load_dotenv` **fora da Vercel**
+  (`if not os.environ.get("VERCEL")`), e `django/.vercelignore` mantém o
+  `.env` fora do bundle: o `django/.env` local tem `DJANGO_DEBUG="True"` pra
+  dev, e sem essas duas proteções ele ia parar no deploy e o Django subia
+  com `DEBUG=True` em produção (vaza traceback, settings, SQL e nomes de env
+  vars em toda página de erro).
 
 **Atenção**: só o projeto `auth-gateway` (Next.js) tem deploy automático via
 GitHub — cada push na `main` dispara build/deploy sozinho, e o próprio
@@ -966,6 +980,11 @@ npx vercel deploy --prod
 
 cd django
 npx vercel link --project auth-gateway-django
-npx vercel integration add neon
-# repetir env add/pull + manage.py migrate + vercel deploy --prod
+# usa a MESMA instância Supabase do auth-gateway, num schema próprio:
+#   1. CREATE SCHEMA IF NOT EXISTS dominio;  (na instância Supabase)
+#   2. vercel env add DATABASE_URL production      (session pooler, sslmode=require)
+#   3. vercel env add DATABASE_SCHEMA production   (= "dominio")
+#   4. vercel env add DJANGO_DEBUG production      (= "False")
+#   5. DATABASE_URL=... DATABASE_SCHEMA=dominio python manage.py migrate
+#   6. vercel deploy --prod
 ```

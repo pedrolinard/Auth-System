@@ -103,13 +103,13 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Valida o mesmo token de acesso (RS256) do Next.js, sem login próprio nem model de usuário",
       "Entidades reais (Projeto/Tarefa) isoladas por usuário, mesma proteção CSRF do lado Next.js",
-      "Postgres compartilhado com o Next.js, database própria",
+      "Postgres compartilhado com o Next.js — database própria no local, schema próprio (dominio) na mesma instância Supabase em produção",
     ],
   },
   {
     categoria: "Deploy & testes",
     itens: [
-      "Dois projetos Vercel independentes (Next.js + Django): auth-gateway no Supabase, auth-gateway-django na Neon (ambos via Vercel Marketplace)",
+      "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
       "129 testes Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 testes E2E (Playwright, incluindo passkey via virtual authenticator) + 23 testes Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
