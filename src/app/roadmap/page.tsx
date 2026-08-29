@@ -1,16 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { prisma } from "@/lib/db";
 import {
   atualizadoEm,
   concluido,
+  metricas,
   proximosPassos,
   type PrioridadeRoadmap,
 } from "@/data/roadmap";
 
+// As métricas "ao vivo" (contagens do banco, commit do deploy) são lidas a
+// cada requisição — sem cache, senão não seriam ao vivo. O resto da página
+// continua vindo de src/data/roadmap.ts.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Roadmap — Sistema de Autenticação",
   description:
-    "O que já foi entregue e as decisões de escopo do gateway de autenticação.",
+    "O que já foi entregue, o que falta, e métricas ao vivo do gateway de autenticação.",
 };
 
 const ROTULO_PRIORIDADE: Record<PrioridadeRoadmap, string> = {
@@ -35,8 +42,53 @@ const totalPendente = proximosPassos.filter((item) => item.status === "pendente"
 // consciente de não fazer) — os dois tiram o item da fila de pendências, só
 // não da mesma forma, daí o rótulo do card não dizer "concluídos".
 const totalResolvidoProximosPassos = proximosPassos.length - totalPendente;
+const totalTestes = metricas.testesVitest + metricas.testesE2e + metricas.testesDjango;
 
-export default function PaginaRoadmap() {
+type Uso =
+  | { ok: true; usuarios: number; sessoesAtivas: number; passkeys: number; mfaAtivo: number; admins: number; eventos7d: number }
+  | { ok: false };
+
+// Contagens agregadas (nenhum dado pessoal) direto do Postgres de produção.
+// Envolto em try/catch: um blip no banco mostra "—" em vez de derrubar a
+// página inteira.
+async function lerUso(): Promise<Uso> {
+  try {
+    const seteDiasAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const [usuarios, sessoesAtivas, passkeys, mfaAtivo, admins, eventos7d] = await Promise.all([
+      prisma.usuario.count(),
+      prisma.tokenAtualizacao.count({
+        where: { revogadoEm: null, expiraEm: { gt: new Date() } },
+      }),
+      prisma.passkeyCredencial.count(),
+      prisma.usuario.count({ where: { mfaAtivado: true } }),
+      prisma.usuario.count({ where: { papel: "admin" } }),
+      prisma.logAuditoria.count({ where: { criadoEm: { gt: seteDiasAtras } } }),
+    ]);
+    return { ok: true, usuarios, sessoesAtivas, passkeys, mfaAtivo, admins, eventos7d };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function Stat({ valor, rotulo }: { valor: string | number; rotulo: string }) {
+  return (
+    <div className="flex flex-col gap-1 bg-white p-5 dark:bg-zinc-900">
+      <span className="font-mono text-2xl tabular-nums text-foreground">{valor}</span>
+      <span className="text-xs text-zinc-500 dark:text-zinc-500">{rotulo}</span>
+    </div>
+  );
+}
+
+export default async function PaginaRoadmap() {
+  const uso = await lerUso();
+  const agora = new Date();
+
+  const deploy = {
+    commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
+    branch: process.env.VERCEL_GIT_COMMIT_REF ?? "—",
+    regiao: process.env.VERCEL_REGION ?? "—",
+  };
+
   const pendentesPorPrioridade = (["alta", "media", "baixa"] as const).map(
     (prioridade) => ({
       prioridade,
@@ -54,35 +106,80 @@ export default function PaginaRoadmap() {
         <p className="max-w-2xl text-zinc-600 dark:text-zinc-400">
           Gateway de cadastro, login e emissão de tokens JWT (acesso +
           atualização) para outras aplicações, com um serviço de domínio em
-          Django/DRF por trás. Estado atual do que foi entregue e das decisões
-          de escopo tomadas ao longo do caminho.
+          Django/DRF por trás. Estado atual do que foi entregue, o que falta e
+          métricas ao vivo do sistema em produção.
         </p>
         <span className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
-          atualizado em {atualizadoEm} · gerado a partir de{" "}
+          atualizado em {atualizadoEm} · roadmap gerado a partir de{" "}
           <code>src/data/roadmap.ts</code>
         </span>
       </header>
 
-      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-black/[.08] bg-black/[.08] dark:border-white/[.1] dark:bg-white/[.1]">
-        <div className="flex flex-col gap-1 bg-white p-5 dark:bg-zinc-900">
-          <span className="font-mono text-2xl tabular-nums text-foreground">
-            {totalConcluido}
-          </span>
-          <span className="text-xs text-zinc-500 dark:text-zinc-500">itens entregues</span>
-        </div>
-        <div className="flex flex-col gap-1 bg-white p-5 dark:bg-zinc-900">
-          <span className="font-mono text-2xl tabular-nums text-foreground">
-            {totalPendente}
-          </span>
-          <span className="text-xs text-zinc-500 dark:text-zinc-500">próximos passos pendentes</span>
-        </div>
-        <div className="flex flex-col gap-1 bg-white p-5 dark:bg-zinc-900">
-          <span className="font-mono text-2xl tabular-nums text-foreground">
-            {totalResolvidoProximosPassos}/{proximosPassos.length}
-          </span>
-          <span className="text-xs text-zinc-500 dark:text-zinc-500">próximos passos resolvidos</span>
-        </div>
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-black/[.08] bg-black/[.08] sm:grid-cols-4 dark:border-white/[.1] dark:bg-white/[.1]">
+        <Stat valor={totalConcluido} rotulo="itens entregues" />
+        <Stat valor={totalPendente} rotulo="próximos passos pendentes" />
+        <Stat
+          valor={`${totalResolvidoProximosPassos}/${proximosPassos.length}`}
+          rotulo="próximos passos resolvidos"
+        />
+        <Stat valor={totalTestes} rotulo="testes automatizados" />
       </div>
+
+      <section className="flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <span className="eyebrow shrink-0 text-zinc-500 dark:text-zinc-500">Métricas ao vivo</span>
+          <span className="h-px flex-1 bg-black/[.08] dark:bg-white/[.1]" />
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2.5">
+            <h2 className="font-mono text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-500">
+              Uso · banco de produção {uso.ok ? "" : "(indisponível)"}
+            </h2>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-black/[.08] bg-black/[.08] sm:grid-cols-3 dark:border-white/[.1] dark:bg-white/[.1]">
+              <Stat valor={uso.ok ? uso.usuarios : "—"} rotulo="usuários cadastrados" />
+              <Stat valor={uso.ok ? uso.sessoesAtivas : "—"} rotulo="sessões ativas agora" />
+              <Stat valor={uso.ok ? uso.mfaAtivo : "—"} rotulo="contas com MFA" />
+              <Stat valor={uso.ok ? uso.passkeys : "—"} rotulo="passkeys registradas" />
+              <Stat valor={uso.ok ? uso.admins : "—"} rotulo="admins" />
+              <Stat valor={uso.ok ? uso.eventos7d : "—"} rotulo="eventos de auditoria (7d)" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <h2 className="font-mono text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-500">
+              Código
+            </h2>
+            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-black/[.08] bg-black/[.08] sm:grid-cols-4 dark:border-white/[.1] dark:bg-white/[.1]">
+              <Stat valor={metricas.rotasApi} rotulo="rotas de API" />
+              <Stat valor={metricas.modulosLib} rotulo="módulos em src/lib" />
+              <Stat valor={metricas.tabelas} rotulo="tabelas (Prisma)" />
+              <Stat valor={metricas.migracoesPrisma} rotulo="migrações aplicadas" />
+              <Stat valor={metricas.testesVitest} rotulo="testes Vitest" />
+              <Stat valor={metricas.testesE2e} rotulo="testes E2E (Playwright)" />
+              <Stat valor={metricas.testesDjango} rotulo="testes Django (pytest)" />
+              <Stat valor={totalTestes} rotulo="testes no total" />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <h2 className="font-mono text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-500">
+              Deploy
+            </h2>
+            <div className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-black/[.08] bg-black/[.08] sm:grid-cols-3 dark:border-white/[.1] dark:bg-white/[.1]">
+              <Stat valor={deploy.commit} rotulo="commit em produção" />
+              <Stat valor={deploy.branch} rotulo="branch" />
+              <Stat valor={deploy.regiao} rotulo="região Vercel" />
+            </div>
+          </div>
+
+          <p className="font-mono text-[11px] text-zinc-400 dark:text-zinc-600">
+            medido em{" "}
+            {agora.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium", timeZone: "America/Sao_Paulo" })}{" "}
+            (America/Sao_Paulo) · sem cache, lido a cada visita
+          </p>
+        </div>
+      </section>
 
       <section className="flex flex-col gap-4">
         <div className="flex items-center gap-3">
@@ -164,11 +261,11 @@ export default function PaginaRoadmap() {
 
       <footer className="flex flex-col gap-2 border-t border-black/[.08] pt-6 font-mono text-xs text-zinc-500 dark:border-white/[.1] dark:text-zinc-500">
         <span>
-          Este roadmap é renderizado ao vivo a partir de{" "}
-          <code>src/data/roadmap.ts</code> — cada item de &ldquo;Próximos
-          passos&rdquo; é marcado como feito (ou descartado, quando a decisão
-          é conscientemente não fazer) no mesmo commit que entrega a mudança,
-          então esta página reflete o deploy mais recente automaticamente.
+          O roadmap é renderizado a partir de <code>src/data/roadmap.ts</code>{" "}
+          — cada item de &ldquo;Próximos passos&rdquo; é marcado como feito (ou
+          descartado) no mesmo commit que entrega a mudança, então a lista
+          reflete o deploy mais recente. As &ldquo;Métricas ao vivo&rdquo; são
+          contagens agregadas lidas do Postgres de produção a cada visita.
         </span>
         <Link href="/" className="text-zinc-600 underline underline-offset-2 dark:text-zinc-400">
           ← Voltar

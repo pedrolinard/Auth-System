@@ -30,7 +30,20 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-08-28";
+export const atualizadoEm = "2026-08-29";
+
+// Métricas ESTÁTICAS do código — atualize junto com a mudança que as move
+// (mesma disciplina do resto do arquivo). As métricas AO VIVO (contagens do
+// banco, commit/deploy) são calculadas em tempo de requisição na página.
+export const metricas = {
+  rotasApi: 33,
+  migracoesPrisma: 15,
+  modulosLib: 28,
+  tabelas: 7,
+  testesVitest: 146,
+  testesE2e: 6,
+  testesDjango: 23,
+};
 
 export const concluido: GrupoConcluido[] = [
   {
@@ -111,8 +124,9 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "129 testes Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 testes E2E (Playwright, incluindo passkey via virtual authenticator) + 23 testes Django (pytest-django)",
+      "175 testes: 146 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 23 Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
+      "Django não carrega .env na Vercel (load_dotenv só fora da plataforma) e .vercelignore mantém o arquivo fora do bundle — sem isso o serviço subia com DEBUG=True em produção",
     ],
   },
   {
@@ -127,6 +141,110 @@ export const concluido: GrupoConcluido[] = [
 ];
 
 export const proximosPassos: ItemProximoPasso[] = [
+  {
+    id: "django-debug-prod",
+    titulo: "Django rodando com DEBUG=True em produção",
+    descricao:
+      "O `vercel deploy` empacotava o `django/.env` local (que tem DJANGO_DEBUG=\"True\" pra dev) e o `load_dotenv` de settings.py lia esse arquivo em produção — o Django vazava traceback completo, settings, SQL e nomes de env vars em toda página de erro, há ~45 dias. Fix: `load_dotenv` só fora da Vercel, `django/.vercelignore` novo, e DJANGO_DEBUG=False explícito no env.",
+    categoria: "Segurança",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-08-29",
+  },
+  {
+    id: "supabase-migracao",
+    titulo: "Migrar os dois bancos pra Supabase",
+    descricao:
+      "Sair de dois projetos Neon separados para uma única instância Supabase: auth-gateway no schema `public`, auth-gateway-django no schema `dominio` (isolados, sem FK). Schema + dados de produção migrados e verificados. O deploy de produção estava travado há ~11 dias por env vars que faltavam (JWT_ALTERACAO_EMAIL_SECRET, JWT_PASSKEY_SECRET) — resolvido junto.",
+    categoria: "Infraestrutura",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-08-29",
+  },
+  {
+    id: "ci-typegen",
+    titulo: "Consertar o CI (typecheck vermelho há 10 dias)",
+    descricao:
+      "O passo de typecheck rodava `tsc` sem gerar os tipos de rota do Next 16 (LayoutProps, RouteContext) antes — o CI falhava com \"Cannot find name\". `npm run typecheck` agora roda `next typegen && tsc`.",
+    categoria: "Infraestrutura",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-08-29",
+  },
+  {
+    id: "config-check-boot",
+    titulo: "Checagem de config de produção no boot",
+    descricao:
+      "Vários recursos degradam em silêncio sem a env var (CAPTCHA, e-mail, Rollbar, links de e-mail). `src/instrumentation.ts` → `register()` aborta o boot em config quebrada (BASE_URL ausente, Turnstile pela metade) e loga aviso nas degradações toleráveis.",
+    categoria: "Infraestrutura",
+    prioridade: "media",
+    status: "feito",
+    concluidoEm: "2026-08-28",
+  },
+  {
+    id: "senha-limite-bytes",
+    titulo: "Limite de senha em bytes, não caracteres",
+    descricao:
+      "O `.max(72)` do Zod conta code units UTF-16; o bcryptjs trunca em 72 bytes. Uma senha curta com acentos/emoji passava e era truncada em silêncio. Trocado por um refine em bytes UTF-8.",
+    categoria: "Segurança",
+    prioridade: "baixa",
+    status: "feito",
+    concluidoEm: "2026-08-28",
+  },
+  {
+    id: "separar-ratelimit-auditoria",
+    titulo: "Separar o contador de rate limit da trilha de auditoria",
+    descricao:
+      "`src/lib/rateLimit.ts` conta linhas de `LogAuditoria` — a mesma tabela é trilha de auditoria (append-only, LGPD), contador de rate limit E detector de dispositivo novo. O job de limpeza não toca em `LogAuditoria`, então ela só cresce, e todo login/cadastro/reset roda um `count()` contra ela. Contador próprio com TTL + retenção/rollup da auditoria (a tabela `DesafioMfaConsumido` também nunca é limpa).",
+    categoria: "Infraestrutura",
+    prioridade: "media",
+    status: "pendente",
+  },
+  {
+    id: "rate-limit-endpoints-restantes",
+    titulo: "Rate limit nos endpoints sensíveis que faltam",
+    descricao:
+      "POST /api/auth/atualizar (renovação — faz lookup + transação a cada chamada) e POST /api/auth/mfa/iniciar não têm limite. Login, cadastro, recuperação, troca de senha e exclusão já têm.",
+    categoria: "Segurança",
+    prioridade: "media",
+    status: "pendente",
+  },
+  {
+    id: "django-observabilidade",
+    titulo: "Observabilidade no Django",
+    descricao:
+      "O Rollbar cobre só o app Next.js. Um erro 500 inesperado do serviço de domínio some nos logs da Vercel, sem alerta nem agregação.",
+    categoria: "Infraestrutura",
+    prioridade: "baixa",
+    status: "pendente",
+  },
+  {
+    id: "turnstile-producao",
+    titulo: "Ativar o Turnstile em produção",
+    descricao:
+      "As duas chaves (TURNSTILE_SECRET_KEY + NEXT_PUBLIC_TURNSTILE_SITE_KEY) nunca foram configuradas na Vercel — o CAPTCHA de fricção progressiva está inativo em produção. O código já está pronto; falta criar o widget na Cloudflare e setar as env vars.",
+    categoria: "Segurança",
+    prioridade: "baixa",
+    status: "pendente",
+  },
+  {
+    id: "desconectar-neon",
+    titulo: "Desconectar as integrações Neon",
+    descricao:
+      "`auth-gateway-db` e `auth-gateway-django-db` seguem conectadas como rollback pós-migração. Remover depois de confirmar o Supabase — enquanto conectadas, uma rotação de credencial da Neon re-injeta DATABASE_URL e sobrescreve a do Supabase.",
+    categoria: "Infraestrutura",
+    prioridade: "baixa",
+    status: "pendente",
+  },
+  {
+    id: "django-csrf-constant-time",
+    titulo: "CSRF do Django em tempo constante",
+    descricao:
+      "`comum/autenticacao.py` compara o token com `==` (não constant-time); o lado Node usa `timingSafeEqual` de propósito. Diferença pequena, mas é uma inconsistência com o padrão que o projeto adotou.",
+    categoria: "Segurança",
+    prioridade: "baixa",
+    status: "pendente",
+  },
   {
     id: "ci-github",
     titulo: "CI no GitHub Actions",
