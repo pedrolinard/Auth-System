@@ -109,10 +109,10 @@ export const concluido: GrupoConcluido[] = [
   {
     categoria: "Deploy & testes",
     itens: [
-      "Dois projetos Vercel independentes (Next.js + Django), cada um com Postgres via Neon Marketplace",
+      "Dois projetos Vercel independentes (Next.js + Django): auth-gateway no Supabase, auth-gateway-django na Neon (ambos via Vercel Marketplace)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
       "129 testes Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 testes E2E (Playwright, incluindo passkey via virtual authenticator) + 23 testes Django (pytest-django)",
-      "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck e testes em todo PR/push na main, antes do deploy automático de produção",
+      "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
     ],
   },
   {

@@ -193,7 +193,11 @@ produção nos dois projetos Vercel (Next.js e Django).
   test:e2e` (reaproveita o mesmo Postgres/segredos do job — os testes E2E
   sobem seu próprio `next dev` na porta 3200, ver `playwright.config.ts`). Em
   falha, as traces (`test-results/`) sobem como artifact do job pra depurar
-  com `npx playwright show-trace`.
+  com `npx playwright show-trace`. O `typecheck` roda `next typegen` antes do
+  `tsc` (script `typecheck` do `package.json`): o Next 16 gera tipos globais
+  de rota/layout/página (`LayoutProps`, `RouteContext`, …) em `.next/types/`,
+  e sem esse passo o `tsc` no CI — que não faz build antes — falha com
+  "Cannot find name 'LayoutProps'".
 - **Job `django`**: roda `pytest` contra SQLite (sem precisar subir Postgres
   nesse job — `comum/autenticacao.py` só valida o JWT, não tem model de
   usuário próprio).
@@ -890,9 +894,15 @@ boot por conta própria (`throw` em `src/lib/token.ts`).
 ### Deploy (Vercel)
 
 O sistema está em produção como dois projetos Vercel separados, cada um com
-seu próprio Postgres provisionado via Marketplace (Neon, plano free) e
-segredos próprios (gerados exclusivamente para produção, diferentes dos do
-`.env` local):
+seu próprio Postgres provisionado via Marketplace e segredos próprios
+(gerados exclusivamente para produção, diferentes dos do `.env` local):
+`auth-gateway` usa **Supabase** (Postgres, session pooler na porta 5432 —
+serve tanto o `prisma migrate deploy` do build quanto o runtime); o
+`auth-gateway-django` continua na **Neon**. A `DATABASE_URL` do
+`auth-gateway` traz `sslmode=no-verify`: a cadeia de certificados do pooler
+do Supabase não encadeia numa CA pública que o driver `pg` (usado pelo
+`@prisma/adapter-pg`) confie por padrão, então a verificação de CA é
+desligada (a conexão continua cifrada por TLS).
 
 | Projeto | Root Directory | URL |
 | ------- | --------------- | --- |
@@ -907,10 +917,15 @@ projeto Vercel). Variáveis configuradas em cada projeto:
 - **`auth-gateway`**: `JWT_ACCESS_PRIVATE_KEY_B64`, `JWT_ACCESS_PUBLIC_KEY_B64`,
   `JWT_REFRESH_SECRET`, `JWT_MFA_SECRET`, `JWT_VERIFICACAO_EMAIL_SECRET`,
   `JWT_REDEFINICAO_SENHA_SECRET`, `JWT_ALTERACAO_EMAIL_SECRET`,
-  `MFA_ENCRYPTION_KEY`, `CRON_SECRET`,
-  `BASE_URL`, `DJANGO_SERVICE_URL` (aponta para a URL de produção do projeto
-  Django), além de `DATABASE_URL` (injetada automaticamente pela integração
-  Neon) e `ROLLBAR_AUTH_GATEWAY_SERVER_TOKEN_1787151157`/
+  `JWT_PASSKEY_SECRET`, `MFA_ENCRYPTION_KEY`, `CRON_SECRET`, `BASE_URL`,
+  `PASSKEY_RP_ID` / `PASSKEY_ORIGIN` (o host e a origem exatos de produção —
+  `auth-gateway-kappa.vercel.app` / `https://auth-gateway-kappa.vercel.app`;
+  sem eles o WebAuthn cai em `localhost` e recusa toda cerimônia),
+  `DJANGO_SERVICE_URL` (aponta para a URL de produção do projeto Django),
+  `DATABASE_URL` (Supabase, definida manualmente — a integração Supabase
+  provisiona `SUPABASE_POSTGRES_*` com prefixo, e a `DATABASE_URL` é montada
+  a partir do session pooler + `sslmode=no-verify`) e
+  `ROLLBAR_AUTH_GATEWAY_SERVER_TOKEN_1787151157` /
   `NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157` (injetadas
   automaticamente pela integração Rollbar, nos 3 ambientes — production,
   preview e development).
@@ -942,15 +957,15 @@ do sistema.
 Para reproduzir ou atualizar o deploy manualmente:
 
 ```bash
-npx vercel link --project auth-gateway         # raiz do repo
-npx vercel install neon                         # provisiona/conecta o Postgres
+npx vercel link --project auth-gateway              # raiz do repo
+npx vercel integration add supabase -e production -e preview --prefix SUPABASE_
 npx vercel env add <NOME_DA_VARIAVEL> production
 npx vercel env pull .env.production.local --environment=production
-npx prisma migrate deploy                       # com a DATABASE_URL de produção
+npx prisma migrate deploy                           # com a DATABASE_URL de produção
 npx vercel deploy --prod
 
 cd django
 npx vercel link --project auth-gateway-django
-npx vercel install neon
+npx vercel integration add neon
 # repetir env add/pull + manage.py migrate + vercel deploy --prod
 ```
