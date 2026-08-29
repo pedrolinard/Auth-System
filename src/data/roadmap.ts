@@ -40,7 +40,7 @@ export const metricas = {
   migracoesPrisma: 15,
   modulosLib: 28,
   tabelas: 7,
-  testesVitest: 148,
+  testesVitest: 157,
   testesE2e: 6,
   testesDjango: 29,
 };
@@ -104,9 +104,9 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Logs de auditoria (login sucesso/falha, cadastro, logout, IP e user-agent)",
       "Painel de auditoria para admins (/dashboard/auditoria) — consulta os últimos 200 logs com filtro por evento/e-mail, sem precisar acessar o banco direto",
-      "Proteção CSRF explícita (double-submit cookie) em toda mutação autenticada por cookie",
+      "Proteção CSRF explícita (double-submit cookie, comparado em tempo constante) em toda mutação autenticada por cookie",
       "Headers de segurança HTTP (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Permissions-Policy)",
-      "Job de limpeza de tokens expirados/revogados antigos, protegido por CRON_SECRET",
+      "Job de limpeza de tokens expirados/revogados antigos, protegido por CRON_SECRET (comparado em tempo constante, mesma disciplina do token CSRF)",
       "Checagem de config de produção no boot (src/instrumentation.ts → register): aborta o boot se BASE_URL faltar ou o Turnstile estiver configurado pela metade; loga aviso pra degradações toleráveis (sem Resend, sem Rollbar, sem CRON_SECRET)",
       "Todas as colunas de data usam timestamptz — elimina ambiguidade de fuso horário entre o runtime da Vercel (UTC) e leituras de outros fusos",
     ],
@@ -124,7 +124,7 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "183 testes: 148 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 29 Django (pytest-django)",
+      "192 testes: 157 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 29 Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
       "Django não carrega .env na Vercel (load_dotenv só fora da plataforma) e .vercelignore mantém o arquivo fora do bundle — sem isso o serviço subia com DEBUG=True em produção",
     ],
@@ -242,6 +242,16 @@ export const proximosPassos: ItemProximoPasso[] = [
     titulo: "CSRF do Django em tempo constante",
     descricao:
       "`comum/autenticacao.py` comparava o token com `==` (não constant-time); o lado Node usa `timingSafeEqual` de propósito. Trocado por `hmac.compare_digest`, com `try/except TypeError` pra header não-ASCII virar 403, não 500. +6 testes cobrindo o ProtegidoContraCsrf (que não tinha nenhum).",
+    categoria: "Segurança",
+    prioridade: "baixa",
+    status: "feito",
+    concluidoEm: "2026-08-29",
+  },
+  {
+    id: "cron-secret-constant-time",
+    titulo: "CRON_SECRET comparado em tempo constante",
+    descricao:
+      "`/api/cron/limpar-tokens` comparava o Bearer com `!==` — a mesma folga de timing que o token CSRF já evitava com `timingSafeEqual`. O `timingSafeEqual` de `csrf.ts` virou `compararEmTempoConstante` em `cripto.ts`, reusado nas duas rotas. +9 testes (o helper e a rota do cron, que não tinha nenhum).",
     categoria: "Segurança",
     prioridade: "baixa",
     status: "feito",

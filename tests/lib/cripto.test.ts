@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { criptografar, descriptografar } from "@/lib/cripto";
+import { compararEmTempoConstante, criptografar, descriptografar } from "@/lib/cripto";
 
 const MFA_ENCRYPTION_KEY_ORIGINAL = process.env.MFA_ENCRYPTION_KEY;
 const MFA_ENCRYPTION_KEY_ANTERIOR_ORIGINAL = process.env.MFA_ENCRYPTION_KEY_ANTERIOR;
@@ -109,5 +109,31 @@ describe("Criptografia de dados em repouso (AES-256-GCM)", () => {
     const { descriptografar: descriptografarSemAnterior } = await import("@/lib/cripto");
 
     expect(() => descriptografarSemAnterior(blobComChaveAntiga)).toThrow();
+  });
+});
+
+describe("compararEmTempoConstante", () => {
+  it("é verdadeiro para duas strings iguais", () => {
+    expect(compararEmTempoConstante("segredo-identico", "segredo-identico")).toBe(true);
+  });
+
+  it("é falso para strings do mesmo tamanho que diferem", () => {
+    expect(compararEmTempoConstante("segredo-aaaaaaaa", "segredo-bbbbbbbb")).toBe(false);
+  });
+
+  it("é falso para strings de tamanhos diferentes (sem lançar)", () => {
+    expect(compararEmTempoConstante("curto", "bem mais comprido")).toBe(false);
+    expect(compararEmTempoConstante("", "x")).toBe(false);
+  });
+
+  it("é verdadeiro para duas strings vazias", () => {
+    expect(compararEmTempoConstante("", "")).toBe(true);
+  });
+
+  it("compara por bytes UTF-8, não por caracteres", () => {
+    // "é" tem 1 caractere mas 2 bytes em UTF-8 — buffers de tamanhos
+    // diferentes de "ee" (2 bytes), então reprova sem lançar no timingSafeEqual.
+    expect(compararEmTempoConstante("é", "ee")).toBe(false);
+    expect(compararEmTempoConstante("é", "é")).toBe(true);
   });
 });

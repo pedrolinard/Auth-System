@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { compararEmTempoConstante } from "@/lib/cripto";
 import { limparTokensExpirados } from "@/lib/limpezaTokens";
 
 // Rota pensada para ser chamada por um agendador externo (cron job do SO,
@@ -18,7 +19,13 @@ export async function POST(req: Request) {
     ? cabecalho.slice("Bearer ".length)
     : undefined;
 
-  if (segredoRecebido !== segredoConfigurado) {
+  // Comparação em tempo constante, mesma disciplina do token CSRF — um `!==`
+  // aqui vaza, pela latência, quantos bytes iniciais do CRON_SECRET o
+  // atacante acertou.
+  if (
+    !segredoRecebido ||
+    !compararEmTempoConstante(segredoRecebido, segredoConfigurado)
+  ) {
     return NextResponse.json({ erro: "Não autorizado." }, { status: 401 });
   }
 

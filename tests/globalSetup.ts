@@ -62,6 +62,7 @@ export default async function setup() {
 // terminar. Batendo em todas as rotas uma vez, em sequência, aqui no setup
 // (antes dos testes começarem de verdade), cada uma já compila isolada.
 const ROTAS_PARA_AQUECER = [
+  "/api/cron/limpar-tokens",
   "/api/auth/atualizar",
   "/api/auth/cadastro",
   "/api/auth/esqueci-senha",

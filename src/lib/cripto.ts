@@ -1,6 +1,20 @@
 import "server-only";
 
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
+
+// Comparação de strings em tempo constante: a duração não depende de QUANTOS
+// bytes iniciais coincidem, então um atacante que mede a latência da resposta
+// não consegue reconstruir o valor esperado byte a byte. Usada pra comparar
+// segredos que chegam na requisição (token CSRF, CRON_SECRET) com o valor
+// guardado no servidor. timingSafeEqual exige buffers do mesmo tamanho —
+// comparar o tamanho antes não vaza nada útil aqui (os dois lados são
+// segredos de tamanho fixo) e só evita a exceção que ele lança nesse caso.
+export function compararEmTempoConstante(a: string, b: string): boolean {
+  const bufferA = Buffer.from(a);
+  const bufferB = Buffer.from(b);
+  if (bufferA.length !== bufferB.length) return false;
+  return timingSafeEqual(bufferA, bufferB);
+}
 
 const ALGORITMO = "aes-256-gcm";
 const TAMANHO_IV = 12; // 96 bits, recomendado pelo NIST para GCM
