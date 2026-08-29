@@ -101,15 +101,25 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-# Postgres local, mesma instância compartilhada com o gateway Next.js, mas em
-# uma database própria (autenticacao_dominio) — não há FK real entre os dois
-# serviços, só o claim 'sub' do JWT como referência opaca de usuário.
+# Não há FK real entre este serviço e o gateway Next.js, só o claim 'sub' do
+# JWT como referência opaca de usuário. Local: Postgres próprio
+# (autenticacao_dominio). Produção: mesma instância Supabase do Next.js, mas
+# num schema próprio (DATABASE_SCHEMA=dominio) — a separação lógica de antes
+# (bancos distintos), agora via schema.
 
 DATABASES = {
     'default': dj_database_url.parse(
         os.environ.get('DATABASE_URL') or f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
     )
 }
+
+_schema = os.environ.get('DATABASE_SCHEMA')
+if _schema and DATABASES['default'].get('ENGINE') == 'django.db.backends.postgresql':
+    DATABASES['default'].setdefault('OPTIONS', {})
+    # search_path com public no fim: as tabelas do serviço ficam em `dominio`
+    # (primeiro da lista, então é onde `migrate` cria), e funções de extensão
+    # que moram em `public` continuam resolvíveis.
+    DATABASES['default']['OPTIONS']['options'] = f'-c search_path={_schema},public'
 
 
 # Password validation
