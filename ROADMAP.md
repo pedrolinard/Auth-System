@@ -1,6 +1,8 @@
 # Roadmap — Sistema de Autenticação Intermediária
 
 > Gerado em 2026-07-13. Atualizado em 2026-07-16 (índice composto em `LogAuditoria` pra acelerar as consultas do rate limit). Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.** Sistema em produção na Vercel desde 2026-07-14 (ver seção "Deploy em produção" abaixo).
+>
+> Atualizado em 2026-08-29 (contagens de teste: **192 no total** — 157 Vitest + 6 E2E Playwright + 29 Django). A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
 
 ## ✅ Feito
 
@@ -52,7 +54,7 @@
 - `next.config.ts` encaminha `/api/dominio/*` para o Django via rewrite (mesma origem, sem CORS) — cookies (acesso e CSRF) são repassados transparentemente
 - **Postgres compartilhado** — mesma instância local do Next.js, database própria (`autenticacao_dominio`)
 - `ProtegidoContraCsrf` (`comum/autenticacao.py`) — mesma proteção CSRF double-submit-cookie do lado Next.js, aplicada nas mutações de `ProjetoViewSet`/`TarefaViewSet`
-- **Testes automatizados** (`pytest-django`): `comum/tests/test_autenticacao.py` (token válido/expirado/adulterado/confusão de algoritmo/via cookie/claim `papel`) e `tarefas/tests/test_views.py` (CRUD + isolamento por usuário + CSRF ponta a ponta) — 23 testes
+- **Testes automatizados** (`pytest-django`): `comum/tests/test_autenticacao.py` (token válido/expirado/adulterado/confusão de algoritmo/via cookie/claim `papel` + `ProtegidoContraCsrf` em tempo constante) e `tarefas/tests/test_views.py` (CRUD + isolamento por usuário + CSRF ponta a ponta) — 29 testes
 
 ### Frontend
 - Páginas: home, `/login` (com segunda etapa de código MFA e link "Esqueci minha senha"), `/cadastro`, `/dashboard` (protegida, com seções de Segurança: sessões ativas e MFA), `/verificar-email`, `/esqueci-senha`, `/redefinir-senha`
@@ -63,7 +65,8 @@
 
 ### Testes automatizados (Next.js)
 - **Vitest contra servidor `next dev` real** (não mocka `next/headers`), database dedicada `autenticacao_test` na mesma instância Postgres, `tests/globalSetup.ts` sobe/derruba o servidor e aplica as migrations
-- 28 testes em `tests/api/*.test.ts`: cadastro, login, sessões, MFA (códigos TOTP reais), RBAC, recuperação de senha, verificação de e-mail, CSRF e rate limiting
+- 157 testes em `tests/api/*.test.ts` + `tests/lib/*.test.ts`: cadastro, login, sessões, MFA (códigos TOTP reais e backup), RBAC, recuperação/troca/alteração de e-mail e senha, verificação de e-mail, CSRF, rate limiting, viagem impossível, passkeys, cron de limpeza, criptografia em repouso e comparação em tempo constante
+- 6 testes E2E de navegador (Playwright): cadastro/login, dashboard protegido e passkeys via virtual authenticator
 
 ### Segurança já presente
 - Senha hasheada (bcrypt)
