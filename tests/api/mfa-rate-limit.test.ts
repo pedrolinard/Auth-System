@@ -62,4 +62,27 @@ describe("Rate limiting do código MFA", () => {
 
     await apagarUsuariosTeste([usuario.email]);
   }, 45000);
+
+  it("bloqueia /mfa/iniciar com 429 após muitas chamadas do mesmo IP", async () => {
+    const usuario = await criarUsuarioTeste("mfa-rate-iniciar");
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+    const ip = ipFalso();
+
+    async function iniciar() {
+      return fetch(`${BASE_URL}/api/auth/mfa/iniciar`, {
+        method: "POST",
+        headers: { ...cabecalhos, "X-Forwarded-For": ip },
+      });
+    }
+
+    for (let i = 0; i < 10; i++) {
+      const resposta = await iniciar();
+      expect(resposta.status).toBe(200);
+    }
+
+    const decima_primeira = await iniciar();
+    expect(decima_primeira.status).toBe(429);
+
+    await apagarUsuariosTeste([usuario.email]);
+  }, 45000);
 });

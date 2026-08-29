@@ -1,3 +1,4 @@
+import hmac
 from dataclasses import dataclass
 
 import jwt
@@ -98,4 +99,14 @@ class ProtegidoContraCsrf(BasePermission):
             return True
 
         cabecalho = request.headers.get("X-CSRF-Token")
-        return cabecalho == valor_cookie
+        if not cabecalho:
+            return False
+
+        # Comparação em tempo constante — mesma escolha do lado Next.js
+        # (src/lib/csrf.ts usa timingSafeEqual). compare_digest com str exige
+        # os dois lados ASCII; o header é controlado pelo cliente e pode vir
+        # com não-ASCII, então o TypeError vira 403, não 500.
+        try:
+            return hmac.compare_digest(cabecalho, valor_cookie)
+        except TypeError:
+            return False

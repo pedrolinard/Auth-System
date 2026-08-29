@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from django.test import RequestFactory
 from rest_framework.exceptions import AuthenticationFailed
 
-from comum.autenticacao import AutenticacaoJWT
+from comum.autenticacao import AutenticacaoJWT, ProtegidoContraCsrf
 
 # Par de chaves RSA descartável, gerado só para os testes — isola os cenários
 # da chave real do Next.js (que só existe no .env, não deve ser usada aqui).
@@ -139,3 +139,47 @@ def test_confusao_de_algoritmo_hs256_rejeitada():
 
     with pytest.raises(AuthenticationFailed, match="inválido"):
         AutenticacaoJWT().authenticate(_requisicao_com_token(token_forjado))
+
+
+def _requisicao_csrf(metodo="post", cookie=None, header=None):
+    factory = RequestFactory()
+    request = getattr(factory, metodo)("/")
+    if cookie is not None:
+        request.COOKIES["csrfToken"] = cookie
+    if header is not None:
+        request.META["HTTP_X_CSRF_TOKEN"] = header
+    return request
+
+
+def test_csrf_metodo_seguro_nao_e_checado():
+    request = _requisicao_csrf("get", cookie="abc", header="xyz")
+    assert ProtegidoContraCsrf().has_permission(request, None) is True
+
+
+def test_csrf_sem_cookie_pula_a_checagem():
+    # Cliente sem navegador (Bearer via curl/testes) — não há sessão por
+    # cookie, então não há o que proteger.
+    request = _requisicao_csrf("post")
+    assert ProtegidoContraCsrf().has_permission(request, None) is True
+
+
+def test_csrf_token_batendo_libera():
+    request = _requisicao_csrf("post", cookie="token-abc", header="token-abc")
+    assert ProtegidoContraCsrf().has_permission(request, None) is True
+
+
+def test_csrf_token_divergente_bloqueia():
+    request = _requisicao_csrf("post", cookie="token-abc", header="token-xyz")
+    assert ProtegidoContraCsrf().has_permission(request, None) is False
+
+
+def test_csrf_header_ausente_bloqueia():
+    request = _requisicao_csrf("post", cookie="token-abc")
+    assert ProtegidoContraCsrf().has_permission(request, None) is False
+
+
+def test_csrf_header_nao_ascii_bloqueia_sem_erro():
+    # compare_digest com str não-ASCII levanta TypeError — precisa virar 403,
+    # não 500.
+    request = _requisicao_csrf("post", cookie="token-abc", header="töken-abc")
+    assert ProtegidoContraCsrf().has_permission(request, None) is False

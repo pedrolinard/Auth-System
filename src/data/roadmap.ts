@@ -40,9 +40,9 @@ export const metricas = {
   migracoesPrisma: 15,
   modulosLib: 28,
   tabelas: 7,
-  testesVitest: 146,
+  testesVitest: 148,
   testesE2e: 6,
-  testesDjango: 23,
+  testesDjango: 29,
 };
 
 export const concluido: GrupoConcluido[] = [
@@ -82,7 +82,7 @@ export const concluido: GrupoConcluido[] = [
   {
     categoria: "Proteção contra automação",
     itens: [
-      "Rate limiting por IP e por conta em login, cadastro e recuperação de senha (reaproveita LogAuditoria)",
+      "Rate limiting por IP e por conta em login, cadastro e recuperação de senha (reaproveita LogAuditoria); renovação de token (só falhas, 20/15 min) e início de MFA (10/h) também limitados",
       "CAPTCHA (Cloudflare Turnstile) como fricção progressiva antes do bloqueio duro",
       "Limite de IP generoso (20 tentativas/15 min) pra não travar redes compartilhadas — CAPTCHA e limite por conta seguram a barra de verdade",
       "IP extraído de x-vercel-forwarded-for / x-real-ip (a Vercel controla, cliente não forja); o x-forwarded-for cru só como fallback de dev, porque na Vercel o item à esquerda é controlado pelo cliente",
@@ -115,7 +115,7 @@ export const concluido: GrupoConcluido[] = [
     categoria: "Serviço de domínio (Django/DRF)",
     itens: [
       "Valida o mesmo token de acesso (RS256) do Next.js, sem login próprio nem model de usuário",
-      "Entidades reais (Projeto/Tarefa) isoladas por usuário, mesma proteção CSRF do lado Next.js",
+      "Entidades reais (Projeto/Tarefa) isoladas por usuário, mesma proteção CSRF do lado Next.js (double-submit cookie comparado em tempo constante com hmac.compare_digest, igual ao timingSafeEqual do Node)",
       "Postgres compartilhado com o Next.js — database própria no local, schema próprio (dominio) na mesma instância Supabase em produção",
     ],
   },
@@ -124,7 +124,7 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "175 testes: 146 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 23 Django (pytest-django)",
+      "183 testes: 148 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 29 Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
       "Django não carrega .env na Vercel (load_dotenv só fora da plataforma) e .vercelignore mantém o arquivo fora do bundle — sem isso o serviço subia com DEBUG=True em produção",
     ],
@@ -204,10 +204,11 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "rate-limit-endpoints-restantes",
     titulo: "Rate limit nos endpoints sensíveis que faltam",
     descricao:
-      "POST /api/auth/atualizar (renovação — faz lookup + transação a cada chamada) e POST /api/auth/mfa/iniciar não têm limite. Login, cadastro, recuperação, troca de senha e exclusão já têm.",
+      "POST /api/auth/atualizar (renovação — faz lookup + transação a cada chamada) e POST /api/auth/mfa/iniciar não tinham limite. atualizar agora conta só as FALHAS por IP (20/15 min — uma renovação legítima não escreve nada); mfa/iniciar limita as tentativas por IP (10/h), igual ao reenviar-verificacao.",
     categoria: "Segurança",
     prioridade: "media",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-29",
   },
   {
     id: "django-observabilidade",
@@ -240,10 +241,11 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "django-csrf-constant-time",
     titulo: "CSRF do Django em tempo constante",
     descricao:
-      "`comum/autenticacao.py` compara o token com `==` (não constant-time); o lado Node usa `timingSafeEqual` de propósito. Diferença pequena, mas é uma inconsistência com o padrão que o projeto adotou.",
+      "`comum/autenticacao.py` comparava o token com `==` (não constant-time); o lado Node usa `timingSafeEqual` de propósito. Trocado por `hmac.compare_digest`, com `try/except TypeError` pra header não-ASCII virar 403, não 500. +6 testes cobrindo o ProtegidoContraCsrf (que não tinha nenhum).",
     categoria: "Segurança",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-08-29",
   },
   {
     id: "ci-github",

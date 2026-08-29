@@ -6,6 +6,7 @@ import {
   cabecalhoCookie,
   criarUsuarioTeste,
   extrairTodosCookies,
+  ipAleatorio,
   loginTeste,
 } from "../helpers";
 
@@ -67,4 +68,27 @@ describe("POST /api/auth/atualizar — rotação e detecção de reuso", () => {
     });
     expect(logReuso).not.toBeNull();
   });
+
+  it("bloqueia com 429 após muitas renovações com token inválido do mesmo IP", async () => {
+    const usuario = await criarUsuarioTeste("atualizar-ratelimit");
+    emailsCriados.push(usuario.email);
+    const { cookies } = await loginTeste(usuario.email, usuario.senha);
+    const ip = ipAleatorio();
+
+    // CSRF válido (do login), mas o token de atualização é lixo — cai no
+    // caminho de "token inválido", que é o que o rate limit conta.
+    const cabecalhos = {
+      Cookie: cabecalhoCookie({ ...cookies, tokenAtualizacao: "lixo" }),
+      "X-CSRF-Token": cookies.csrfToken,
+      "X-Forwarded-For": ip,
+    };
+
+    for (let i = 0; i < 20; i++) {
+      const resposta = await atualizar(cabecalhos);
+      expect(resposta.status).toBe(401);
+    }
+
+    const bloqueada = await atualizar(cabecalhos);
+    expect(bloqueada.status).toBe(429);
+  }, 45000);
 });

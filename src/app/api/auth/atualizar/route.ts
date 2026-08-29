@@ -11,7 +11,7 @@ import {
 } from "@/lib/cookies";
 import { csrfValido, gerarTokenCsrf } from "@/lib/csrf";
 import { obterGeo } from "@/lib/geo";
-import { obterIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import {
   gerarTokenAcesso,
   gerarTokenAtualizacao,
@@ -20,10 +20,43 @@ import {
 } from "@/lib/token";
 import { esquemaAtualizacao } from "@/lib/validacao";
 
+// A renovação faz `verificarTokenAtualizacao` + um `findUnique` a cada
+// chamada; sem limite, dava pra martelar o endpoint com lixo (cada tentativa
+// custa CPU de verificação de JWT + uma ida ao banco). Conta só as FALHAS
+// por IP — uma renovação legítima não escreve nada — com folga pra não
+// travar várias sessões atrás do mesmo NAT.
+const MAX_FALHAS_ATUALIZAR = 20;
+const JANELA_ATUALIZAR_MS = 15 * 60 * 1000;
+
+const RESPOSTA_TOKEN_INVALIDO = { erro: "Token de atualização inválido ou expirado." };
+
 export async function POST(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
     return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
   }
+
+  const ip = obterIp(req);
+  if (
+    await limiteExcedido({
+      ip,
+      evento: "atualizar_falha",
+      maximo: MAX_FALHAS_ATUALIZAR,
+      janelaMs: JANELA_ATUALIZAR_MS,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
+  // Token apresentado mas inválido/desconhecido/expirado — o sinal que o
+  // rate limit acima conta. Só é chamado nos caminhos de token ruim, nunca
+  // numa renovação bem-sucedida.
+  const recusarTokenInvalido = async () => {
+    await registrarEvento({ req, evento: "atualizar_falha" });
+    return NextResponse.json(RESPOSTA_TOKEN_INVALIDO, { status: 401 });
+  };
 
   const corpo = await req.json().catch(() => ({}));
   const tokenDoCorpo = esquemaAtualizacao.safeParse(corpo);
@@ -43,10 +76,7 @@ export async function POST(req: Request) {
 
   const payload = await verificarTokenAtualizacao(tokenRecebido);
   if (!payload) {
-    return NextResponse.json(
-      { erro: "Token de atualização inválido ou expirado." },
-      { status: 401 },
-    );
+    return recusarTokenInvalido();
   }
 
   const tokenHash = hashToken(tokenRecebido);
@@ -56,10 +86,7 @@ export async function POST(req: Request) {
   });
 
   if (!registroToken) {
-    return NextResponse.json(
-      { erro: "Token de atualização inválido ou expirado." },
-      { status: 401 },
-    );
+    return recusarTokenInvalido();
   }
 
   // Um token de atualização já revogado sendo reapresentado é o sinal
@@ -79,17 +106,11 @@ export async function POST(req: Request) {
       usuarioId: registroToken.usuarioId,
     });
     await enviarEmailReusoTokenDetectado(registroToken.usuario.email);
-    return NextResponse.json(
-      { erro: "Token de atualização inválido ou expirado." },
-      { status: 401 },
-    );
+    return recusarTokenInvalido();
   }
 
   if (registroToken.expiraEm < new Date()) {
-    return NextResponse.json(
-      { erro: "Token de atualização inválido ou expirado." },
-      { status: 401 },
-    );
+    return recusarTokenInvalido();
   }
 
   // Rotação: revoga o token usado e emite um novo par de tokens. IP/UA/geo
