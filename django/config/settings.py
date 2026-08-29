@@ -20,7 +20,13 @@ from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-load_dotenv(BASE_DIR / ".env")
+# Só carrega o .env local fora da Vercel — lá as variáveis são injetadas
+# direto no ambiente. Sem essa guarda, um .env que fosse parar no bundle do
+# deploy (ex.: DJANGO_DEBUG="True" pra dev) sobrescreveria a config de
+# produção. `load_dotenv` não sobrepõe variáveis já definidas, mas as que a
+# Vercel NÃO define (como DJANGO_DEBUG) seriam lidas do arquivo.
+if not os.environ.get("VERCEL"):
+    load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
