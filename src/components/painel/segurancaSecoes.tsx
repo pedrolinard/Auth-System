@@ -1,6 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  Fingerprint,
+  KeyRound,
+  Laptop,
+  Smartphone,
+  Tablet,
+  MonitorSmartphone,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
 import {
   confirmarMfa,
@@ -17,24 +27,28 @@ import {
   type Sessao,
 } from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
+import { CabecalhoSecao } from "@/components/ui/CabecalhoSecao";
+import { AvisoErro } from "@/components/ui/AvisoErro";
+import { EstadoVazio } from "@/components/ui/EstadoVazio";
+import { SkeletonLista } from "@/components/ui/Skeleton";
+import { MedidorForcaSenha } from "@/components/ui/MedidorForcaSenha";
+import { notificar } from "@/components/ui/Toaster";
 
 export function SecaoTrocarSenha() {
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
-  const [sucesso, setSucesso] = useState(false);
   const [carregando, setCarregando] = useState(false);
 
   async function aoTrocarSenha(evento: React.FormEvent) {
     evento.preventDefault();
     setErro(null);
-    setSucesso(false);
     setCarregando(true);
     try {
       await trocarSenha({ senhaAtual, novaSenha });
-      setSucesso(true);
       setSenhaAtual("");
       setNovaSenha("");
+      notificar.sucesso("Senha trocada. Encerramos suas outras sessões por segurança.");
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
     } finally {
@@ -44,8 +58,12 @@ export function SecaoTrocarSenha() {
 
   return (
     <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
-      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Segurança</span>
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">Trocar senha</h2>
+      <CabecalhoSecao
+        icone={KeyRound}
+        eyebrow="Segurança"
+        titulo="Trocar senha"
+        descricao="Ao trocar, todas as suas outras sessões são desconectadas."
+      />
 
       <form onSubmit={aoTrocarSenha} className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
@@ -60,7 +78,7 @@ export function SecaoTrocarSenha() {
           />
         </div>
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <label htmlFor="novaSenha" className="text-sm text-zinc-600 dark:text-zinc-400">
             Nova senha
           </label>
@@ -70,14 +88,10 @@ export function SecaoTrocarSenha() {
             onChange={setNovaSenha}
             autoComplete="new-password"
           />
+          <MedidorForcaSenha senha={novaSenha} />
         </div>
 
-        {sucesso && (
-          <p className="text-sm text-green-600 dark:text-green-400">
-            Senha alterada. Suas outras sessões foram encerradas.
-          </p>
-        )}
-        {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+        <AvisoErro>{erro}</AvisoErro>
 
         <button
           type="submit"
@@ -132,6 +146,7 @@ export function SecaoMfa({
       setConfigurando(false);
       setDadosSetup(null);
       setCodigo("");
+      notificar.sucesso("Verificação em duas etapas ativada.");
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
     } finally {
@@ -148,6 +163,7 @@ export function SecaoMfa({
       aoMudarStatus(false);
       setDesativando(false);
       setCodigo("");
+      notificar.info("Verificação em duas etapas desativada.");
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
     } finally {
@@ -157,17 +173,30 @@ export function SecaoMfa({
 
   return (
     <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
-      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Segurança</span>
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">
-        Verificação em duas etapas
-      </h2>
+      <CabecalhoSecao
+        icone={ShieldCheck}
+        eyebrow="Segurança"
+        titulo="Verificação em duas etapas"
+        acao={
+          <span
+            className={
+              mfaAtivado
+                ? "rounded-full bg-[var(--accent-wash)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]"
+                : "rounded-full bg-black/[.05] px-2.5 py-1 text-xs font-medium text-zinc-500 dark:bg-white/[.06] dark:text-zinc-400"
+            }
+          >
+            {mfaAtivado ? "Ativa" : "Inativa"}
+          </span>
+        }
+      />
 
-      {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+      <AvisoErro>{erro}</AvisoErro>
 
       {!mfaAtivado && !configurando && (
         <>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Desativada. Ative para exigir um código do seu aplicativo autenticador a cada login.
+            Ainda não ativou. Com ela, além da senha o login pede um código de 6 dígitos
+            do seu aplicativo autenticador — mesmo que alguém descubra sua senha, não entra.
           </p>
           <button onClick={aoIniciarAtivacao} disabled={carregando} className="btn-primary self-start">
             {carregando ? "Gerando..." : "Ativar"}
@@ -178,7 +207,8 @@ export function SecaoMfa({
       {!mfaAtivado && configurando && dadosSetup && (
         <form onSubmit={aoConfirmar} className="flex flex-col gap-3">
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Escaneie o QR code com Google Authenticator, Authy ou 1Password e digite o código gerado.
+            <span className="font-medium text-foreground">1.</span> Escaneie o QR code com
+            Google Authenticator, Authy ou 1Password.
           </p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -186,8 +216,15 @@ export function SecaoMfa({
             alt="QR code para configurar a verificação em duas etapas"
             className="h-40 w-40 self-center rounded-lg border border-black/[.08] dark:border-white/[.13]"
           />
+          <p className="text-center text-xs text-zinc-500 dark:text-zinc-400">
+            Sem câmera? Digite este código no app:
+          </p>
           <p className="break-all text-center font-mono text-xs text-zinc-500 dark:text-zinc-400">
             {dadosSetup.segredo}
+          </p>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            <span className="font-medium text-foreground">2.</span> Digite o código que o
+            app gerou:
           </p>
           <input
             inputMode="numeric"
@@ -222,7 +259,9 @@ export function SecaoMfa({
 
       {mfaAtivado && !desativando && (
         <>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">Ativada.</p>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Tudo certo — todo login novo pede o código do seu autenticador.
+          </p>
           <button onClick={() => setDesativando(true)} className="btn-secondary self-start">
             Desativar
           </button>
@@ -232,7 +271,7 @@ export function SecaoMfa({
       {mfaAtivado && desativando && (
         <form onSubmit={aoDesativar} className="flex flex-col gap-3">
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Digite o código atual do seu aplicativo autenticador para confirmar a desativação.
+            Pra confirmar que é você, digite o código atual do seu aplicativo autenticador.
           </p>
           <input
             inputMode="numeric"
@@ -301,6 +340,7 @@ export function SecaoPasskeys() {
       await registrarPasskey(nomeNovaPasskey.trim() || undefined);
       setNomeNovaPasskey("");
       await carregar();
+      notificar.sucesso("Passkey adicionada.");
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
     } finally {
@@ -311,11 +351,17 @@ export function SecaoPasskeys() {
   async function aoRemover(passkey: Passkey) {
     setErro(null);
     setRemovendoId(passkey.id);
+    // Otimista: some da lista na hora; volta se o servidor recusar.
+    const anterior = passkeys;
+    setPasskeys((atual) => atual?.filter((p) => p.id !== passkey.id) ?? null);
     try {
       await excluirPasskey(passkey.id);
-      await carregar();
+      notificar.info("Passkey removida.");
     } catch (erroCapturado) {
-      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+      setPasskeys(anterior ?? null);
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra remover a passkey.",
+      );
     } finally {
       setRemovendoId(null);
     }
@@ -325,25 +371,27 @@ export function SecaoPasskeys() {
 
   return (
     <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
-      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Segurança</span>
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">Passkeys</h2>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Entre sem digitar senha usando biometria, PIN do dispositivo ou uma chave de segurança —
-        resistente a phishing. Sua senha continua funcionando normalmente.
-      </p>
+      <CabecalhoSecao
+        icone={Fingerprint}
+        eyebrow="Segurança"
+        titulo="Passkeys"
+        descricao="Entre com biometria, PIN do dispositivo ou chave de segurança — resistente a phishing. Sua senha continua valendo."
+      />
 
-      {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+      <AvisoErro>{erro}</AvisoErro>
 
-      {passkeys === null && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">Carregando...</p>
-      )}
+      {passkeys === null && <SkeletonLista linhas={2} />}
 
       {passkeys && passkeys.length === 0 && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">Nenhuma passkey cadastrada.</p>
+        <EstadoVazio
+          icone={Fingerprint}
+          titulo="Nenhuma passkey ainda"
+          descricao="Cadastre uma abaixo e da próxima vez você entra sem digitar senha."
+        />
       )}
 
       {passkeys && passkeys.length > 0 && (
-        <ul className="flex flex-col gap-3">
+        <ul className="surgir-em-cascata flex flex-col gap-3">
           {passkeys.map((passkey) => (
             <li
               key={passkey.id}
@@ -361,8 +409,9 @@ export function SecaoPasskeys() {
               <button
                 onClick={() => aoRemover(passkey)}
                 disabled={removendoId === passkey.id}
-                className="btn-secondary-sm shrink-0 self-start sm:self-auto"
+                className="btn-secondary-sm shrink-0 gap-1.5 self-start sm:self-auto"
               >
+                <Trash2 className="h-3 w-3" aria-hidden="true" />
                 {removendoId === passkey.id ? "Removendo..." : "Remover"}
               </button>
             </li>
@@ -391,11 +440,14 @@ export function SecaoPasskeys() {
   );
 }
 
-const ROTULO_DISPOSITIVO: Record<Sessao["tipoDispositivo"], string> = {
-  desktop: "Computador",
-  mobile: "Celular",
-  tablet: "Tablet",
-  desconhecido: "Dispositivo desconhecido",
+const DISPOSITIVO: Record<
+  Sessao["tipoDispositivo"],
+  { rotulo: string; icone: typeof Laptop }
+> = {
+  desktop: { rotulo: "Computador", icone: Laptop },
+  mobile: { rotulo: "Celular", icone: Smartphone },
+  tablet: { rotulo: "Tablet", icone: Tablet },
+  desconhecido: { rotulo: "Dispositivo desconhecido", icone: MonitorSmartphone },
 };
 
 export function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void }) {
@@ -420,15 +472,22 @@ export function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void })
   async function aoRevogar(sessao: Sessao) {
     setErro(null);
     setRevogandoId(sessao.id);
+    const anterior = sessoes;
+    if (!sessao.atual) {
+      setSessoes((atual) => atual?.filter((s) => s.id !== sessao.id) ?? null);
+    }
     try {
       await revogarSessao(sessao.id);
       if (sessao.atual) {
         aoRevogarAtual();
         return;
       }
-      await carregar();
+      notificar.info("Sessão revogada.");
     } catch (erroCapturado) {
-      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+      setSessoes(anterior ?? null);
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra revogar a sessão.",
+      );
     } finally {
       setRevogandoId(null);
     }
@@ -442,70 +501,78 @@ export function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void })
       aoRevogarAtual();
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
-    } finally {
       setRevogandoTodas(false);
     }
   }
 
   return (
     <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <span className="eyebrow text-zinc-500 dark:text-zinc-500">Segurança</span>
-          <h2 className="text-lg font-semibold tracking-tight text-foreground">Sessões ativas</h2>
-        </div>
-        {sessoes && sessoes.length > 0 && (
-          <button
-            onClick={aoRevogarTodas}
-            disabled={revogandoTodas}
-            className="shrink-0 rounded-full border border-red-600/30 px-3 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:opacity-50 dark:text-red-400"
-          >
-            {revogandoTodas ? "Saindo..." : "Sair de todos os dispositivos"}
-          </button>
-        )}
-      </div>
+      <CabecalhoSecao
+        icone={MonitorSmartphone}
+        eyebrow="Segurança"
+        titulo="Sessões ativas"
+        descricao="Os dispositivos onde sua conta está conectada agora."
+        acao={
+          sessoes && sessoes.length > 0 ? (
+            <button
+              onClick={aoRevogarTodas}
+              disabled={revogandoTodas}
+              className="rounded-full border border-red-600/30 px-3 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:opacity-50 dark:text-red-400"
+            >
+              {revogandoTodas ? "Saindo..." : "Sair de todos"}
+            </button>
+          ) : undefined
+        }
+      />
 
-      {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+      <AvisoErro>{erro}</AvisoErro>
 
-      {sessoes === null && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">Carregando...</p>
-      )}
+      {sessoes === null && <SkeletonLista linhas={2} />}
 
       {sessoes?.length === 0 && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">Nenhuma sessão ativa.</p>
+        <EstadoVazio
+          icone={MonitorSmartphone}
+          titulo="Nenhuma outra sessão"
+          descricao="Sua conta só está conectada aqui."
+        />
       )}
 
       {sessoes && sessoes.length > 0 && (
-        <ul className="flex flex-col gap-3">
-          {sessoes.map((sessao) => (
-            <li
-              key={sessao.id}
-              className="flex flex-col gap-3 rounded-lg border border-black/[.06] bg-black/[.02] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[.06] dark:bg-white/[.03]"
-            >
-              <div className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <span className="font-medium text-foreground">
-                    {ROTULO_DISPOSITIVO[sessao.tipoDispositivo]}
-                  </span>
-                  <span>{sessao.localizacao ?? "Localização desconhecida"}</span>
-                  {sessao.atual && (
-                    <span className="whitespace-nowrap rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-black dark:bg-white/10 dark:text-white">
-                      sessão atual
-                    </span>
-                  )}
-                </div>
-                <span>Criada em {new Date(sessao.criadoEm).toLocaleString("pt-BR")}</span>
-                <span>Expira em {new Date(sessao.expiraEm).toLocaleString("pt-BR")}</span>
-              </div>
-              <button
-                onClick={() => aoRevogar(sessao)}
-                disabled={revogandoId === sessao.id}
-                className="btn-secondary-sm shrink-0 self-start sm:self-auto"
+        <ul className="surgir-em-cascata flex flex-col gap-3">
+          {sessoes.map((sessao) => {
+            const info = DISPOSITIVO[sessao.tipoDispositivo];
+            const Icone = info.icone;
+            return (
+              <li
+                key={sessao.id}
+                className="flex flex-col gap-3 rounded-lg border border-black/[.06] bg-black/[.02] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[.06] dark:bg-white/[.03]"
               >
-                {revogandoId === sessao.id ? "Revogando..." : "Revogar"}
-              </button>
-            </li>
-          ))}
+                <div className="flex items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-400">
+                  <Icone className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="font-medium text-foreground">{info.rotulo}</span>
+                      <span>{sessao.localizacao ?? "Localização desconhecida"}</span>
+                      {sessao.atual && (
+                        <span className="whitespace-nowrap rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--accent)]">
+                          esta sessão
+                        </span>
+                      )}
+                    </div>
+                    <span>Criada em {new Date(sessao.criadoEm).toLocaleString("pt-BR")}</span>
+                    <span>Expira em {new Date(sessao.expiraEm).toLocaleString("pt-BR")}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => aoRevogar(sessao)}
+                  disabled={revogandoId === sessao.id}
+                  className="btn-secondary-sm shrink-0 self-start sm:self-auto"
+                >
+                  {revogandoId === sessao.id ? "Revogando..." : "Revogar"}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

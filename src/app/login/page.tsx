@@ -3,11 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ArrowRight, Fingerprint } from "lucide-react";
 import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
 import { entrar, entrarComPasskey, ErroCaptchaNecessario, verificarMfaLogin } from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
 import { DesafioTurnstile } from "@/components/DesafioTurnstile";
-import { Marca } from "@/components/Marca";
+import { CascaAuth, LinkAuth } from "@/components/auth/CascaAuth";
+import { AvisoErro } from "@/components/ui/AvisoErro";
 
 export default function PaginaLogin() {
   const router = useRouter();
@@ -103,22 +105,11 @@ export default function PaginaLogin() {
 
   if (mfaToken) {
     return (
-      <div className="flex flex-1 items-center justify-center px-6 py-16">
-        <form
-          onSubmit={aoEnviarCodigoMfa}
-          className="card-surface flex w-full max-w-sm flex-col gap-5 p-8"
-        >
-          <Marca className="h-6 w-6 text-foreground" />
-          <div className="flex flex-col gap-1.5">
-            <span className="eyebrow text-zinc-500 dark:text-zinc-500">Passo 2 de 2</span>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Verificação em duas etapas
-            </h1>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Digite o código de 6 dígitos do seu aplicativo autenticador.
-            </p>
-          </div>
-
+      <CascaAuth
+        titulo="Só falta o código"
+        descricao="Passo 2 de 2 — abra seu aplicativo autenticador e digite os 6 dígitos."
+      >
+        <form onSubmit={aoEnviarCodigoMfa} className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="codigo" className="text-sm text-zinc-600 dark:text-zinc-400">
               Código
@@ -142,12 +133,12 @@ export default function PaginaLogin() {
               type="checkbox"
               checked={lembrarDispositivo}
               onChange={(e) => setLembrarDispositivo(e.target.checked)}
-              className="h-4 w-4 rounded border-black/[.2] dark:border-white/[.2]"
+              className="h-4 w-4 rounded border-black/[.2] accent-[var(--accent)] dark:border-white/[.2]"
             />
-            Lembrar este dispositivo por 30 dias
+            Confiar neste dispositivo por 30 dias
           </label>
 
-          {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+          <AvisoErro>{erro}</AvisoErro>
 
           <button type="submit" disabled={carregando || codigo.length !== 6} className="btn-primary mt-1">
             {carregando ? "Verificando..." : "Verificar"}
@@ -165,22 +156,21 @@ export default function PaginaLogin() {
             Voltar
           </button>
         </form>
-      </div>
+      </CascaAuth>
     );
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
-      <form
-        onSubmit={aoEnviarCredenciais}
-        className="card-surface flex w-full max-w-sm flex-col gap-5 p-8"
-      >
-        <Marca className="h-6 w-6 text-foreground" />
-        <div className="flex flex-col gap-1.5">
-          <span className="eyebrow text-zinc-500 dark:text-zinc-500">Auth Gateway</span>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Entrar</h1>
-        </div>
-
+    <CascaAuth
+      titulo="Entrar"
+      descricao="Que bom te ver de novo. Use e-mail e senha, ou uma passkey."
+      rodape={
+        <>
+          Ainda não tem conta? <LinkAuth href="/cadastro">Criar conta</LinkAuth>
+        </>
+      }
+    >
+      <form onSubmit={aoEnviarCredenciais} className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="email" className="text-sm text-zinc-600 dark:text-zinc-400">
             E-mail
@@ -220,34 +210,38 @@ export default function PaginaLogin() {
           <DesafioTurnstile key={tentativaCaptcha} onToken={setTurnstileToken} />
         )}
 
-        {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+        <AvisoErro>{erro}</AvisoErro>
 
         <button
           type="submit"
           disabled={carregando || (precisaCaptcha && !turnstileToken)}
-          className="btn-primary mt-1"
+          className="btn-primary group mt-1"
         >
           {carregando ? "Entrando..." : "Entrar"}
+          {!carregando && (
+            <ArrowRight className="ml-1.5 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+          )}
         </button>
 
         {suportaPasskey && (
-          <button
-            type="button"
-            onClick={aoEntrarComPasskey}
-            disabled={entrandoComPasskey}
-            className="btn-secondary"
-          >
-            {entrandoComPasskey ? "Aguardando..." : "Entrar com uma passkey"}
-          </button>
+          <>
+            <div className="flex items-center gap-3 text-xs text-zinc-400 dark:text-zinc-600">
+              <span className="h-px flex-1 bg-black/[.08] dark:bg-white/[.1]" />
+              ou
+              <span className="h-px flex-1 bg-black/[.08] dark:bg-white/[.1]" />
+            </div>
+            <button
+              type="button"
+              onClick={aoEntrarComPasskey}
+              disabled={entrandoComPasskey}
+              className="btn-secondary"
+            >
+              <Fingerprint className="mr-1.5 h-4 w-4" />
+              {entrandoComPasskey ? "Aguardando o dispositivo..." : "Entrar com uma passkey"}
+            </button>
+          </>
         )}
-
-        <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
-          Ainda não tem conta?{" "}
-          <Link href="/cadastro" className="link-underline font-medium text-foreground">
-            Criar conta
-          </Link>
-        </p>
       </form>
-    </div>
+    </CascaAuth>
   );
 }

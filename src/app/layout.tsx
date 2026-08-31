@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Provider as RollbarProvider } from "@rollbar/react";
 import { configCliente } from "@/lib/rollbar";
+import { Toaster } from "@/components/ui/Toaster";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,6 +36,7 @@ export default function LayoutRaiz({
     >
       <body className="min-h-full flex flex-col">
         <RollbarProvider config={configCliente}>{children}</RollbarProvider>
+        <Toaster />
       </body>
     </html>
   );

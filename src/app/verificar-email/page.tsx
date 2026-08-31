@@ -2,9 +2,9 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { verificarEmail } from "@/lib/clienteAuth";
-import { Marca } from "@/components/Marca";
+import { CascaAuth, LinkAuth } from "@/components/auth/CascaAuth";
+import { IconeEstado } from "@/components/ui/IconeEstado";
 
 function ConteudoVerificacao() {
   const searchParams = useSearchParams();
@@ -26,51 +26,46 @@ function ConteudoVerificacao() {
 
   const semToken = !token;
 
+  const mensagem = semToken
+    ? "Esse link de verificação está incompleto."
+    : estado === "carregando"
+      ? "Conferindo o link..."
+      : estado === "sucesso"
+        ? "E-mail verificado. Sua conta está completa."
+        : mensagemErro;
+
   return (
-    <div className="card-surface flex w-full max-w-sm flex-col items-center gap-5 p-8 text-center">
-      <Marca className="h-6 w-6 text-foreground" />
-      <div className="flex flex-col items-center gap-1.5">
-        <span className="eyebrow text-zinc-500 dark:text-zinc-500">Auth Gateway</span>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Verificação de e-mail
-        </h1>
+    <CascaAuth
+      titulo="Verificação de e-mail"
+      centralizado
+      rodape={<LinkAuth href="/dashboard">Ir para o painel</LinkAuth>}
+    >
+      <div className="flex flex-col items-center gap-3">
+        <IconeEstado estado={semToken ? "erro" : estado} />
+        <p
+          className={
+            !semToken && estado === "sucesso"
+              ? "text-sm text-foreground"
+              : "text-sm text-zinc-600 dark:text-zinc-400"
+          }
+        >
+          {mensagem}
+        </p>
       </div>
-
-      {semToken && (
-        <p className="text-sm text-red-600 dark:text-red-400">
-          Link de verificação incompleto.
-        </p>
-      )}
-
-      {!semToken && estado === "carregando" && (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">Verificando...</p>
-      )}
-
-      {!semToken && estado === "sucesso" && (
-        <p className="text-sm text-green-600 dark:text-green-400">
-          E-mail verificado com sucesso.
-        </p>
-      )}
-
-      {!semToken && estado === "erro" && (
-        <p className="text-sm text-red-600 dark:text-red-400">{mensagemErro}</p>
-      )}
-
-      <Link href="/dashboard" className="link-underline text-sm font-medium text-foreground">
-        Ir para o dashboard
-      </Link>
-    </div>
+    </CascaAuth>
   );
 }
 
 export default function PaginaVerificarEmail() {
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
-      <Suspense
-        fallback={<p className="text-zinc-600 dark:text-zinc-400">Carregando...</p>}
-      >
-        <ConteudoVerificacao />
-      </Suspense>
-    </div>
+    <Suspense
+      fallback={
+        <div className="flex flex-1 items-center justify-center px-6 py-16">
+          <p className="text-zinc-600 dark:text-zinc-400">Carregando...</p>
+        </div>
+      }
+    >
+      <ConteudoVerificacao />
+    </Suspense>
   );
 }

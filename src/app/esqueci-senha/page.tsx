@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { MailCheck } from "lucide-react";
 import { solicitarRecuperacaoSenha } from "@/lib/clienteAuth";
-import { Marca } from "@/components/Marca";
+import { CascaAuth, LinkAuth } from "@/components/auth/CascaAuth";
+import { AvisoErro } from "@/components/ui/AvisoErro";
 
 export default function PaginaEsqueciSenha() {
   const [email, setEmail] = useState("");
@@ -27,58 +28,56 @@ export default function PaginaEsqueciSenha() {
     }
   }
 
+  if (enviado) {
+    return (
+      <CascaAuth
+        titulo="Confira seu e-mail"
+        centralizado
+        rodape={<LinkAuth href="/login">Voltar para o login</LinkAuth>}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent-wash)] text-[var(--accent)]">
+            <MailCheck className="h-6 w-6" strokeWidth={2} />
+          </div>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Se <span className="font-medium text-foreground">{email}</span> tiver uma conta,
+            o link de redefinição já está a caminho. Dê uma olhada também no spam.
+          </p>
+        </div>
+      </CascaAuth>
+    );
+  }
+
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
-      <div className="card-surface flex w-full max-w-sm flex-col gap-5 p-8">
-        <Marca className="h-6 w-6 text-foreground" />
+    <CascaAuth
+      titulo="Esqueci minha senha"
+      descricao="Digite o e-mail da conta e enviamos um link pra criar uma nova."
+      rodape={<LinkAuth href="/login">Voltar para o login</LinkAuth>}
+    >
+      <form onSubmit={aoEnviar} className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
-          <span className="eyebrow text-zinc-500 dark:text-zinc-500">Auth Gateway</span>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Esqueci minha senha
-          </h1>
+          <label htmlFor="email" className="text-sm text-zinc-600 dark:text-zinc-400">
+            E-mail
+          </label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            required
+            autoFocus
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="input-field"
+          />
         </div>
 
-        {enviado ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Se esse e-mail estiver cadastrado, um link de redefinição foi enviado.
-          </p>
-        ) : (
-          <form onSubmit={aoEnviar} className="flex flex-col gap-5">
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Digite o e-mail da sua conta e enviaremos um link para redefinir a senha.
-            </p>
+        <AvisoErro>{erro}</AvisoErro>
 
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="email" className="text-sm text-zinc-600 dark:text-zinc-400">
-                E-mail
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                autoFocus
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="input-field"
-              />
-            </div>
-
-            {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
-
-            <button type="submit" disabled={carregando} className="btn-primary mt-1">
-              {carregando ? "Enviando..." : "Enviar link de redefinição"}
-            </button>
-          </form>
-        )}
-
-        <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
-          <Link href="/login" className="link-underline font-medium text-foreground">
-            Voltar para o login
-          </Link>
-        </p>
-      </div>
-    </div>
+        <button type="submit" disabled={carregando} className="btn-primary mt-1">
+          {carregando ? "Enviando..." : "Enviar link de redefinição"}
+        </button>
+      </form>
+    </CascaAuth>
   );
 }

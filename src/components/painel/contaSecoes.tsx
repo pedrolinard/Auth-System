@@ -1,23 +1,27 @@
 "use client";
 
 import { useState } from "react";
+import { AtSign, Download, TriangleAlert } from "lucide-react";
 import { alterarEmail, excluirMinhaConta, exportarMeusDados } from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
+import { CabecalhoSecao } from "@/components/ui/CabecalhoSecao";
+import { AvisoErro } from "@/components/ui/AvisoErro";
+import { notificar } from "@/components/ui/Toaster";
 
 export function SecaoAlterarEmail() {
   const [novoEmail, setNovoEmail] = useState("");
   const [erro, setErro] = useState<string | null>(null);
-  const [sucesso, setSucesso] = useState(false);
   const [carregando, setCarregando] = useState(false);
 
   async function aoEnviar(evento: React.FormEvent) {
     evento.preventDefault();
     setErro(null);
-    setSucesso(false);
     setCarregando(true);
     try {
       await alterarEmail(novoEmail);
-      setSucesso(true);
+      notificar.sucesso(
+        `Enviamos um link de confirmação para ${novoEmail}. O e-mail só muda depois que você clicar nele.`,
+      );
       setNovoEmail("");
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
@@ -28,8 +32,12 @@ export function SecaoAlterarEmail() {
 
   return (
     <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
-      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Conta</span>
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">Alterar e-mail</h2>
+      <CabecalhoSecao
+        icone={AtSign}
+        eyebrow="Conta"
+        titulo="Alterar e-mail"
+        descricao="Mandamos um link pro novo endereço — a troca só vale depois da confirmação."
+      />
 
       <form onSubmit={aoEnviar} className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
@@ -47,13 +55,7 @@ export function SecaoAlterarEmail() {
           />
         </div>
 
-        {sucesso && (
-          <p className="text-sm text-green-600 dark:text-green-400">
-            Enviamos um link de confirmação pro novo endereço. O e-mail da conta só muda
-            depois que ele for confirmado.
-          </p>
-        )}
-        {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+        <AvisoErro>{erro}</AvisoErro>
 
         <button
           type="submit"
@@ -69,14 +71,12 @@ export function SecaoAlterarEmail() {
 
 export function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => void }) {
   const [exportando, setExportando] = useState(false);
-  const [erroExportar, setErroExportar] = useState<string | null>(null);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [senha, setSenha] = useState("");
   const [excluindo, setExcluindo] = useState(false);
   const [erroExcluir, setErroExcluir] = useState<string | null>(null);
 
   async function aoExportar() {
-    setErroExportar(null);
     setExportando(true);
     try {
       const dados = await exportarMeusDados();
@@ -87,8 +87,11 @@ export function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => vo
       link.download = "meus-dados.json";
       link.click();
       URL.revokeObjectURL(url);
+      notificar.sucesso("Baixamos o arquivo com seus dados.");
     } catch (erroCapturado) {
-      setErroExportar(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra exportar agora.",
+      );
     } finally {
       setExportando(false);
     }
@@ -110,25 +113,31 @@ export function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => vo
 
   return (
     <div className="card-surface flex w-full max-w-lg flex-col gap-4 p-8">
-      <span className="eyebrow text-zinc-500 dark:text-zinc-500">Conta</span>
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">Meus dados</h2>
+      <CabecalhoSecao
+        icone={Download}
+        eyebrow="Conta"
+        titulo="Meus dados"
+        descricao="Baixe tudo que guardamos sobre você, ou apague a conta de vez."
+      />
 
       <div className="flex flex-col gap-2">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Baixe uma cópia de tudo que guardamos sobre a sua conta (perfil, sessões, dispositivos
-          confiáveis e histórico de segurança).
+          O arquivo traz perfil, sessões, dispositivos confiáveis e histórico de segurança,
+          em JSON.
         </p>
-        {erroExportar && <p className="text-sm text-red-600 dark:text-red-400">{erroExportar}</p>}
-        <button onClick={aoExportar} disabled={exportando} className="btn-secondary self-start">
+        <button onClick={aoExportar} disabled={exportando} className="btn-secondary gap-1.5 self-start">
+          <Download className="h-4 w-4" aria-hidden="true" />
           {exportando ? "Exportando..." : "Exportar meus dados"}
         </button>
       </div>
 
-      <div className="flex flex-col gap-2 border-t border-black/[.08] pt-4 dark:border-white/[.1]">
-        <h3 className="text-sm font-medium text-red-600 dark:text-red-400">Excluir conta</h3>
+      <div className="flex flex-col gap-2 rounded-lg border border-red-500/20 bg-red-500/[.04] p-4">
+        <h3 className="flex items-center gap-1.5 text-sm font-medium text-red-600 dark:text-red-400">
+          <TriangleAlert className="h-4 w-4" aria-hidden="true" />
+          Excluir conta
+        </h3>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Remove permanentemente sua conta e todos os dados associados. Essa ação não pode ser
-          desfeita.
+          Apaga sua conta e todos os dados ligados a ela. Não tem como desfazer.
         </p>
 
         {!confirmandoExclusao && (
@@ -141,7 +150,7 @@ export function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => vo
         )}
 
         {confirmandoExclusao && (
-          <form onSubmit={aoConfirmarExclusao} className="flex flex-col gap-3">
+          <form onSubmit={aoConfirmarExclusao} className="mt-1 flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
               <label htmlFor="senhaExcluirConta" className="text-sm text-zinc-600 dark:text-zinc-400">
                 Digite sua senha atual para confirmar
@@ -153,7 +162,7 @@ export function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => vo
                 autoComplete="current-password"
               />
             </div>
-            {erroExcluir && <p className="text-sm text-red-600 dark:text-red-400">{erroExcluir}</p>}
+            <AvisoErro>{erroExcluir}</AvisoErro>
             <div className="flex gap-2">
               <button
                 type="submit"

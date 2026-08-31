@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 
 export function CampoSenha({
   id,
@@ -28,15 +29,15 @@ export function CampoSenha({
         autoComplete={autoComplete}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="input-field pr-14!"
+        className="input-field pr-11!"
       />
       <button
         type="button"
         onClick={() => setVisivel((atual) => !atual)}
         aria-label={visivel ? "Ocultar senha" : "Mostrar senha"}
-        className="absolute inset-y-0 right-0 flex items-center px-3 text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="absolute inset-y-0 right-0 flex items-center px-3 text-zinc-400 transition-colors hover:text-zinc-700 dark:hover:text-zinc-200"
       >
-        {visivel ? "Ocultar" : "Mostrar"}
+        {visivel ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
       </button>
     </div>
   );

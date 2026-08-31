@@ -5,11 +5,20 @@
   --foreground: #14130f;
   --grid-line: rgba(20, 19, 15, 0.035);
   --vignette: rgba(20, 19, 15, 0.025);
+  /* Único ponto de cor do sistema: um azul-tinta sóbrio, usado só pra foco,
+     estado ativo e afirmação de sucesso — nunca decorativo. Mono pra todo o
+     resto continua sendo a regra (ver comentário do sistema de componentes). */
+  --accent: #2f5c8f;
+  --accent-strong: #244a75;
+  --accent-contrast: #ffffff;
+  --accent-wash: rgba(47, 92, 143, 0.09);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -20,6 +29,10 @@
     --foreground: #ededed;
     --grid-line: rgba(255, 255, 255, 0.032);
     --vignette: rgba(255, 255, 255, 0.022);
+    --accent: #8ab4e0;
+    --accent-strong: #a6c8ec;
+    --accent-contrast: #0a0a0a;
+    --accent-wash: rgba(138, 180, 224, 0.13);
   }
 }
 
@@ -51,7 +64,36 @@ body {
 }
 
 .input-field {
-  @apply w-full rounded-lg border border-black/[.09] bg-white px-3 py-2.5 text-sm text-black outline-none transition-shadow duration-150 placeholder:text-zinc-400 focus:border-black/20 focus:ring-2 focus:ring-black/[.06] dark:border-white/[.12] dark:bg-black/40 dark:text-zinc-50 dark:placeholder:text-zinc-600 dark:focus:border-white/25 dark:focus:ring-white/[.06];
+  @apply w-full rounded-lg border border-black/[.09] bg-white px-3 py-2.5 text-sm text-black outline-none transition-[box-shadow,border-color] duration-150 placeholder:text-zinc-400 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-wash)] dark:border-white/[.12] dark:bg-black/40 dark:text-zinc-50 dark:placeholder:text-zinc-600 dark:focus:border-[var(--accent)];
+}
+
+/* Chip quadrado-arredondado que carrega o ícone ao lado do título de cada
+   seção — dá um ponto de fixação visual sem depender de cor. */
+.chip-secao {
+  @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-black/[.08] bg-black/[.02] text-zinc-500 dark:border-white/[.1] dark:bg-white/[.03] dark:text-zinc-400;
+}
+
+/* Placeholder de carregamento — some assim que o conteúdo real chega. */
+.skeleton {
+  @apply rounded-md bg-black/[.06] dark:bg-white/[.07];
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: brilho 1.4s ease-in-out infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.06) 50%,
+      transparent 100%
+    );
+  }
 }
 
 .btn-primary {
@@ -72,4 +114,89 @@ body {
 
 .link-underline {
   @apply relative text-foreground no-underline after:absolute after:-bottom-0.5 after:left-0 after:h-px after:w-0 after:bg-current after:transition-[width] after:duration-200 hover:after:w-full;
+}
+
+/* Botão-fantasma discreto pra ações terciárias (não compete com primary/
+   secondary) — usado em "reenviar", "voltar", links de ação inline. */
+.btn-ghost {
+  @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-zinc-500 transition-colors hover:bg-black/[.04] hover:text-foreground disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-white/[.06];
+}
+
+/* --- Movimento -----------------------------------------------------------
+   Tudo curto e com easing de "chegada" (desacelera no fim). Respeita
+   prefers-reduced-motion mais abaixo. */
+@keyframes surgir {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes brilho {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes marca-check {
+  from {
+    stroke-dashoffset: 20;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes toast-entra {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes pulso-suave {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.animate-surgir {
+  animation: surgir 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* Escalona a entrada de listas: cada filho entra um tiquinho depois do anterior. */
+.surgir-em-cascata > * {
+  animation: surgir 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.surgir-em-cascata > *:nth-child(1) { animation-delay: 0.02s; }
+.surgir-em-cascata > *:nth-child(2) { animation-delay: 0.06s; }
+.surgir-em-cascata > *:nth-child(3) { animation-delay: 0.1s; }
+.surgir-em-cascata > *:nth-child(4) { animation-delay: 0.14s; }
+.surgir-em-cascata > *:nth-child(5) { animation-delay: 0.18s; }
+.surgir-em-cascata > *:nth-child(6) { animation-delay: 0.22s; }
+.surgir-em-cascata > *:nth-child(n + 7) { animation-delay: 0.26s; }
+
+.marca-check path {
+  stroke-dasharray: 20;
+  animation: marca-check 0.5s cubic-bezier(0.65, 0, 0.35, 1) 0.1s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

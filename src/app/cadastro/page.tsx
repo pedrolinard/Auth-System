@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cadastrar, ErroCaptchaNecessario } from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
 import { DesafioTurnstile } from "@/components/DesafioTurnstile";
-import { Marca } from "@/components/Marca";
+import { CascaAuth, LinkAuth } from "@/components/auth/CascaAuth";
+import { AvisoErro } from "@/components/ui/AvisoErro";
+import { MedidorForcaSenha } from "@/components/ui/MedidorForcaSenha";
+import { notificar } from "@/components/ui/Toaster";
 
 export default function PaginaCadastro() {
   const router = useRouter();
@@ -29,6 +31,7 @@ export default function PaginaCadastro() {
     setCarregando(true);
     try {
       await cadastrar({ nome, email, senha, turnstileToken: turnstileToken ?? undefined });
+      notificar.sucesso("Conta criada. Agora é só entrar.");
       router.push("/login");
     } catch (erroCapturado) {
       if (erroCapturado instanceof ErroCaptchaNecessario) {
@@ -47,17 +50,16 @@ export default function PaginaCadastro() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
-      <form
-        onSubmit={aoEnviar}
-        className="card-surface flex w-full max-w-sm flex-col gap-5 p-8"
-      >
-        <Marca className="h-6 w-6 text-foreground" />
-        <div className="flex flex-col gap-1.5">
-          <span className="eyebrow text-zinc-500 dark:text-zinc-500">Auth Gateway</span>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Criar conta</h1>
-        </div>
-
+    <CascaAuth
+      titulo="Criar conta"
+      descricao="Leva menos de um minuto. Só precisamos de nome, e-mail e uma senha."
+      rodape={
+        <>
+          Já tem conta? <LinkAuth href="/login">Entrar</LinkAuth>
+        </>
+      }
+    >
+      <form onSubmit={aoEnviar} className="flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <label htmlFor="nome" className="text-sm text-zinc-600 dark:text-zinc-400">
             Nome
@@ -90,7 +92,7 @@ export default function PaginaCadastro() {
           />
         </div>
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <label htmlFor="senha" className="text-sm text-zinc-600 dark:text-zinc-400">
             Senha
           </label>
@@ -101,13 +103,14 @@ export default function PaginaCadastro() {
             autoComplete="new-password"
             minLength={8}
           />
+          <MedidorForcaSenha senha={senha} />
         </div>
 
         {precisaCaptcha && (
           <DesafioTurnstile key={tentativaCaptcha} onToken={setTurnstileToken} />
         )}
 
-        {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+        <AvisoErro>{erro}</AvisoErro>
 
         <button
           type="submit"
@@ -116,14 +119,7 @@ export default function PaginaCadastro() {
         >
           {carregando ? "Enviando..." : "Cadastrar"}
         </button>
-
-        <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
-          Já tem conta?{" "}
-          <Link href="/login" className="link-underline font-medium text-foreground">
-            Entrar
-          </Link>
-        </p>
       </form>
-    </div>
+    </CascaAuth>
   );
 }

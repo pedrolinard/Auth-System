@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Search, Users } from "lucide-react";
 import {
   excluirUsuario,
   listarUsuarios,
@@ -9,6 +10,11 @@ import {
   suspenderUsuario,
   type UsuarioAdmin,
 } from "@/lib/clienteAuth";
+import { CabecalhoSecao } from "@/components/ui/CabecalhoSecao";
+import { AvisoErro } from "@/components/ui/AvisoErro";
+import { EstadoVazio } from "@/components/ui/EstadoVazio";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { notificar } from "@/components/ui/Toaster";
 
 const DURACOES = [
   { rotulo: "1 dia", dias: 1 },
@@ -28,8 +34,10 @@ export default function PaginaUsuarios() {
   const [meuId, setMeuId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [suspendendoId, setSuspendendoId] = useState<string | null>(null);
+  const [confirmandoExclusaoId, setConfirmandoExclusaoId] = useState<string | null>(null);
   const [processandoId, setProcessandoId] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
+  const [busca, setBusca] = useState("");
 
   async function carregar() {
     try {
@@ -46,45 +54,58 @@ export default function PaginaUsuarios() {
     carregar();
   }, []);
 
-  async function aoSuspender(id: string, dias: number | undefined) {
-    setErro(null);
-    setProcessandoId(id);
+  const filtrados = useMemo(() => {
+    if (!usuarios) return null;
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return usuarios;
+    return usuarios.filter(
+      (u) => u.nome.toLowerCase().includes(termo) || u.email.toLowerCase().includes(termo),
+    );
+  }, [usuarios, busca]);
+
+  async function aoSuspender(usuario: UsuarioAdmin, dias: number | undefined) {
+    setProcessandoId(usuario.id);
     try {
-      await suspenderUsuario(id, { dias, motivo: motivo.trim() || undefined });
+      await suspenderUsuario(usuario.id, { dias, motivo: motivo.trim() || undefined });
       setSuspendendoId(null);
       setMotivo("");
       await carregar();
+      notificar.info(`${usuario.nome} foi suspenso.`);
     } catch (erroCapturado) {
-      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra suspender.",
+      );
     } finally {
       setProcessandoId(null);
     }
   }
 
-  async function aoReativar(id: string) {
-    setErro(null);
-    setProcessandoId(id);
+  async function aoReativar(usuario: UsuarioAdmin) {
+    setProcessandoId(usuario.id);
     try {
-      await reativarUsuario(id);
+      await reativarUsuario(usuario.id);
       await carregar();
+      notificar.sucesso(`${usuario.nome} foi reativado.`);
     } catch (erroCapturado) {
-      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra reativar.",
+      );
     } finally {
       setProcessandoId(null);
     }
   }
 
-  async function aoExcluir(id: string, email: string) {
-    if (!window.confirm(`Excluir permanentemente a conta de ${email}? Essa ação não pode ser desfeita.`)) {
-      return;
-    }
-    setErro(null);
-    setProcessandoId(id);
+  async function aoExcluir(usuario: UsuarioAdmin) {
+    setProcessandoId(usuario.id);
     try {
-      await excluirUsuario(id);
+      await excluirUsuario(usuario.id);
+      setConfirmandoExclusaoId(null);
       await carregar();
+      notificar.info(`A conta de ${usuario.email} foi excluída.`);
     } catch (erroCapturado) {
-      setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra excluir a conta.",
+      );
     } finally {
       setProcessandoId(null);
     }
@@ -93,18 +114,58 @@ export default function PaginaUsuarios() {
   return (
     <div className="flex flex-1 flex-col items-center gap-6 px-6 py-10">
       <div className="flex w-full max-w-4xl flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <span className="eyebrow text-zinc-500 dark:text-zinc-500">Admin</span>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Usuários</h1>
-        </div>
+        <CabecalhoSecao
+          icone={Users}
+          eyebrow="Admin"
+          titulo="Usuários"
+          descricao="Suspenda, reative ou remova contas. Você não aparece com ações sobre si mesmo."
+          acao={
+            usuarios ? (
+              <span className="rounded-full bg-black/[.05] px-2.5 py-1 text-xs font-medium text-zinc-500 tabular-nums dark:bg-white/[.06] dark:text-zinc-400">
+                {usuarios.length}
+              </span>
+            ) : undefined
+          }
+        />
 
-        {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+        <AvisoErro>{erro}</AvisoErro>
 
-        {usuarios === null && !erro && (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">Carregando...</p>
+        {usuarios && usuarios.length > 0 && (
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400"
+              aria-hidden="true"
+            />
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar por nome ou e-mail"
+              className="input-field pl-9!"
+            />
+          </div>
         )}
 
-        {usuarios && (
+        {usuarios === null && !erro && (
+          <div className="card-surface flex flex-col gap-3 p-4">
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton key={i} className="h-8 w-full" />
+            ))}
+          </div>
+        )}
+
+        {filtrados && filtrados.length === 0 && (
+          <EstadoVazio
+            icone={Search}
+            titulo={usuarios && usuarios.length > 0 ? "Nada encontrado" : "Nenhum usuário ainda"}
+            descricao={
+              usuarios && usuarios.length > 0
+                ? "Nenhum nome ou e-mail bate com a busca."
+                : "As contas cadastradas vão aparecer nesta lista."
+            }
+          />
+        )}
+
+        {filtrados && filtrados.length > 0 && (
           <div className="card-surface overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
@@ -117,7 +178,7 @@ export default function PaginaUsuarios() {
                 </tr>
               </thead>
               <tbody>
-                {usuarios.map((usuario) => {
+                {filtrados.map((usuario) => {
                   const status = statusSuspensao(usuario);
                   const ehVoceMesmo = usuario.id === meuId;
                   return (
@@ -125,7 +186,14 @@ export default function PaginaUsuarios() {
                       key={usuario.id}
                       className="border-b border-black/[.05] align-top last:border-0 dark:border-white/[.06]"
                     >
-                      <td className="px-4 py-3 text-foreground">{usuario.nome}</td>
+                      <td className="px-4 py-3 text-foreground">
+                        {usuario.nome}
+                        {ehVoceMesmo && (
+                          <span className="ml-1.5 rounded-full bg-[var(--accent-wash)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--accent)]">
+                            você
+                          </span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{usuario.email}</td>
                       <td className="px-4 py-3">
                         <span
@@ -140,9 +208,14 @@ export default function PaginaUsuarios() {
                       </td>
                       <td className="px-4 py-3">
                         {status ? (
-                          <span className="text-xs font-medium text-red-600 dark:text-red-400">{status}</span>
+                          <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-600 dark:text-red-400">
+                            {status}
+                          </span>
                         ) : (
-                          <span className="text-xs text-zinc-500 dark:text-zinc-500">Ativo</span>
+                          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-500">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+                            Ativo
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -160,7 +233,7 @@ export default function PaginaUsuarios() {
                               {DURACOES.map(({ rotulo, dias }) => (
                                 <button
                                   key={dias}
-                                  onClick={() => aoSuspender(usuario.id, dias)}
+                                  onClick={() => aoSuspender(usuario, dias)}
                                   disabled={processandoId === usuario.id}
                                   className="btn-secondary-sm"
                                 >
@@ -168,7 +241,7 @@ export default function PaginaUsuarios() {
                                 </button>
                               ))}
                               <button
-                                onClick={() => aoSuspender(usuario.id, undefined)}
+                                onClick={() => aoSuspender(usuario, undefined)}
                                 disabled={processandoId === usuario.id}
                                 className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition-all duration-150 hover:-translate-y-px hover:bg-red-700 active:translate-y-0 active:scale-[.97] disabled:pointer-events-none disabled:opacity-50"
                               >
@@ -185,11 +258,32 @@ export default function PaginaUsuarios() {
                               </button>
                             </div>
                           </div>
+                        ) : confirmandoExclusaoId === usuario.id ? (
+                          <div className="flex flex-col gap-2">
+                            <p className="text-xs text-red-600 dark:text-red-400">
+                              Excluir a conta de {usuario.email} de vez?
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                onClick={() => aoExcluir(usuario)}
+                                disabled={processandoId === usuario.id}
+                                className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition-all duration-150 hover:-translate-y-px hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
+                              >
+                                {processandoId === usuario.id ? "Excluindo..." : "Sim, excluir"}
+                              </button>
+                              <button
+                                onClick={() => setConfirmandoExclusaoId(null)}
+                                className="btn-secondary-sm"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
                         ) : (
                           <div className="flex flex-wrap gap-1.5">
                             {status ? (
                               <button
-                                onClick={() => aoReativar(usuario.id)}
+                                onClick={() => aoReativar(usuario)}
                                 disabled={processandoId === usuario.id}
                                 className="btn-secondary-sm"
                               >
@@ -204,11 +298,11 @@ export default function PaginaUsuarios() {
                               </button>
                             )}
                             <button
-                              onClick={() => aoExcluir(usuario.id, usuario.email)}
+                              onClick={() => setConfirmandoExclusaoId(usuario.id)}
                               disabled={processandoId === usuario.id}
                               className="inline-flex items-center justify-center rounded-full border border-red-600/30 px-4 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:opacity-50 dark:text-red-400"
                             >
-                              {processandoId === usuario.id ? "..." : "Excluir"}
+                              Excluir
                             </button>
                           </div>
                         )}
@@ -218,9 +312,6 @@ export default function PaginaUsuarios() {
                 })}
               </tbody>
             </table>
-            {usuarios.length === 0 && (
-              <p className="p-4 text-sm text-zinc-600 dark:text-zinc-400">Nenhum usuário ainda.</p>
-            )}
           </div>
         )}
       </div>

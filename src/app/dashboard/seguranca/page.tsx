@@ -8,6 +8,7 @@ import {
   SecaoTrocarSenha,
 } from "@/components/painel/segurancaSecoes";
 import { usePainelUsuario } from "@/components/painel/usePainelUsuario";
+import { SkeletonLista } from "@/components/ui/Skeleton";
 
 export default function PaginaSeguranca() {
   const router = useRouter();
@@ -15,8 +16,10 @@ export default function PaginaSeguranca() {
 
   if (carregando) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <p className="text-zinc-600 dark:text-zinc-400">Carregando...</p>
+      <div className="flex flex-1 flex-col items-center gap-6 px-6 py-10">
+        <div className="w-full max-w-lg">
+          <SkeletonLista linhas={4} />
+        </div>
       </div>
     );
   }
@@ -30,6 +33,9 @@ export default function PaginaSeguranca() {
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Segurança da conta
         </h1>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Senha, verificação em duas etapas, passkeys e os dispositivos conectados.
+        </p>
       </div>
 
       <SecaoTrocarSenha />

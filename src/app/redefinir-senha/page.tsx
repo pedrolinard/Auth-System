@@ -2,10 +2,12 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { redefinirSenha } from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
-import { Marca } from "@/components/Marca";
+import { CascaAuth, LinkAuth } from "@/components/auth/CascaAuth";
+import { AvisoErro } from "@/components/ui/AvisoErro";
+import { IconeEstado } from "@/components/ui/IconeEstado";
+import { MedidorForcaSenha } from "@/components/ui/MedidorForcaSenha";
 
 function ConteudoRedefinicao() {
   const searchParams = useSearchParams();
@@ -32,67 +34,70 @@ function ConteudoRedefinicao() {
     }
   }
 
-  return (
-    <div className="card-surface flex w-full max-w-sm flex-col gap-5 p-8">
-      <Marca className="h-6 w-6 text-foreground" />
-      <div className="flex flex-col gap-1.5">
-        <span className="eyebrow text-zinc-500 dark:text-zinc-500">Auth Gateway</span>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Redefinir senha
-        </h1>
-      </div>
-
-      {!token && (
-        <p className="text-sm text-red-600 dark:text-red-400">
-          Link de redefinição incompleto.
-        </p>
-      )}
-
-      {token && sucesso && (
-        <>
-          <p className="text-sm text-green-600 dark:text-green-400">
-            Senha redefinida com sucesso. Todas as sessões ativas foram encerradas.
+  if (!token) {
+    return (
+      <CascaAuth titulo="Redefinir senha" centralizado rodape={<LinkAuth href="/esqueci-senha">Pedir um link novo</LinkAuth>}>
+        <div className="flex flex-col items-center gap-3">
+          <IconeEstado estado="erro" />
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Esse link está incompleto. Peça outro na tela de recuperação.
           </p>
-          <Link href="/login" className="link-underline self-center text-sm font-medium text-foreground">
-            Ir para o login
-          </Link>
-        </>
-      )}
+        </div>
+      </CascaAuth>
+    );
+  }
 
-      {token && !sucesso && (
-        <form onSubmit={aoEnviar} className="flex flex-col gap-5">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="novaSenha" className="text-sm text-zinc-600 dark:text-zinc-400">
-              Nova senha
-            </label>
-            <CampoSenha
-              id="novaSenha"
-              value={novaSenha}
-              onChange={setNovaSenha}
-              autoComplete="new-password"
-              minLength={8}
-            />
-          </div>
+  if (sucesso) {
+    return (
+      <CascaAuth titulo="Senha redefinida" centralizado rodape={<LinkAuth href="/login">Ir para o login</LinkAuth>}>
+        <div className="flex flex-col items-center gap-3">
+          <IconeEstado estado="sucesso" />
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Pronto. Encerramos todas as sessões antigas por segurança — entre de novo
+            com a senha nova.
+          </p>
+        </div>
+      </CascaAuth>
+    );
+  }
 
-          {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
+  return (
+    <CascaAuth titulo="Redefinir senha" descricao="Escolha uma senha nova pra sua conta.">
+      <form onSubmit={aoEnviar} className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
+          <label htmlFor="novaSenha" className="text-sm text-zinc-600 dark:text-zinc-400">
+            Nova senha
+          </label>
+          <CampoSenha
+            id="novaSenha"
+            value={novaSenha}
+            onChange={setNovaSenha}
+            autoComplete="new-password"
+            minLength={8}
+          />
+          <MedidorForcaSenha senha={novaSenha} />
+        </div>
 
-          <button type="submit" disabled={carregando} className="btn-primary mt-1">
-            {carregando ? "Redefinindo..." : "Redefinir senha"}
-          </button>
-        </form>
-      )}
-    </div>
+        <AvisoErro>{erro}</AvisoErro>
+
+        <button type="submit" disabled={carregando} className="btn-primary mt-1">
+          {carregando ? "Redefinindo..." : "Redefinir senha"}
+        </button>
+      </form>
+    </CascaAuth>
   );
 }
 
 export default function PaginaRedefinirSenha() {
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
-      <Suspense
-        fallback={<p className="text-zinc-600 dark:text-zinc-400">Carregando...</p>}
-      >
-        <ConteudoRedefinicao />
-      </Suspense>
-    </div>
+    <Suspense
+      fallback={
+        <div className="flex flex-1 items-center justify-center px-6 py-16">
+          <p className="text-zinc-600 dark:text-zinc-400">Carregando...</p>
+        </div>
+      }
+    >
+      <ConteudoRedefinicao />
+    </Suspense>
   );
 }
