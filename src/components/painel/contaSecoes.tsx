@@ -10,6 +10,7 @@ import { notificar } from "@/components/ui/Toaster";
 
 export function SecaoAlterarEmail() {
   const [novoEmail, setNovoEmail] = useState("");
+  const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
@@ -18,11 +19,12 @@ export function SecaoAlterarEmail() {
     setErro(null);
     setCarregando(true);
     try {
-      await alterarEmail(novoEmail);
+      await alterarEmail(novoEmail, senha);
       notificar.sucesso(
         `Enviamos um link de confirmação para ${novoEmail}. O e-mail só muda depois que você clicar nele.`,
       );
       setNovoEmail("");
+      setSenha("");
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
     } finally {
@@ -36,7 +38,7 @@ export function SecaoAlterarEmail() {
         icone={AtSign}
         eyebrow="Conta"
         titulo="Alterar e-mail"
-        descricao="Mandamos um link pro novo endereço — a troca só vale depois da confirmação."
+        descricao="Mandamos um link pro novo endereço e avisamos o atual. A troca só vale depois da confirmação."
       />
 
       <form onSubmit={aoEnviar} className="flex flex-col gap-3">
@@ -55,11 +57,23 @@ export function SecaoAlterarEmail() {
           />
         </div>
 
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="senhaAlterarEmail" className="text-sm text-zinc-600 dark:text-zinc-400">
+            Senha atual
+          </label>
+          <CampoSenha
+            id="senhaAlterarEmail"
+            value={senha}
+            onChange={setSenha}
+            autoComplete="current-password"
+          />
+        </div>
+
         <AvisoErro>{erro}</AvisoErro>
 
         <button
           type="submit"
-          disabled={carregando || !novoEmail}
+          disabled={carregando || !novoEmail || !senha}
           className="btn-primary-sm self-start"
         >
           {carregando ? "Enviando..." : "Pedir troca de e-mail"}

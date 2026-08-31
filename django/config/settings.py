@@ -52,6 +52,24 @@ JWT_ACCESS_PUBLIC_KEY = base64.b64decode(
 ).decode("utf-8")
 
 
+# Hardening de produção (fora da Vercel / com DEBUG, fica tudo desligado pra
+# não atrapalhar o dev local em http). A Vercel termina o TLS na edge e
+# repassa via proxy, então o Django precisa confiar no header pra saber que a
+# requisição original era https.
+if not DEBUG:
+    # A Vercel só serve https na borda; SECURE_SSL_REDIRECT fica de fora de
+    # propósito (um 301 num POST do proxy viraria GET). O resto é barato e
+    # sem risco pra uma API JSON.
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_HSTS_SECONDS = 63072000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    X_FRAME_OPTIONS = "DENY"
+
+
 # Application definition
 
 INSTALLED_APPS = [

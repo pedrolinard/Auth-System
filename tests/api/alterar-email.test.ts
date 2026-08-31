@@ -20,9 +20,27 @@ describe("Alterar e-mail (confirmação em duas etapas)", () => {
     const resposta = await fetch(`${BASE_URL}/api/auth/alterar-email`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...cabecalhos },
-      body: JSON.stringify({ novoEmail }),
+      body: JSON.stringify({ novoEmail, senha: usuario.senha }),
     });
     expect(resposta.status).toBe(200);
+
+    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    expect(usuarioDb.email).toBe(usuario.email);
+  });
+
+  it("rejeita o pedido de troca com a senha atual errada", async () => {
+    const usuario = await criarUsuarioTeste("alterar-email-senha-errada");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+    const novoEmail = gerarEmailTeste("alterar-email-senha-errada-novo");
+    emailsCriados.push(novoEmail);
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/alterar-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...cabecalhos },
+      body: JSON.stringify({ novoEmail, senha: "SenhaErrada999!" }),
+    });
+    expect(resposta.status).toBe(401);
 
     const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
     expect(usuarioDb.email).toBe(usuario.email);
@@ -133,7 +151,7 @@ describe("Alterar e-mail (confirmação em duas etapas)", () => {
     const resposta = await fetch(`${BASE_URL}/api/auth/alterar-email`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...cabecalhos },
-      body: JSON.stringify({ novoEmail: outro.email }),
+      body: JSON.stringify({ novoEmail: outro.email, senha: usuario.senha }),
     });
     expect(resposta.status).toBe(409);
   });
@@ -146,7 +164,7 @@ describe("Alterar e-mail (confirmação em duas etapas)", () => {
     const resposta = await fetch(`${BASE_URL}/api/auth/alterar-email`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...cabecalhos },
-      body: JSON.stringify({ novoEmail: usuario.email }),
+      body: JSON.stringify({ novoEmail: usuario.email, senha: usuario.senha }),
     });
     expect(resposta.status).toBe(400);
   });

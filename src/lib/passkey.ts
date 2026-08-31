@@ -27,6 +27,13 @@ type CredencialResumo = {
 // (resident key) de verdade, o login sem digitar e-mail (allowCredentials
 // vazio em gerarOpcoesLoginPasskey) não teria como saber qual credencial
 // oferecer — o browser simplesmente não mostraria nada pra escolher.
+//
+// userVerification "required" (não "preferred"): o login por passkey pula o
+// desafio de TOTP mesmo com MFA ativo, então a passkey precisa valer como
+// DOIS fatores — posse do authenticator + verificação local (biometria/PIN).
+// Com "preferred" o authenticator podia dispensar a verificação e a passkey
+// virava fator único. `requireUserVerification: true` nos verify abaixo
+// fecha o outro lado: uma resposta sem a flag de UV é recusada.
 export async function gerarOpcoesRegistroPasskey(
   usuario: { id: string; email: string; nome: string },
   credenciaisExistentes: CredencialResumo[],
@@ -42,7 +49,7 @@ export async function gerarOpcoesRegistroPasskey(
       id: credencial.credentialId,
       transports: credencial.transportes as AuthenticatorTransportFuture[],
     })),
-    authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
+    authenticatorSelection: { residentKey: "required", userVerification: "required" },
   });
 }
 
@@ -55,6 +62,7 @@ export async function verificarRegistroPasskey(
     expectedChallenge: challenge,
     expectedOrigin: ORIGIN,
     expectedRPID: RP_ID,
+    requireUserVerification: true,
   });
 }
 
@@ -64,7 +72,7 @@ export async function verificarRegistroPasskey(
 export async function gerarOpcoesLoginPasskey() {
   return generateAuthenticationOptions({
     rpID: RP_ID,
-    userVerification: "preferred",
+    userVerification: "required",
   });
 }
 
@@ -78,6 +86,7 @@ export async function verificarLoginPasskey(
     expectedChallenge: challenge,
     expectedOrigin: ORIGIN,
     expectedRPID: RP_ID,
+    requireUserVerification: true,
     credential: {
       id: credencial.credentialId,
       publicKey: Buffer.from(credencial.publicKey, "base64"),

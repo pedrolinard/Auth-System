@@ -2,7 +2,7 @@
 
 > Gerado em 2026-07-13. Atualizado em 2026-07-16 (índice composto em `LogAuditoria` pra acelerar as consultas do rate limit). Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.** Sistema em produção na Vercel desde 2026-07-14 (ver seção "Deploy em produção" abaixo).
 >
-> Atualizado em 2026-08-29 (contagens de teste: **192 no total** — 157 Vitest + 6 E2E Playwright + 29 Django). A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
+> Atualizado em 2026-08-31 (varredura de segurança: senha exigida na troca de e-mail, `userVerification: required` nas passkeys, `.max` no nome, CSP libera Rollbar, hardening do Django, upgrade de deps com CVE — Next 16.3.4, Django 5.2.17, cryptography 50). Contagens de teste: **193 no total** — 158 Vitest + 6 E2E Playwright + 29 Django. A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
 
 ## ✅ Feito
 
@@ -65,7 +65,7 @@
 
 ### Testes automatizados (Next.js)
 - **Vitest contra servidor `next dev` real** (não mocka `next/headers`), database dedicada `autenticacao_test` na mesma instância Postgres, `tests/globalSetup.ts` sobe/derruba o servidor e aplica as migrations
-- 157 testes em `tests/api/*.test.ts` + `tests/lib/*.test.ts`: cadastro, login, sessões, MFA (códigos TOTP reais e backup), RBAC, recuperação/troca/alteração de e-mail e senha, verificação de e-mail, CSRF, rate limiting, viagem impossível, passkeys, cron de limpeza, criptografia em repouso e comparação em tempo constante
+- 158 testes em `tests/api/*.test.ts` + `tests/lib/*.test.ts`: cadastro, login, sessões, MFA (códigos TOTP reais e backup), RBAC, recuperação/troca/alteração de e-mail e senha, verificação de e-mail, CSRF, rate limiting, viagem impossível, passkeys, cron de limpeza, criptografia em repouso e comparação em tempo constante
 - 6 testes E2E de navegador (Playwright): cadastro/login, dashboard protegido e passkeys via virtual authenticator
 
 ### Segurança já presente
@@ -84,10 +84,26 @@
 - Segredos JWT gerados aleatoriamente (não mais placeholders) e documentados
 - Recuperação de senha (token stateless, 1h, revoga todas as sessões ao redefinir, resposta anti-enumeração)
 - Rate limiting por IP em login, cadastro e recuperação de senha (reaproveita `LogAuditoria`)
+- Troca de e-mail exige a senha atual e avisa o endereço antigo já no pedido (não só na conclusão)
+- Passkeys com `userVerification: required` no registro e no login + `requireUserVerification` no verify — a verificação local (biometria/PIN) é sempre exigida, então a passkey vale como 2 fatores mesmo pulando o TOTP
+- `nome` com teto de 80 caracteres no schema Zod (renderizado no painel e em e-mails)
+- CSP libera `api.rollbar.com` em `connect-src` (o relatório de erro do cliente era bloqueado em silêncio)
+- Django com hardening de produção (`SECURE_PROXY_SSL_HEADER`, HSTS, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, nosniff, `X_FRAME_OPTIONS`) condicionado a `not DEBUG`
+- Dependências com CVE atualizadas: Next.js 16.2.10 → 16.3.4 (bypass de middleware/proxy, SSRF em rewrites, cache confusion), Django 5.2.16 → 5.2.17, `cryptography` 43 → 50, DRF 3.15 → 3.18
 
 ## 🔧 O que falta / pode fazer
 
-Nenhum item pendente no momento — todos os itens de prioridade Alta e Média identificados neste roadmap foram entregues (ver "✅ Feito" acima). Itens fora de escopo intencional (rate limiting distribuído/Redis, captcha, envio real de e-mail) seguem documentados no `README.md`.
+Do relatório de varredura de segurança de 2026-08-31, ainda em aberto (prioridade decrescente):
+
+- **CAPTCHA (Turnstile) inativo em produção** — `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY` ausentes: `verificarTurnstile` retorna `true` (fail-open), então a fricção progressiva contra brute-force/stuffing não roda. O código já está pronto; falta configurar as 2 chaves da Cloudflare no Vercel.
+- **Export LGPD (`GET /api/auth/minha-conta`) sem re-auth por senha nem rate limit** — um access token basta pra baixar IP/geo/UA + 500 logs; a exclusão de conta já exige senha.
+- **CSP com `script-src 'unsafe-inline'`** em produção — migrar pra nonce por request (via `proxy.ts`).
+- **Enumeração de contas no cadastro** (409 "e-mail já cadastrado") — resposta genérica + e-mail "alguém tentou criar conta com seu endereço".
+- **Retenção de PII no `LogAuditoria`** — IP/UA/e-mail em texto puro sem expiração; política de retenção (LGPD) + contador de rate limit dedicado com TTL (o `count()` na tabela append-only degrada com o tempo).
+- **`esqueci-senha` só limita por IP** — sem limite por e-mail, dá pra floodar a caixa de uma vítima trocando de IP.
+- **JWT sem `iss`/`aud`** — Django não valida emissor/audiência (baixo risco: keypair dedicado, consumidor único).
+
+Itens fora de escopo intencional (rate limiting distribuído/Redis, envio real de e-mail) seguem documentados no `README.md`.
 
 ## 💡 Melhorias no que já existe
 

@@ -28,7 +28,11 @@ export const esquemaCadastro = z.object({
   nome: z
     .string({ error: "Informe o nome." })
     .trim()
-    .min(2, { error: "O nome deve ter pelo menos 2 caracteres." }),
+    .min(2, { error: "O nome deve ter pelo menos 2 caracteres." })
+    // Teto de tamanho: o nome é renderizado no painel e interpolado em
+    // e-mails de segurança — sem limite, um valor gigante infla o banco e
+    // polui as duas superfícies. 80 cobre qualquer nome real com folga.
+    .max(80, { error: "O nome é longo demais (máximo de 80 caracteres)." }),
   email: z
     .email({ error: "Informe um e-mail válido." })
     .trim()
@@ -95,6 +99,10 @@ export const esquemaRedefinirSenha = z.object({
 
 export const esquemaAlterarEmail = z.object({
   novoEmail: z.email({ error: "Informe um e-mail válido." }).trim().toLowerCase(),
+  // Trocar o e-mail troca o canal de recuperação da conta — exigir a senha
+  // atual impede que um access token roubado (janela de ~15 min) inicie o
+  // sequestro sozinho, mesma proteção de excluir a conta / trocar a senha.
+  senha: z.string({ error: "Informe a senha atual." }).min(1, { error: "Informe a senha atual." }),
 });
 
 export const esquemaConfirmarAlteracaoEmail = z.object({

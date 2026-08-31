@@ -260,12 +260,12 @@ export async function excluirMinhaConta(senha: string) {
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao excluir a conta."));
 }
 
-export async function alterarEmail(novoEmail: string) {
+export async function alterarEmail(novoEmail: string, senha: string) {
   const resposta = await fetch("/api/auth/alterar-email", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
     credentials: "include",
-    body: JSON.stringify({ novoEmail }),
+    body: JSON.stringify({ novoEmail, senha }),
   });
   const corpo = await resposta.json();
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao pedir a troca de e-mail."));

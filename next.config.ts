@@ -15,6 +15,11 @@ import type { NextConfig } from "next";
 // rede pra lá — sem liberar esses três diretivas o widget nem carrega (script
 // bloqueado) ou carrega mas fica em branco (iframe/XHR bloqueados).
 const ORIGEM_TURNSTILE = "https://challenges.cloudflare.com";
+// O SDK do Rollbar (cliente) faz POST dos erros capturados pra este endpoint —
+// sem liberar em connect-src, o relatório de erro do lado do navegador é
+// bloqueado pelo CSP em silêncio (não é falha de segurança, mas cega o
+// monitoramento de produção).
+const ORIGEM_ROLLBAR = "https://api.rollbar.com";
 
 const scriptSrc =
   process.env.NODE_ENV === "production"
@@ -27,7 +32,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self' data:",
-  `connect-src 'self' ${ORIGEM_TURNSTILE}`,
+  `connect-src 'self' ${ORIGEM_TURNSTILE} ${ORIGEM_ROLLBAR}`,
   `frame-src ${ORIGEM_TURNSTILE}`,
   "frame-ancestors 'none'",
   "base-uri 'self'",

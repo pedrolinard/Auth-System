@@ -40,7 +40,7 @@ export const metricas = {
   migracoesPrisma: 15,
   modulosLib: 28,
   tabelas: 7,
-  testesVitest: 157,
+  testesVitest: 158,
   testesE2e: 6,
   testesDjango: 29,
 };
@@ -55,7 +55,7 @@ export const concluido: GrupoConcluido[] = [
       "Recuperação de senha: token de 1h, resposta genérica anti-enumeração, revoga todas as sessões ao redefinir",
       "Checagem de senha vazada (Have I Been Pwned, k-anonymity) no cadastro e na redefinição de senha — recusa senhas já conhecidas em vazamentos reais",
       "Troca de senha estando logado (PUT /api/auth/senha), exigindo a senha atual — mantém a sessão de origem viva e derruba as demais",
-      "Alterar e-mail com confirmação em duas etapas — o endereço só muda depois de um link clicado no e-mail NOVO; o e-mail ANTIGO recebe aviso de segurança, o link é de uso único e confirmar a troca revoga todas as sessões e dispositivos confiáveis (mesma proteção da redefinição de senha)",
+      "Alterar e-mail com confirmação em duas etapas — exige a senha atual pra pedir a troca (access token roubado sozinho não basta), avisa o e-mail ANTIGO já no pedido; o endereço só muda depois de um link clicado no e-mail NOVO, o link é de uso único e confirmar a troca revoga todas as sessões e dispositivos confiáveis (mesma proteção da redefinição de senha)",
     ],
   },
   {
@@ -124,7 +124,7 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "192 testes: 157 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 29 Django (pytest-django)",
+      "193 testes: 158 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 29 Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
       "Django não carrega .env na Vercel (load_dotenv só fora da plataforma) e .vercelignore mantém o arquivo fora do bundle — sem isso o serviço subia com DEBUG=True em produção",
     ],
@@ -133,7 +133,7 @@ export const concluido: GrupoConcluido[] = [
     categoria: "Passkeys (WebAuthn)",
     itens: [
       "Login sem senha via @simplewebauthn — resistente a phishing, complementa a senha (que continua funcionando)",
-      "Login por passkey pula o desafio de TOTP separado mesmo com MFA ativado: posse do authenticator + biometria/PIN local já equivale a um segundo fator",
+      "Login por passkey pula o desafio de TOTP separado mesmo com MFA ativado: posse do authenticator + biometria/PIN local já equivale a um segundo fator — `userVerification: required` no registro e no login (e `requireUserVerification` no verify) garante que a verificação local sempre aconteça, senão a passkey viraria fator único",
       "Cadastrar/listar/remover passkeys em /dashboard/seguranca; login sem digitar e-mail (credencial descobrível)",
       "Mesmas checagens do login por senha: suspensão, dispositivo novo, viagem impossível, limite de sessões simultâneas",
     ],

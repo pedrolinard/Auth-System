@@ -242,6 +242,43 @@ export async function enviarEmailConfirmacaoAlteracaoEmail(destinatario: string,
   }
 }
 
+// Aviso pro e-mail ANTIGO no momento em que a troca é PEDIDA (antes da
+// confirmação) — sem isso, um pedido feito com sessão roubada só apareceria
+// pro dono depois de concluído. Aqui ele tem a chance de reagir (trocar a
+// senha, revisar sessões) enquanto o link de confirmação ainda não foi
+// clicado.
+export async function enviarEmailAlteracaoEmailSolicitada(
+  destinatarioAntigo: string,
+  novoEmail: string,
+) {
+  const novoEmailEscapado = escaparHtml(novoEmail);
+
+  if (!resend) {
+    console.log(
+      `[dev] Aviso de troca de e-mail SOLICITADA para ${destinatarioAntigo} (novo: ${novoEmailEscapado})`,
+    );
+    return;
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: REMETENTE,
+      to: destinatarioAntigo,
+      subject: "Pediram para trocar o e-mail da sua conta",
+      html: `
+        <p>Alguém pediu para trocar o e-mail desta conta para <strong>${novoEmailEscapado}</strong>.
+        A troca só acontece quando o link enviado para o novo endereço for confirmado.</p>
+        <p>Se foi você, pode ignorar este aviso. <strong>Se não foi</strong>, troque sua senha agora
+        e revise as sessões ativas — sua conta pode estar comprometida.</p>
+        ${RODAPE_PADRAO}
+      `,
+    });
+    if (error) console.error("Falha ao enviar aviso de troca de e-mail solicitada:", error);
+  } catch (erro) {
+    console.error("Falha ao enviar aviso de troca de e-mail solicitada:", erro);
+  }
+}
+
 export async function enviarEmailEmailAlterado(destinatarioAntigo: string, novoEmail: string) {
   const novoEmailEscapado = escaparHtml(novoEmail);
 
