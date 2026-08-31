@@ -2,7 +2,7 @@
 
 > Gerado em 2026-07-13. Atualizado em 2026-07-16 (índice composto em `LogAuditoria` pra acelerar as consultas do rate limit). Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.** Sistema em produção na Vercel desde 2026-07-14 (ver seção "Deploy em produção" abaixo).
 >
-> Atualizado em 2026-08-31 (varredura de segurança: senha exigida na troca de e-mail, `userVerification: required` nas passkeys, `.max` no nome, CSP libera Rollbar, hardening do Django, upgrade de deps com CVE — Next 16.3.4, Django 5.2.17, cryptography 50). Contagens de teste: **193 no total** — 158 Vitest + 6 E2E Playwright + 29 Django. A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
+> Atualizado em 2026-08-31 (varredura de segurança — 1ª leva: senha na troca de e-mail, `userVerification: required` nas passkeys, `.max` no nome, CSP libera Rollbar, hardening do Django, upgrade de deps com CVE. 2ª leva: export LGPD exige senha + vira POST, limite por e-mail no `esqueci-senha`, `iss`/`aud` no access token, retenção da auditoria, CSP com `object-src 'none'`, export de auditoria em PDF). Contagens de teste: **197 no total** — 159 Vitest + 6 E2E Playwright + 32 Django. A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
 
 ## ✅ Feito
 
@@ -23,7 +23,7 @@
 - `POST /api/cron/limpar-tokens` — remove tokens expirados/revogados antigos, protegido por `CRON_SECRET`
 
 ### Lib (`src/lib/`)
-- `token.ts` — geração/verificação de JWT (jose): acesso (RS256, inclui claim `papel`), atualização, desafio MFA, verificação de e-mail e redefinição de senha (cada um com segredo próprio), hash SHA-256 do refresh token
+- `token.ts` — geração/verificação de JWT (jose): acesso (RS256, claim `papel`, `iss`/`aud` fixos validados aqui e no Django), atualização, desafio MFA, verificação de e-mail e redefinição de senha (cada um com segredo próprio), hash SHA-256 do refresh token
 - `senha.ts` — hash/verificação de senha (bcryptjs)
 - `mfa.ts` — geração de segredo TOTP, QR code (otpauth + qrcode) e verificação de código
 - `sessao.ts` — emissão compartilhada de tokenAcesso/tokenAtualizacao/csrfToken em cookies httpOnly (usada por login e conclusão de MFA)
@@ -73,7 +73,7 @@
 - Refresh token hasheado no banco (não fica em texto puro)
 - Rotação de refresh token
 - Access token e refresh token em cookies **httpOnly** (não acessíveis a JavaScript — mitiga roubo via XSS)
-- Access token de vida curta (15 min), assinado com RS256
+- Access token de vida curta (15 min), assinado com RS256, com `iss`/`aud` carimbados e checados (Next.js + Django)
 - Proteção CSRF explícita (double-submit cookie) em toda mutação autenticada por cookie, Next.js e Django
 - Verificação em duas etapas (TOTP) opcional por usuário
 - Verificação de e-mail (token stateless, link logado no console em dev)
@@ -90,18 +90,22 @@
 - CSP libera `api.rollbar.com` em `connect-src` (o relatório de erro do cliente era bloqueado em silêncio)
 - Django com hardening de produção (`SECURE_PROXY_SSL_HEADER`, HSTS, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, nosniff, `X_FRAME_OPTIONS`) condicionado a `not DEBUG`
 - Dependências com CVE atualizadas: Next.js 16.2.10 → 16.3.4 (bypass de middleware/proxy, SSRF em rewrites, cache confusion), Django 5.2.16 → 5.2.17, `cryptography` 43 → 50, DRF 3.15 → 3.18
+- Export LGPD (`POST /api/auth/minha-conta/exportar`) exige a senha atual + CSRF + rate limit (era GET só com o cookie de acesso)
+- `esqueci-senha` com limite por e-mail (3/h), sem quebrar a resposta anti-enumeração
+- Access token carrega `iss`/`aud`, validados no Next.js e no Django (`options={require:[exp,iss,aud]}`)
+- Retenção da trilha de auditoria: `POST /api/cron/limpar-tokens` poda `LogAuditoria` > 365 dias e `DesafioMfaConsumido` expirado (índice `criadoEm` novo)
+- CSP com `object-src 'none'` e `upgrade-insecure-requests`
+- Exportação da auditoria em PDF pra admins (jsPDF carregado sob demanda no clique)
 
 ## 🔧 O que falta / pode fazer
 
-Do relatório de varredura de segurança de 2026-08-31, ainda em aberto (prioridade decrescente):
+Da varredura de segurança de 2026-08-31, ainda em aberto (prioridade decrescente):
 
 - **CAPTCHA (Turnstile) inativo em produção** — `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY` ausentes: `verificarTurnstile` retorna `true` (fail-open), então a fricção progressiva contra brute-force/stuffing não roda. O código já está pronto; falta configurar as 2 chaves da Cloudflare no Vercel.
-- **Export LGPD (`GET /api/auth/minha-conta`) sem re-auth por senha nem rate limit** — um access token basta pra baixar IP/geo/UA + 500 logs; a exclusão de conta já exige senha.
-- **CSP com `script-src 'unsafe-inline'`** em produção — migrar pra nonce por request (via `proxy.ts`).
-- **Enumeração de contas no cadastro** (409 "e-mail já cadastrado") — resposta genérica + e-mail "alguém tentou criar conta com seu endereço".
-- **Retenção de PII no `LogAuditoria`** — IP/UA/e-mail em texto puro sem expiração; política de retenção (LGPD) + contador de rate limit dedicado com TTL (o `count()` na tabela append-only degrada com o tempo).
-- **`esqueci-senha` só limita por IP** — sem limite por e-mail, dá pra floodar a caixa de uma vítima trocando de IP.
-- **JWT sem `iss`/`aud`** — Django não valida emissor/audiência (baixo risco: keypair dedicado, consumidor único).
+- **CSP com `script-src 'unsafe-inline'`** em produção — nonce por request força renderização dinâmica em todas as páginas (perde a otimização estática de `/`, `/login`, etc. e o cache de CDN); SRI hash-based é experimental. Adiado até valer o custo.
+- **Contador de rate limit dedicado** — ainda é `count()` sobre `LogAuditoria` a cada login/cadastro/reset. A retenção acima limita o crescimento da tabela; falta o contador com TTL próprio.
+- **Enumeração de contas no cadastro** (409 "e-mail já cadastrado") — mantido de propósito: a alternativa tem custo de UX real pra quem esqueceu que já tem conta, e login/recuperação (os fluxos que importam) já não enumeram.
+- **Observabilidade no Django** — o Rollbar cobre só o Next.js.
 
 Itens fora de escopo intencional (rate limiting distribuído/Redis, envio real de e-mail) seguem documentados no `README.md`.
 

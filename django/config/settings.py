@@ -51,6 +51,11 @@ JWT_ACCESS_PUBLIC_KEY = base64.b64decode(
     os.environ["JWT_ACCESS_PUBLIC_KEY_B64"]
 ).decode("utf-8")
 
+# Emissor e audiência esperados no access token — precisam bater com o que o
+# Next.js carimba (src/lib/token.ts: EMISSOR_TOKEN_ACESSO / AUDIENCIA_TOKEN_ACESSO).
+JWT_ACCESS_ISSUER = "auth-gateway"
+JWT_ACCESS_AUDIENCE = "auth-gateway-servicos"
+
 
 # Hardening de produção (fora da Vercel / com DEBUG, fica tudo desligado pra
 # não atrapalhar o dev local em http). A Vercel termina o TLS na edge e

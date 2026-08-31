@@ -8,6 +8,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from django.conf import settings
 from django.test import RequestFactory
 from rest_framework.exceptions import AuthenticationFailed
 
@@ -33,7 +34,15 @@ def usar_chave_de_teste(settings):
 
 
 def _gerar_token(payload, chave_pem=_CHAVE_PRIVADA_PEM, algoritmo="RS256"):
-    return jwt.encode(payload, chave_pem, algorithm=algoritmo)
+    # Preenche iss/aud/exp esperados por padrão (o gateway Next.js sempre os
+    # carimba) — cada teste ainda pode sobrescrever pra exercitar o caso ruim.
+    corpo = {
+        "iss": settings.JWT_ACCESS_ISSUER,
+        "aud": settings.JWT_ACCESS_AUDIENCE,
+        "exp": int(time.time()) + 900,
+        **payload,
+    }
+    return jwt.encode(corpo, chave_pem, algorithm=algoritmo)
 
 
 def _requisicao_com_token(token=None):
@@ -115,6 +124,32 @@ def test_assinatura_invalida_rejeitada():
 def test_token_sem_sub_rejeitado():
     token = _gerar_token({"email": "a@example.com"})
     with pytest.raises(AuthenticationFailed, match="sub"):
+        AutenticacaoJWT().authenticate(_requisicao_com_token(token))
+
+
+def test_token_com_emissor_errado_rejeitado():
+    token = _gerar_token({"sub": "usuario-123", "iss": "outro-produto"})
+    with pytest.raises(AuthenticationFailed, match="inválido"):
+        AutenticacaoJWT().authenticate(_requisicao_com_token(token))
+
+
+def test_token_com_audiencia_errada_rejeitado():
+    token = _gerar_token({"sub": "usuario-123", "aud": "outra-audiencia"})
+    with pytest.raises(AuthenticationFailed, match="inválido"):
+        AutenticacaoJWT().authenticate(_requisicao_com_token(token))
+
+
+def test_token_sem_exp_rejeitado():
+    token = jwt.encode(
+        {
+            "sub": "usuario-123",
+            "iss": settings.JWT_ACCESS_ISSUER,
+            "aud": settings.JWT_ACCESS_AUDIENCE,
+        },
+        _CHAVE_PRIVADA_PEM,
+        algorithm="RS256",
+    )
+    with pytest.raises(AuthenticationFailed, match="inválido"):
         AutenticacaoJWT().authenticate(_requisicao_com_token(token))
 
 

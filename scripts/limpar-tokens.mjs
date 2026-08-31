@@ -25,4 +25,10 @@ if (!resposta.ok) {
   process.exit(1);
 }
 
-console.log(`Limpeza concluída: ${corpo.removidos} token(s) removido(s).`);
+const d = corpo.detalhe ?? {};
+console.log(
+  `Limpeza concluída: ${corpo.removidos} registro(s) removido(s)` +
+    (corpo.detalhe
+      ? ` (tokens: ${d.tokens}, auditoria: ${d.auditoria}, desafios MFA: ${d.desafiosMfa}).`
+      : "."),
+);

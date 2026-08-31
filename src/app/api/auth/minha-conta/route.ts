@@ -4,100 +4,14 @@ import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf, removerCookieAcesso, removerCookieAtualizacao, removerCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
-import { classificarDispositivo } from "@/lib/dispositivo";
 import { enviarEmailContaExcluida } from "@/lib/email";
-import { formatarLocalizacao } from "@/lib/geo";
 import { limiteExcedido, limiteExcedidoPorEmail, obterIp } from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { esquemaExcluirConta } from "@/lib/validacao";
 
-// Autoatendimento LGPD: até aqui só um admin conseguia excluir a conta de
-// outra pessoa (DELETE /api/auth/usuarios/[id]) — o próprio titular não tinha
-// como exportar nem apagar os próprios dados sem pedir pra um admin.
-
-// GET exporta só o que este serviço (auth-gateway) guarda sobre o titular —
-// não inclui Projeto/Tarefa do serviço de domínio (django/), que é uma base
-// de dados separada sem FK real com o usuário (só o claim `sub` do JWT como
-// referência opaca); juntar os dois exigiria o Next.js chamar o Django
-// internamente carregando as credenciais da requisição, escopo maior que o
-// deste item do roadmap.
-export async function GET(req: Request) {
-  const payload = await autenticarRequisicao(req);
-  if (!payload) {
-    return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
-  }
-
-  const usuario = await prisma.usuario.findUnique({ where: { id: payload.sub } });
-  if (!usuario) {
-    return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
-  }
-
-  const [sessoes, dispositivosConfiaveis, codigosBackup, passkeys, logsAuditoria] = await Promise.all([
-    prisma.tokenAtualizacao.findMany({
-      where: { usuarioId: usuario.id },
-      orderBy: { criadoEm: "desc" },
-      select: {
-        criadoEm: true,
-        expiraEm: true,
-        revogadoEm: true,
-        userAgent: true,
-        geoCidade: true,
-        geoRegiao: true,
-        geoPais: true,
-      },
-    }),
-    prisma.dispositivoConfiavel.findMany({
-      where: { usuarioId: usuario.id },
-      orderBy: { criadoEm: "desc" },
-      select: { criadoEm: true, expiraEm: true },
-    }),
-    prisma.codigoBackupMfa.findMany({
-      where: { usuarioId: usuario.id },
-      orderBy: { criadoEm: "desc" },
-      select: { criadoEm: true, usadoEm: true },
-    }),
-    // credentialId/publicKey ficam de fora: são material de credencial (o
-    // par de chaves WebAuthn), não dado pessoal útil num export — mesma
-    // lógica do tokenHash omitido das sessões. O que interessa ao titular é
-    // quando cada dispositivo foi registrado, de que tipo e quando foi usado.
-    prisma.passkeyCredencial.findMany({
-      where: { usuarioId: usuario.id },
-      orderBy: { criadoEm: "desc" },
-      select: { nome: true, transportes: true, criadoEm: true, ultimoUsoEm: true },
-    }),
-    prisma.logAuditoria.findMany({
-      where: { usuarioId: usuario.id },
-      orderBy: { criadoEm: "desc" },
-      take: 500,
-      select: { evento: true, ip: true, userAgent: true, criadoEm: true },
-    }),
-  ]);
-
-  return NextResponse.json({
-    exportadoEm: new Date().toISOString(),
-    dadosPessoais: {
-      id: usuario.id,
-      nome: usuario.nome,
-      email: usuario.email,
-      emailVerificado: usuario.emailVerificado,
-      papel: usuario.papel,
-      mfaAtivado: usuario.mfaAtivado,
-      criadoEm: usuario.criadoEm,
-      atualizadoEm: usuario.atualizadoEm,
-    },
-    // tokenHash nunca sai daqui — mesmo com hash (não o token em si), é
-    // material de posse de sessão e não faz sentido num export de dados.
-    sessoes: sessoes.map(({ userAgent, geoCidade, geoRegiao, geoPais, ...resto }) => ({
-      ...resto,
-      tipoDispositivo: classificarDispositivo(userAgent),
-      localizacao: formatarLocalizacao({ cidade: geoCidade, regiao: geoRegiao, pais: geoPais }),
-    })),
-    dispositivosConfiaveis,
-    codigosBackupMfa: codigosBackup,
-    passkeys,
-    logsAuditoria,
-  });
-}
+// Autoatendimento LGPD: o titular exclui a própria conta aqui (DELETE) e
+// exporta os próprios dados em POST /api/auth/minha-conta/exportar (rota
+// separada porque o export passou a exigir a senha atual).
 
 const MAX_TENTATIVAS_SENHA_ATUAL = 5;
 const JANELA_SENHA_ATUAL_MS = 5 * 60 * 1000;

@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ScrollText, Search } from "lucide-react";
+import { FileDown, ScrollText, Search } from "lucide-react";
 import { listarAuditoria, type RegistroAuditoria } from "@/lib/clienteAuth";
+import { exportarAuditoriaPdf } from "@/lib/exportarAuditoriaPdf";
 import { CabecalhoSecao } from "@/components/ui/CabecalhoSecao";
 import { AvisoErro } from "@/components/ui/AvisoErro";
 import { EstadoVazio } from "@/components/ui/EstadoVazio";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { notificar } from "@/components/ui/Toaster";
 
 // Cor do "chip" do evento pela intenção que o nome carrega — sem tabela
 // exaustiva, só heurística: falha/erro/bloqueio em vermelho, o resto neutro.
@@ -27,6 +29,24 @@ export default function PaginaAuditoria() {
   const [erro, setErro] = useState<string | null>(null);
   const [filtroEvento, setFiltroEvento] = useState("");
   const [filtroEmail, setFiltroEmail] = useState("");
+  const [exportando, setExportando] = useState(false);
+
+  async function aoExportarPdf() {
+    if (!registros || registros.length === 0) return;
+    setExportando(true);
+    try {
+      await exportarAuditoriaPdf(registros, {
+        evento: filtroEvento.trim() || undefined,
+        email: filtroEmail.trim() || undefined,
+      });
+    } catch (erroCapturado) {
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra gerar o PDF.",
+      );
+    } finally {
+      setExportando(false);
+    }
+  }
 
   const carregar = useCallback(async (evento: string, email: string) => {
     setErro(null);
@@ -62,6 +82,16 @@ export default function PaginaAuditoria() {
           eyebrow="Admin"
           titulo="Auditoria"
           descricao="Os eventos de segurança mais recentes — login, cadastro, troca de senha, ações de admin."
+          acao={
+            <button
+              onClick={aoExportarPdf}
+              disabled={exportando || !registros || registros.length === 0}
+              className="btn-secondary-sm gap-1.5"
+            >
+              <FileDown className="h-3.5 w-3.5" aria-hidden="true" />
+              {exportando ? "Gerando..." : "Exportar PDF"}
+            </button>
+          }
         />
 
         <form onSubmit={aoFiltrar} className="flex flex-col gap-2.5">

@@ -36,13 +36,13 @@ export const atualizadoEm = "2026-08-29";
 // (mesma disciplina do resto do arquivo). As métricas AO VIVO (contagens do
 // banco, commit/deploy) são calculadas em tempo de requisição na página.
 export const metricas = {
-  rotasApi: 33,
-  migracoesPrisma: 15,
-  modulosLib: 28,
+  rotasApi: 34,
+  migracoesPrisma: 16,
+  modulosLib: 29,
   tabelas: 7,
-  testesVitest: 158,
+  testesVitest: 159,
   testesE2e: 6,
-  testesDjango: 29,
+  testesDjango: 32,
 };
 
 export const concluido: GrupoConcluido[] = [
@@ -61,7 +61,7 @@ export const concluido: GrupoConcluido[] = [
   {
     categoria: "Tokens & sessões",
     itens: [
-      "Access token RS256 de vida curta (15 min) + refresh token HS256 de longa duração (30 dias), ambos em cookies httpOnly",
+      "Access token RS256 de vida curta (15 min, com `iss`/`aud` checados no Next.js e no Django) + refresh token HS256 de longa duração (30 dias), ambos em cookies httpOnly",
       "Rotação de refresh token a cada renovação, com detecção de reuso (revoga a família inteira de sessões)",
       "Sessões ativas: listar, revogar uma ou todas de uma vez (\"sair de todos os dispositivos\")",
       "Sessões mostram tipo de dispositivo (desktop/tablet/mobile) e localização aproximada (cidade/UF/país via headers de geo da Vercel)",
@@ -95,7 +95,7 @@ export const concluido: GrupoConcluido[] = [
       "Admin pode suspender (temporária ou permanente) ou excluir permanentemente a conta de outro usuário",
       "Suspensão revoga todas as sessões ativas na hora e bloqueia login imediatamente",
       "Auditoria de ações administrativas registra também QUEM (qual admin) suspendeu/reativou/excluiu, não só o alvo",
-      "Autoatendimento LGPD: GET/DELETE /api/auth/minha-conta — o próprio titular exporta os dados que o serviço guarda sobre ele (dados pessoais, sessões, dispositivos confiáveis, códigos de backup, passkeys, auditoria) ou exclui a conta (exige senha atual, mesma fricção da troca de senha)",
+      "Autoatendimento LGPD: POST /api/auth/minha-conta/exportar e DELETE /api/auth/minha-conta — o próprio titular exporta os dados que o serviço guarda sobre ele (dados pessoais, sessões, dispositivos confiáveis, códigos de backup, passkeys, auditoria) ou exclui a conta; os dois exigem a senha atual + CSRF + rate limit (o export virou POST porque o arquivo traz IP/geolocalização/user-agents)",
       "E-mails de segurança: dispositivo novo, MFA ativado/desativado, senha alterada, códigos de backup regenerados, reuso de refresh token detectado, viagem impossível (login em país diferente do último, tempo curto demais pra ser real)",
     ],
   },
@@ -103,7 +103,8 @@ export const concluido: GrupoConcluido[] = [
     categoria: "Auditoria & operação",
     itens: [
       "Logs de auditoria (login sucesso/falha, cadastro, logout, IP e user-agent)",
-      "Painel de auditoria para admins (/dashboard/auditoria) — consulta os últimos 200 logs com filtro por evento/e-mail, sem precisar acessar o banco direto",
+      "Painel de auditoria para admins (/dashboard/auditoria) — consulta os últimos 200 logs com filtro por evento/e-mail, atalhos de filtro e exportação em PDF (jsPDF carregado sob demanda), sem precisar acessar o banco direto",
+      "Retenção da trilha de auditoria: o job de limpeza (POST /api/cron/limpar-tokens) poda LogAuditoria além de 365 dias e DesafioMfaConsumido já expirado, com índice em criadoEm pro DELETE não varrer a tabela",
       "Proteção CSRF explícita (double-submit cookie, comparado em tempo constante) em toda mutação autenticada por cookie",
       "Headers de segurança HTTP (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Permissions-Policy)",
       "Job de limpeza de tokens expirados/revogados antigos, protegido por CRON_SECRET (comparado em tempo constante, mesma disciplina do token CSRF)",
@@ -114,7 +115,7 @@ export const concluido: GrupoConcluido[] = [
   {
     categoria: "Serviço de domínio (Django/DRF)",
     itens: [
-      "Valida o mesmo token de acesso (RS256) do Next.js, sem login próprio nem model de usuário",
+      "Valida o mesmo token de acesso (RS256) do Next.js, com `algorithms` fixo e `iss`/`aud`/`exp` obrigatórios, sem login próprio nem model de usuário",
       "Entidades reais (Projeto/Tarefa) isoladas por usuário, mesma proteção CSRF do lado Next.js (double-submit cookie comparado em tempo constante com hmac.compare_digest, igual ao timingSafeEqual do Node)",
       "Postgres compartilhado com o Next.js — database própria no local, schema próprio (dominio) na mesma instância Supabase em produção",
     ],
@@ -124,7 +125,7 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "193 testes: 158 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 29 Django (pytest-django)",
+      "197 testes: 159 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 32 Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
       "Django não carrega .env na Vercel (load_dotenv só fora da plataforma) e .vercelignore mantém o arquivo fora do bundle — sem isso o serviço subia com DEBUG=True em produção",
     ],
@@ -195,9 +196,37 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "separar-ratelimit-auditoria",
     titulo: "Separar o contador de rate limit da trilha de auditoria",
     descricao:
-      "`src/lib/rateLimit.ts` conta linhas de `LogAuditoria` — a mesma tabela é trilha de auditoria (append-only, LGPD), contador de rate limit E detector de dispositivo novo. O job de limpeza não toca em `LogAuditoria`, então ela só cresce, e todo login/cadastro/reset roda um `count()` contra ela. Contador próprio com TTL + retenção/rollup da auditoria (a tabela `DesafioMfaConsumido` também nunca é limpa).",
+      "`src/lib/rateLimit.ts` conta linhas de `LogAuditoria` — a mesma tabela é trilha de auditoria (append-only, LGPD), contador de rate limit E detector de dispositivo novo. **Feito em parte** (2026-08-31): o job de limpeza agora poda `LogAuditoria` além de 365 dias e `DesafioMfaConsumido` já expirado, com índice `criadoEm` novo pro DELETE não varrer a tabela. **Falta** o contador de rate limit com TTL próprio (hoje ainda é `count()` sobre `LogAuditoria` a cada login/cadastro/reset).",
     categoria: "Infraestrutura",
     prioridade: "media",
+    status: "pendente",
+  },
+  {
+    id: "varredura-seguranca-2026-08",
+    titulo: "Varredura de segurança — itens de média/baixa",
+    descricao:
+      "Export LGPD (`POST /api/auth/minha-conta/exportar`) passou a exigir a senha atual + CSRF + rate limit (era GET só com cookie, mas o arquivo traz IP/geo/UA + 500 eventos). `esqueci-senha` ganhou limite por e-mail (3/h) sem quebrar a resposta anti-enumeração. Access token agora carrega `iss`/`aud`, validados no Next.js e no Django (`options={require:[exp,iss,aud]}`). CSP com `object-src 'none'` + `upgrade-insecure-requests`. Retenção da auditoria (ver item acima). Export de auditoria em PDF pra admins (jsPDF, carregado sob demanda).",
+    categoria: "Segurança",
+    prioridade: "media",
+    status: "feito",
+    concluidoEm: "2026-08-31",
+  },
+  {
+    id: "csp-nonce",
+    titulo: "CSP sem 'unsafe-inline' (nonce ou SRI)",
+    descricao:
+      "`script-src` ainda tem `'unsafe-inline'`. O nonce por request (via proxy.ts) força renderização dinâmica em TODAS as páginas — perde a otimização estática de `/`, `/login`, `/cadastro`, `/roadmap` e o cache de CDN. O SRI hash-based é experimental (\"may change or be removed\"). Adiado até valer o custo; o resto do CSP (default-src, frame-ancestors, base-uri, form-action, object-src, sem unsafe-eval em prod) já é estrito.",
+    categoria: "Segurança",
+    prioridade: "baixa",
+    status: "pendente",
+  },
+  {
+    id: "cadastro-enumeracao",
+    titulo: "Cadastro sem enumeração de e-mail",
+    descricao:
+      "`POST /api/auth/cadastro` retorna 409 \"e-mail já cadastrado\" — revela quais e-mails têm conta. Login e recuperação de senha já são anti-enumeração; o cadastro fica assim de propósito por enquanto: a alternativa (resposta genérica + e-mail \"alguém tentou criar conta com seu endereço\") tem custo de UX real pra quem esqueceu que já tem conta, e o ganho é marginal já que os fluxos que importam não enumeram.",
+    categoria: "Segurança",
+    prioridade: "baixa",
     status: "pendente",
   },
   {

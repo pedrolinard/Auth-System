@@ -29,6 +29,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Não autorizado." }, { status: 401 });
   }
 
-  const removidos = await limparTokensExpirados();
-  return NextResponse.json({ removidos });
+  const resultado = await limparTokensExpirados();
+  // `removidos` continua sendo o total (compat com quem só olha o número);
+  // o detalhamento por tabela vai junto pra observabilidade do job.
+  return NextResponse.json({
+    removidos: resultado.tokens + resultado.auditoria + resultado.desafiosMfa,
+    detalhe: resultado,
+  });
 }

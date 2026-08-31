@@ -15,8 +15,20 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     await apagarUsuariosTeste(emailsCriados);
   });
 
+  async function exportar(cabecalhos: Record<string, string>, senha: string) {
+    return fetch(`${BASE_URL}/api/auth/minha-conta/exportar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...cabecalhos },
+      body: JSON.stringify({ senha }),
+    });
+  }
+
   it("sem autenticação retorna 401 tanto pra exportar quanto pra excluir", async () => {
-    const respostaExportar = await fetch(`${BASE_URL}/api/auth/minha-conta`);
+    const respostaExportar = await fetch(`${BASE_URL}/api/auth/minha-conta/exportar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ senha: "qualquer" }),
+    });
     expect(respostaExportar.status).toBe(401);
 
     const respostaExcluir = await fetch(`${BASE_URL}/api/auth/minha-conta`, {
@@ -27,14 +39,21 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     expect(respostaExcluir.status).toBe(401);
   });
 
+  it("exige a senha atual pra exportar (senha errada → 401)", async () => {
+    const usuario = await criarUsuarioTeste("minha-conta-exportar-senha");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const resposta = await exportar(cabecalhos, "SenhaErrada999!");
+    expect(resposta.status).toBe(401);
+  });
+
   it("exporta os próprios dados sem vazar hash de senha nem segredo de MFA", async () => {
     const usuario = await criarUsuarioTeste("minha-conta-exportar");
     emailsCriados.push(usuario.email);
     const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
 
-    const resposta = await fetch(`${BASE_URL}/api/auth/minha-conta`, {
-      headers: cabecalhos,
-    });
+    const resposta = await exportar(cabecalhos, usuario.senha);
     expect(resposta.status).toBe(200);
 
     const corpo = await resposta.json();
@@ -66,7 +85,7 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     });
     const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
 
-    const resposta = await fetch(`${BASE_URL}/api/auth/minha-conta`, { headers: cabecalhos });
+    const resposta = await exportar(cabecalhos, usuario.senha);
     expect(resposta.status).toBe(200);
     const corpo = await resposta.json();
 

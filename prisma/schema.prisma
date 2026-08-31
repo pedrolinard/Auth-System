@@ -187,5 +187,8 @@ model LogAuditoria {
   // ataque distribuído mirando um único e-mail a partir de vários IPs, que
   // nenhum limite por IP isolado detectaria.
   @@index([evento, email, criadoEm])
+  // Poda de retenção (LGPD): o job de limpeza apaga registros com mais de N
+  // dias — sem este índice o DELETE varre a tabela inteira.
+  @@index([criadoEm])
   @@map("logs_auditoria")
 }

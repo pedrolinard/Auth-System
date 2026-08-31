@@ -37,6 +37,10 @@ const CSP = [
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
+  // Explícito em vez de herdar de default-src: nenhum plugin Flash/applet.
+  "object-src 'none'",
+  // Qualquer sub-recurso http:// numa página https:// é reescrito pra https.
+  "upgrade-insecure-requests",
 ].join("; ");
 
 const nextConfig: NextConfig = {

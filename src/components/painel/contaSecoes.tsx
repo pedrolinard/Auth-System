@@ -84,16 +84,22 @@ export function SecaoAlterarEmail() {
 }
 
 export function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => void }) {
+  const [confirmandoExport, setConfirmandoExport] = useState(false);
+  const [senhaExport, setSenhaExport] = useState("");
   const [exportando, setExportando] = useState(false);
+  const [erroExport, setErroExport] = useState<string | null>(null);
+
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [senha, setSenha] = useState("");
   const [excluindo, setExcluindo] = useState(false);
   const [erroExcluir, setErroExcluir] = useState<string | null>(null);
 
-  async function aoExportar() {
+  async function aoExportar(evento: React.FormEvent) {
+    evento.preventDefault();
+    setErroExport(null);
     setExportando(true);
     try {
-      const dados = await exportarMeusDados();
+      const dados = await exportarMeusDados(senhaExport);
       const blob = new Blob([JSON.stringify(dados, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -101,9 +107,11 @@ export function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => vo
       link.download = "meus-dados.json";
       link.click();
       URL.revokeObjectURL(url);
+      setConfirmandoExport(false);
+      setSenhaExport("");
       notificar.sucesso("Baixamos o arquivo com seus dados.");
     } catch (erroCapturado) {
-      notificar.erro(
+      setErroExport(
         erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra exportar agora.",
       );
     } finally {
@@ -136,13 +144,56 @@ export function SecaoDadosDaConta({ aoExcluirConta }: { aoExcluirConta: () => vo
 
       <div className="flex flex-col gap-2">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          O arquivo traz perfil, sessões, dispositivos confiáveis e histórico de segurança,
-          em JSON.
+          O arquivo traz perfil, sessões, dispositivos confiáveis e histórico de segurança
+          (IP e localização inclusos), em JSON — por isso pedimos sua senha antes.
         </p>
-        <button onClick={aoExportar} disabled={exportando} className="btn-secondary gap-1.5 self-start">
-          <Download className="h-4 w-4" aria-hidden="true" />
-          {exportando ? "Exportando..." : "Exportar meus dados"}
-        </button>
+
+        {!confirmandoExport && (
+          <button
+            onClick={() => setConfirmandoExport(true)}
+            className="btn-secondary gap-1.5 self-start"
+          >
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Exportar meus dados
+          </button>
+        )}
+
+        {confirmandoExport && (
+          <form onSubmit={aoExportar} className="mt-1 flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="senhaExport" className="text-sm text-zinc-600 dark:text-zinc-400">
+                Digite sua senha atual para baixar o arquivo
+              </label>
+              <CampoSenha
+                id="senhaExport"
+                value={senhaExport}
+                onChange={setSenhaExport}
+                autoComplete="current-password"
+              />
+            </div>
+            <AvisoErro>{erroExport}</AvisoErro>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={exportando || !senhaExport}
+                className="btn-primary-sm"
+              >
+                {exportando ? "Exportando..." : "Confirmar e baixar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmandoExport(false);
+                  setSenhaExport("");
+                  setErroExport(null);
+                }}
+                className="btn-secondary-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       <div className="flex flex-col gap-2 rounded-lg border border-red-500/20 bg-red-500/[.04] p-4">

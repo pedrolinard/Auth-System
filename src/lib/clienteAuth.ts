@@ -240,9 +240,12 @@ export async function entrarComPasskey() {
   return corpoConfirmar;
 }
 
-export async function exportarMeusDados(): Promise<unknown> {
-  const resposta = await fetch("/api/auth/minha-conta", {
+export async function exportarMeusDados(senha: string): Promise<unknown> {
+  const resposta = await fetch("/api/auth/minha-conta/exportar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
     credentials: "include",
+    body: JSON.stringify({ senha }),
   });
   const corpo = await resposta.json();
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao exportar os dados da conta."));

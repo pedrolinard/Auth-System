@@ -14,6 +14,8 @@ describe("Headers de segurança HTTP", () => {
     expect(resposta.headers.get("strict-transport-security")).toContain("max-age=");
     expect(resposta.headers.get("permissions-policy")).toContain("camera=()");
     expect(resposta.headers.get("content-security-policy")).toContain("default-src 'self'");
+    expect(resposta.headers.get("content-security-policy")).toContain("object-src 'none'");
+    expect(resposta.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
     // Sem Report-Only: a CSP já foi validada no navegador (fontes, QR code do
     // MFA, HMR do Turbopack) e enforcing é estritamente melhor que
     // report-only quando já se sabe que a política não quebra o app.
