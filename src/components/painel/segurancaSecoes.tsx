@@ -397,8 +397,10 @@ export function SecaoPasskeys() {
               key={passkey.id}
               className="flex flex-col gap-2 rounded-lg border border-black/[.06] bg-black/[.02] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[.06] dark:bg-white/[.03]"
             >
-              <div className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-                <span className="font-medium text-foreground">{passkey.nome || "Passkey sem nome"}</span>
+              <div className="flex min-w-0 flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+                <span className="truncate font-medium text-foreground">
+                  {passkey.nome || "Passkey sem nome"}
+                </span>
                 <span>Criada em {new Date(passkey.criadoEm).toLocaleString("pt-BR")}</span>
                 <span>
                   {passkey.ultimoUsoEm
@@ -545,14 +547,16 @@ export function SecaoSessoes({ aoRevogarAtual }: { aoRevogarAtual: () => void })
             return (
               <li
                 key={sessao.id}
-                className="flex flex-col gap-3 rounded-lg border border-black/[.06] bg-black/[.02] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[.06] dark:bg-white/[.03]"
+                className="flex min-w-0 flex-col gap-3 rounded-lg border border-black/[.06] bg-black/[.02] p-3 sm:flex-row sm:items-center sm:justify-between dark:border-white/[.06] dark:bg-white/[.03]"
               >
-                <div className="flex items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-400">
+                <div className="flex min-w-0 items-start gap-2.5 text-xs text-zinc-600 dark:text-zinc-400">
                   <Icone className="mt-0.5 h-4 w-4 shrink-0 text-zinc-400" aria-hidden="true" />
-                  <div className="flex flex-col gap-1">
+                  <div className="flex min-w-0 flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="font-medium text-foreground">{info.rotulo}</span>
-                      <span>{sessao.localizacao ?? "Localização desconhecida"}</span>
+                      <span className="min-w-0 break-words">
+                        {sessao.localizacao ?? "Localização desconhecida"}
+                      </span>
                       {sessao.atual && (
                         <span className="whitespace-nowrap rounded-full bg-[var(--accent-wash)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--accent)]">
                           esta sessão

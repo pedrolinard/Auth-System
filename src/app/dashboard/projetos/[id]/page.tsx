@@ -119,7 +119,7 @@ export default function PaginaProjeto() {
 
   return (
     <div className="flex flex-1 flex-col items-center gap-6 px-6 py-10">
-      <div className="flex w-full max-w-lg flex-col gap-4">
+      <div className="flex w-full min-w-0 max-w-lg flex-col gap-4">
         <Link
           href="/dashboard/projetos"
           className="flex items-center gap-1.5 self-start text-sm text-zinc-500 transition-colors hover:text-foreground dark:text-zinc-400"
@@ -188,7 +188,7 @@ export default function PaginaProjeto() {
             {tarefas.map((tarefa) => (
               <li
                 key={tarefa.id}
-                className="card-surface flex items-center justify-between gap-3 p-4"
+                className="card-surface flex min-w-0 items-center gap-3 p-4"
               >
                 <div className="min-w-0 flex-1">
                   <p

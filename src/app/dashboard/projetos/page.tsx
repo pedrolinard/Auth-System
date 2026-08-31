@@ -72,7 +72,7 @@ export default function PaginaProjetos() {
 
   return (
     <div className="flex flex-1 flex-col items-center gap-6 px-6 py-10">
-      <div className="flex w-full max-w-lg flex-col gap-4">
+      <div className="flex w-full min-w-0 max-w-lg flex-col gap-4">
         <div className="flex flex-col gap-1">
           <span className="eyebrow text-zinc-500 dark:text-zinc-500">Domínio</span>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">Projetos</h1>
@@ -122,11 +122,11 @@ export default function PaginaProjetos() {
             {projetos.map((projeto) => (
               <li
                 key={projeto.id}
-                className="card-surface group flex items-center justify-between gap-3 p-4 transition-transform duration-150 hover:-translate-y-0.5"
+                className="card-surface group flex min-w-0 items-center gap-3 p-4 transition-transform duration-150 hover:-translate-y-0.5"
               >
                 <Link
                   href={`/dashboard/projetos/${projeto.id}`}
-                  className="flex flex-1 items-center gap-3 text-sm text-foreground"
+                  className="flex min-w-0 flex-1 items-center gap-3 text-sm text-foreground"
                 >
                   <span className="chip-secao">
                     <FolderKanban className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
