@@ -134,7 +134,7 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Login sem senha via @simplewebauthn — resistente a phishing, complementa a senha (que continua funcionando)",
       "Login por passkey pula o desafio de TOTP separado mesmo com MFA ativado: posse do authenticator + biometria/PIN local já equivale a um segundo fator",
-      "Cadastrar/listar/remover passkeys em /dashboard; login sem digitar e-mail (credencial descobrível)",
+      "Cadastrar/listar/remover passkeys em /dashboard/seguranca; login sem digitar e-mail (credencial descobrível)",
       "Mesmas checagens do login por senha: suspensão, dispositivo novo, viagem impossível, limite de sessões simultâneas",
     ],
   },

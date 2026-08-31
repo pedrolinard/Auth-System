@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import {
   excluirUsuario,
   listarUsuarios,
@@ -92,16 +91,11 @@ export default function PaginaUsuarios() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-6 px-6 py-16">
+    <div className="flex flex-1 flex-col items-center gap-6 px-6 py-10">
       <div className="flex w-full max-w-4xl flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div className="flex flex-col gap-1">
-            <span className="eyebrow text-zinc-500 dark:text-zinc-500">Admin</span>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Usuários</h1>
-          </div>
-          <Link href="/dashboard" className="link-underline text-sm text-zinc-600 dark:text-zinc-400">
-            Voltar ao dashboard
-          </Link>
+        <div className="flex flex-col gap-1">
+          <span className="eyebrow text-zinc-500 dark:text-zinc-500">Admin</span>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Usuários</h1>
         </div>
 
         {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}

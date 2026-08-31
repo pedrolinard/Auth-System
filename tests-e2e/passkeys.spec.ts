@@ -36,6 +36,10 @@ test.describe("Passkeys (WebAuthn) — fluxo completo via virtual authenticator"
     await page.getByRole("button", { name: "Entrar", exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
 
+    // Passkeys agora vivem na aba Segurança do painel, não na visão geral.
+    await page.getByRole("link", { name: "Segurança" }).click();
+    await expect(page).toHaveURL(/\/dashboard\/seguranca$/);
+
     await page.getByPlaceholder("ex.: Touch ID do MacBook").fill("Passkey de teste");
     await page.getByRole("button", { name: "Adicionar passkey" }).click();
     await expect(page.getByText("Passkey de teste")).toBeVisible();
