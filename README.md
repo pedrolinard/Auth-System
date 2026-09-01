@@ -894,16 +894,21 @@ boot por conta própria (`throw` em `src/lib/token.ts`).
 
 ### Deploy (Vercel)
 
-O sistema está em produção como dois projetos Vercel separados, cada um com
-seu próprio Postgres provisionado via Marketplace e segredos próprios
-(gerados exclusivamente para produção, diferentes dos do `.env` local):
-`auth-gateway` usa **Supabase** (Postgres, session pooler na porta 5432 —
-serve tanto o `prisma migrate deploy` do build quanto o runtime); o
-`auth-gateway-django` continua na **Neon**. A `DATABASE_URL` do
-`auth-gateway` traz `sslmode=no-verify`: a cadeia de certificados do pooler
-do Supabase não encadeia numa CA pública que o driver `pg` (usado pelo
-`@prisma/adapter-pg`) confie por padrão, então a verificação de CA é
-desligada (a conexão continua cifrada por TLS).
+O sistema está em produção como dois projetos Vercel separados, com
+segredos próprios (gerados exclusivamente para produção, diferentes dos do
+`.env` local), ambos na **mesma instância Supabase** (Postgres, session
+pooler na porta 5432 — serve tanto o `prisma migrate deploy`/`migrate` do
+build quanto o runtime): `auth-gateway` no schema `public`, `auth-gateway-django`
+no schema próprio `dominio` (via `DATABASE_SCHEMA` → `search_path`, ver
+`django/config/settings.py`) — sem FK entre os dois serviços, só o claim
+`sub` do JWT como referência opaca de usuário. A `DATABASE_URL` de cada
+projeto traz `sslmode=no-verify`: a cadeia de certificados do pooler do
+Supabase não encadeia numa CA pública que o driver Postgres confie por
+padrão, então a verificação de CA é desligada (a conexão continua cifrada
+por TLS). As integrações Neon que cada projeto mantinha como rollback
+pós-migração foram desconectadas em 2026-09-01 (`vercel integration-resource
+disconnect`) depois de confirmado que o Supabase estava estável — os bancos
+Neon em si não foram excluídos, só o link com os projetos Vercel.
 
 | Projeto | Root Directory | URL |
 | ------- | --------------- | --- |

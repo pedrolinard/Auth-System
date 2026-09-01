@@ -4,7 +4,7 @@
 >
 > Atualizado em 2026-08-31 (varredura de segurança — 1ª leva: senha na troca de e-mail, `userVerification: required` nas passkeys, `.max` no nome, CSP libera Rollbar, hardening do Django, upgrade de deps com CVE. 2ª leva: export LGPD exige senha + vira POST, limite por e-mail no `esqueci-senha`, `iss`/`aud` no access token, retenção da auditoria, CSP com `object-src 'none'`, export de auditoria em PDF). Contagens de teste: **197 no total** — 159 Vitest + 6 E2E Playwright + 32 Django. A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
 >
-> Atualizado em 2026-09-01 (Turnstile ativado em produção com chaves reais da Cloudflare; corrigido também um `.vercelignore` desatualizado que fazia `vercel deploy` local subir `node_modules`/`.next` inteiros por ignorar o `.gitignore`. Depois: contador de rate limit dedicado — tabela `limites_taxa` substitui o `count()` sobre `LogAuditoria`. Depois: observabilidade no Django — recurso Rollbar próprio via Vercel Marketplace + `RollbarNotifierMiddleware`, fechando o último item pendente da varredura de 08-31 que não era um trade-off deliberado).
+> Atualizado em 2026-09-01 (Turnstile ativado em produção com chaves reais da Cloudflare; corrigido também um `.vercelignore` desatualizado que fazia `vercel deploy` local subir `node_modules`/`.next` inteiros por ignorar o `.gitignore`. Depois: contador de rate limit dedicado — tabela `limites_taxa` substitui o `count()` sobre `LogAuditoria`. Depois: observabilidade no Django — recurso Rollbar próprio via Vercel Marketplace + `RollbarNotifierMiddleware`, fechando o último item pendente da varredura de 08-31 que não era um trade-off deliberado. Depois: integrações Neon desconectadas dos dois projetos (rollback pós-migração pro Supabase, confirmado estável) — achado no processo: a seção "Deploy (Vercel)" do `README.md` ainda dizia que o Django "continua na Neon", desatualizada desde a migração de 08-29; corrigida).
 
 ## ✅ Feito
 
@@ -43,7 +43,7 @@
 - Índice composto `(evento, ip, criadoEm)` em `LogAuditoria` — a consulta do `rateLimit.ts` roda em todo login/MFA/recuperação de senha e sem índice fazia table scan em caminho crítico de auth
 
 ### Deploy em produção (Vercel)
-- Dois projetos Vercel independentes, cada um com Postgres próprio via Marketplace (Neon): `auth-gateway` (Next.js, https://auth-gateway-kappa.vercel.app) e `auth-gateway-django` (Django, https://auth-gateway-django.vercel.app)
+- Dois projetos Vercel independentes na mesma instância Supabase (schemas separados, sem FK entre eles): `auth-gateway` (Next.js, https://auth-gateway-kappa.vercel.app, schema `public`) e `auth-gateway-django` (Django, https://auth-gateway-django.vercel.app, schema `dominio`) — provisionado originalmente via Neon, migrado em 2026-08-29, integrações Neon desconectadas em 2026-09-01
 - Segredos de produção (chaves RS256, JWT secrets, `CRON_SECRET`, `DJANGO_SECRET_KEY`) gerados exclusivamente para produção — isolados do `.env` local
 - `django/vercel.json` declara `config/wsgi.py` como entrypoint da function
 - `DJANGO_SERVICE_URL` no projeto Next.js aponta para o projeto Django, testado ponta a ponta em produção (cadastro → login → rewrite autenticado até o Django)

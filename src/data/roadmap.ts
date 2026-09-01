@@ -265,10 +265,11 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "desconectar-neon",
     titulo: "Desconectar as integrações Neon",
     descricao:
-      "`auth-gateway-db` e `auth-gateway-django-db` seguem conectadas como rollback pós-migração. Remover depois de confirmar o Supabase — enquanto conectadas, uma rotação de credencial da Neon re-injeta DATABASE_URL e sobrescreve a do Supabase.",
+      "`auth-gateway-db` e `auth-gateway-django-db` ficaram conectadas como rollback pós-migração pro Supabase — enquanto conectadas, uma rotação de credencial da Neon re-injetava DATABASE_URL e sobrescrevia a do Supabase. Desconectadas (não excluídas — os bancos Neon continuam existindo, só pararam de ficar linkados aos projetos Vercel) via `vercel integration-resource disconnect`, confirmado sem quebrar nada (cadastro → login → rota do Django, ponta a ponta em produção).",
     categoria: "Infraestrutura",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-09-01",
   },
   {
     id: "django-csrf-constant-time",
