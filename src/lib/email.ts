@@ -86,6 +86,44 @@ export async function enviarEmailRedefinicaoSenha(destinatario: string, link: st
   }
 }
 
+export async function enviarEmailConviteOrganizacao(
+  destinatario: string,
+  link: string,
+  dados: { organizacaoNome: string; convidadoPorNome: string },
+) {
+  const organizacaoNome = escaparHtml(dados.organizacaoNome);
+  const convidadoPorNome = escaparHtml(dados.convidadoPorNome);
+
+  if (!resend) {
+    console.log(
+      `[dev] Convite de ${convidadoPorNome} para ${destinatario} entrar em "${organizacaoNome}": ${link}`,
+    );
+    return;
+  }
+
+  try {
+    const { error } = await resend.emails.send({
+      from: REMETENTE,
+      to: destinatario,
+      subject: `${convidadoPorNome} te convidou para "${organizacaoNome}"`,
+      html: `
+        <p><strong>${convidadoPorNome}</strong> te convidou para entrar na organização <strong>${organizacaoNome}</strong>.</p>
+        <p><a href="${link}">${link}</a></p>
+        <p style="color:#71717a;font-size:12px">O link expira em 7 dias. Se você não esperava este convite, pode ignorar este e-mail.</p>
+      `,
+    });
+
+    // Best-effort, mesmo raciocínio dos outros links por e-mail: uma falha
+    // aqui não deve estourar a resposta da rota (o convite já foi criado, só
+    // não chegou por e-mail).
+    if (error) {
+      console.error("Falha ao enviar e-mail de convite de organização:", error);
+    }
+  } catch (erro) {
+    console.error("Falha ao enviar e-mail de convite de organização:", erro);
+  }
+}
+
 // Notificações de segurança abaixo: nenhuma delas pode derrubar o fluxo
 // principal (login, MFA, troca de senha) — todas seguem o mesmo padrão
 // best-effort (try/catch + log) das duas funções acima, mesmo sem link

@@ -6,8 +6,7 @@ import type { Prisma } from "@/generated/prisma/client";
 // duplicada de propósito, não importada de lá: aquele script roda em node
 // puro fora do TypeScript/Next.js (mesmo motivo já documentado em
 // rotacionar-chave-mfa.mjs), não dá pra importar um módulo daqui.
-function gerarSlugBase(nome: string | undefined, email: string): string {
-  const fonte = nome?.trim() ? nome : email.split("@")[0];
+function gerarSlugBase(fonte: string): string {
   const normalizado = fonte
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // remove acentos
@@ -40,12 +39,29 @@ export async function criarOrganizacaoPessoal(
   tx: Prisma.TransactionClient,
   usuario: { id: string; nome: string; email: string },
 ) {
-  const slug = await gerarSlugUnico(tx, gerarSlugBase(usuario.nome, usuario.email));
+  const fonteSlug = usuario.nome.trim() || usuario.email.split("@")[0];
+  const slug = await gerarSlugUnico(tx, gerarSlugBase(fonteSlug));
   const organizacao = await tx.organizacao.create({
     data: { nome: `${usuario.nome} (pessoal)`, slug },
   });
   await tx.membro.create({
     data: { organizacaoId: organizacao.id, usuarioId: usuario.id, papel: "dono" },
+  });
+  return organizacao;
+}
+
+// Cria uma organização NOVA (não a pessoal automática do cadastro) —
+// usada por POST /api/auth/organizacoes, quando o usuário já autenticado
+// decide criar mais uma (ex.: separar trabalho de projetos pessoais).
+export async function criarOrganizacao(
+  tx: Prisma.TransactionClient,
+  nome: string,
+  donoId: string,
+) {
+  const slug = await gerarSlugUnico(tx, gerarSlugBase(nome));
+  const organizacao = await tx.organizacao.create({ data: { nome, slug } });
+  await tx.membro.create({
+    data: { organizacaoId: organizacao.id, usuarioId: donoId, papel: "dono" },
   });
   return organizacao;
 }

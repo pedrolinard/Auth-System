@@ -10,11 +10,13 @@ import {
   ShieldCheck,
   Users,
   ScrollText,
+  Building2,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
 import { Marca } from "@/components/Marca";
-import { obterUsuarioAtual, sair } from "@/lib/clienteAuth";
+import { obterUsuarioAtual, sair, type UsuarioAtual } from "@/lib/clienteAuth";
+import { entrarNaOrganizacao, listarOrganizacoes, type Organizacao } from "@/lib/clienteOrganizacao";
 import { notificar } from "@/components/ui/Toaster";
 
 type ItemNav = {
@@ -24,16 +26,21 @@ type ItemNav = {
   // exato: só marca ativo na rota idêntica (ex.: "Visão geral" em /dashboard).
   // caso contrário, marca ativo em qualquer sub-rota (ex.: /dashboard/projetos/3).
   exato?: boolean;
-  admin?: boolean;
+  // "organizacao": só dono/admin da organização ATIVA (papelOrganizacao).
+  // "sistema": só quem tem o papel de sistema (Usuario.papel) — instalação
+  // inteira, não uma organização específica. Eixos diferentes, ver
+  // src/lib/rbacOrganizacao.ts.
+  restrito?: "organizacao" | "sistema";
 };
 
 const ITENS: ItemNav[] = [
   { href: "/dashboard", rotulo: "Visão geral", icone: LayoutGrid, exato: true },
   { href: "/dashboard/projetos", rotulo: "Projetos", icone: FolderKanban },
+  { href: "/dashboard/organizacoes", rotulo: "Organizações", icone: Building2 },
   { href: "/dashboard/conta", rotulo: "Conta", icone: UserRound },
   { href: "/dashboard/seguranca", rotulo: "Segurança", icone: ShieldCheck },
-  { href: "/dashboard/usuarios", rotulo: "Usuários", icone: Users, admin: true },
-  { href: "/dashboard/auditoria", rotulo: "Auditoria", icone: ScrollText, admin: true },
+  { href: "/dashboard/usuarios", rotulo: "Usuários", icone: Users, restrito: "organizacao" },
+  { href: "/dashboard/auditoria", rotulo: "Auditoria", icone: ScrollText, restrito: "sistema" },
 ];
 
 // Barra de navegação persistente do painel — montada pra todas as telas de
@@ -42,18 +49,37 @@ const ITENS: ItemNav[] = [
 export function NavPainel() {
   const pathname = usePathname();
   const router = useRouter();
-  const [ehAdmin, setEhAdmin] = useState(false);
+  const [usuario, setUsuario] = useState<UsuarioAtual | null>(null);
+  const [organizacoes, setOrganizacoes] = useState<Organizacao[] | null>(null);
+  const [trocando, setTrocando] = useState(false);
   const [saindo, setSaindo] = useState(false);
 
   useEffect(() => {
     let ativo = true;
-    obterUsuarioAtual().then((usuario) => {
-      if (ativo) setEhAdmin(usuario?.papel === "admin");
+    obterUsuarioAtual().then((atual) => {
+      if (!ativo) return;
+      setUsuario(atual);
+      if (atual) listarOrganizacoes().then((orgs) => ativo && setOrganizacoes(orgs));
     });
     return () => {
       ativo = false;
     };
   }, []);
+
+  async function aoTrocarOrganizacao(id: string) {
+    if (!usuario || id === usuario.organizacaoId) return;
+    setTrocando(true);
+    try {
+      await entrarNaOrganizacao(id);
+      // O cookie da sessão já mudou — recarrega a página inteira pra todo
+      // estado em memória (dados de projetos, membros, etc.) refletir a
+      // organização nova, não só o valor deste componente.
+      window.location.assign(pathname);
+    } catch {
+      notificar.erro("Não deu pra trocar de organização agora.");
+      setTrocando(false);
+    }
+  }
 
   async function aoSair() {
     setSaindo(true);
@@ -66,7 +92,15 @@ export function NavPainel() {
     }
   }
 
-  const itensVisiveis = ITENS.filter((item) => !item.admin || ehAdmin);
+  const ehAdminOrganizacao =
+    usuario?.papelOrganizacao === "dono" || usuario?.papelOrganizacao === "admin";
+  const ehAdminSistema = usuario?.papel === "admin";
+
+  const itensVisiveis = ITENS.filter((item) => {
+    if (item.restrito === "organizacao") return ehAdminOrganizacao;
+    if (item.restrito === "sistema") return ehAdminSistema;
+    return true;
+  });
 
   return (
     <header className="sticky top-0 z-30 border-b border-black/[.08] bg-white/85 backdrop-blur-md dark:border-white/[.1] dark:bg-black/70">
@@ -77,6 +111,22 @@ export function NavPainel() {
             Painel
           </span>
         </Link>
+
+        {organizacoes && organizacoes.length > 1 && usuario && (
+          <select
+            value={usuario.organizacaoId}
+            onChange={(e) => aoTrocarOrganizacao(e.target.value)}
+            disabled={trocando}
+            aria-label="Organização ativa"
+            className="max-w-[10rem] shrink-0 truncate rounded-full border border-black/[.08] bg-transparent px-3 py-1.5 text-sm text-foreground disabled:opacity-50 dark:border-white/[.1]"
+          >
+            {organizacoes.map((org) => (
+              <option key={org.id} value={org.id}>
+                {org.nome}
+              </option>
+            ))}
+          </select>
+        )}
 
         <nav className="-mx-1 flex flex-1 items-center gap-0.5 overflow-x-auto px-1">
           {itensVisiveis.map((item) => {

@@ -143,3 +143,24 @@ export const esquemaSuspensao = z.object({
   dias: z.number().int().positive().max(3650, { error: "Prazo muito longo." }).optional(),
   motivo: z.string().trim().max(280, { error: "Motivo muito longo." }).optional(),
 });
+
+export const esquemaCriarOrganizacao = z.object({
+  nome: z
+    .string({ error: "Informe o nome da organização." })
+    .trim()
+    .min(2, { error: "O nome deve ter pelo menos 2 caracteres." })
+    .max(80, { error: "O nome é longo demais (máximo de 80 caracteres)." }),
+});
+
+export const esquemaCriarConvite = z.object({
+  email: z.email({ error: "Informe um e-mail válido." }).trim().toLowerCase(),
+  // "dono" fica de fora de propósito — convidar alguém já como dono
+  // equivaleria a uma transferência de titularidade, que merece um fluxo
+  // próprio (confirmação explícita de quem está saindo do posto), não um
+  // convite comum.
+  papel: z.enum(["admin", "membro"], { error: "Papel inválido para convite." }),
+});
+
+export const esquemaAceitarConvite = z.object({
+  token: z.string({ error: "Convite inválido." }).min(1, { error: "Convite inválido." }),
+});

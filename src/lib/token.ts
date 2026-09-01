@@ -41,6 +41,9 @@ const SEGREDO_ALTERACAO_EMAIL = new TextEncoder().encode(
   process.env.JWT_ALTERACAO_EMAIL_SECRET,
 );
 const SEGREDO_PASSKEY = new TextEncoder().encode(process.env.JWT_PASSKEY_SECRET);
+const SEGREDO_CONVITE_ORGANIZACAO = new TextEncoder().encode(
+  process.env.JWT_CONVITE_ORGANIZACAO_SECRET,
+);
 
 export const DURACAO_TOKEN_ACESSO = "15m";
 export const DURACAO_TOKEN_ACESSO_SEGUNDOS = 15 * 60;
@@ -68,6 +71,10 @@ export const DURACAO_TOKEN_ALTERACAO_EMAIL = "1h";
 // contando a interação do usuário com o authenticator.
 export const DURACAO_TOKEN_DESAFIO_PASSKEY = "2m";
 export const DURACAO_TOKEN_DESAFIO_PASSKEY_MS = 2 * 60 * 1000;
+// Generoso — é um convite de e-mail, a pessoa pode não abrir a caixa de
+// entrada no mesmo dia. ConviteOrganizacao.aceitoEm (banco) é o que
+// realmente impede reuso; a expiração do JWT é só um teto.
+export const DURACAO_TOKEN_CONVITE_ORGANIZACAO = "7d";
 
 export type Papel = "usuario" | "admin";
 
@@ -116,6 +123,20 @@ export type PayloadAlteracaoEmail = {
   novoEmail: string;
 };
 
+export type PayloadConviteOrganizacao = {
+  tipo: "convite_organizacao";
+  // Id do ConviteOrganizacao no banco — o JWT sozinho é stateless (como os
+  // outros tokens de link por e-mail), mas convite tem estado real que
+  // precisa persistir (listar pendentes, cancelar antes de aceitar): esse id
+  // é o que liga o token à linha que carrega isso. `email` e `papel` também
+  // vão no claim (não só no banco) pra aceitar-convite não precisar de mais
+  // uma consulta só pra saber o que confirmar.
+  conviteId: string;
+  organizacaoId: string;
+  email: string;
+  papel: PapelOrganizacao;
+};
+
 export type PayloadDesafioPasskey = {
   // Presente só no registro (usuário já autenticado, adicionando uma
   // passkey nova). Ausente no login: com credencial "descobrível" (resident
@@ -137,10 +158,11 @@ if (
   !process.env.JWT_REDEFINICAO_SENHA_SECRET ||
   !process.env.JWT_ALTERACAO_EMAIL_SECRET ||
   !process.env.JWT_PASSKEY_SECRET ||
+  !process.env.JWT_CONVITE_ORGANIZACAO_SECRET ||
   !process.env.MFA_ENCRYPTION_KEY
 ) {
   throw new Error(
-    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET, JWT_MFA_SECRET, JWT_VERIFICACAO_EMAIL_SECRET, JWT_REDEFINICAO_SENHA_SECRET, JWT_ALTERACAO_EMAIL_SECRET, JWT_PASSKEY_SECRET e MFA_ENCRYPTION_KEY precisam estar definidas.",
+    "As variáveis de ambiente JWT_ACCESS_PRIVATE_KEY_B64, JWT_ACCESS_PUBLIC_KEY_B64, JWT_REFRESH_SECRET, JWT_MFA_SECRET, JWT_VERIFICACAO_EMAIL_SECRET, JWT_REDEFINICAO_SENHA_SECRET, JWT_ALTERACAO_EMAIL_SECRET, JWT_PASSKEY_SECRET, JWT_CONVITE_ORGANIZACAO_SECRET e MFA_ENCRYPTION_KEY precisam estar definidas.",
   );
 }
 
@@ -341,6 +363,37 @@ export async function verificarTokenDesafioPasskey(token: string) {
       algorithms: ["HS256"],
     });
     if (payload.tipo !== "passkey_desafio") return null;
+    return payload;
+  } catch (erro) {
+    if (erro instanceof errors.JOSEError) return null;
+    throw erro;
+  }
+}
+
+// Token de convite pra organização: mesma ideia stateless dos outros links
+// por e-mail (verificação, redefinição de senha), com a diferença de também
+// carregar o id da linha ConviteOrganizacao (ver PayloadConviteOrganizacao)
+// — é o que permite cancelar um convite antes de aceito e o que
+// aceitar-convite usa pra marcar aceitoEm (uso único de verdade, não só a
+// expiração do JWT).
+export async function gerarTokenConviteOrganizacao(
+  payload: Omit<PayloadConviteOrganizacao, "tipo">,
+) {
+  return new SignJWT({ ...payload, tipo: "convite_organizacao" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(DURACAO_TOKEN_CONVITE_ORGANIZACAO)
+    .sign(SEGREDO_CONVITE_ORGANIZACAO);
+}
+
+export async function verificarTokenConviteOrganizacao(token: string) {
+  try {
+    const { payload } = await jwtVerify<PayloadConviteOrganizacao>(
+      token,
+      SEGREDO_CONVITE_ORGANIZACAO,
+      { algorithms: ["HS256"] },
+    );
+    if (payload.tipo !== "convite_organizacao") return null;
     return payload;
   } catch (erro) {
     if (erro instanceof errors.JOSEError) return null;

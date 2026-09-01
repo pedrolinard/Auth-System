@@ -20,12 +20,14 @@ export function cabecalhoCsrf(): HeadersInit {
 // As rotas devolvem `detalhes` (saída de Zod `.flatten()`) junto do erro
 // genérico quando a validação falha — sem isso, toda falha de senha/e-mail/
 // nome aparecia como "Dados inválidos." sem dizer qual campo nem por quê.
-type CorpoErro = {
+export type CorpoErro = {
   erro?: string;
   detalhes?: { fieldErrors?: Record<string, string[]> };
 };
 
-function mensagemErro(corpo: CorpoErro, padrao: string): string {
+// Exportado pra clienteOrganizacao.ts reusar — mesmo formato de erro em
+// todas as rotas de auth do Next.js.
+export function mensagemErro(corpo: CorpoErro, padrao: string): string {
   const primeiroCampoComErro = Object.values(corpo.detalhes?.fieldErrors ?? {}).find(
     (mensagens) => mensagens.length > 0,
   );
@@ -293,7 +295,22 @@ export async function sair() {
   });
 }
 
-export async function obterUsuarioAtual(tentouRenovar = false) {
+export type UsuarioAtual = {
+  id: string;
+  nome: string;
+  email: string;
+  criadoEm: string;
+  mfaAtivado: boolean;
+  emailVerificado: boolean;
+  codigosBackupRestantes: number | null;
+  // Papel de SISTEMA (quem opera a instalação inteira) — não confundir com
+  // papelOrganizacao abaixo. Ver src/lib/rbacOrganizacao.ts.
+  papel: "usuario" | "admin";
+  organizacaoId: string;
+  papelOrganizacao: "dono" | "admin" | "membro";
+};
+
+export async function obterUsuarioAtual(tentouRenovar = false): Promise<UsuarioAtual | null> {
   const resposta = await fetch("/api/auth/me", { credentials: "include" });
 
   if (resposta.status === 401 && !tentouRenovar) {

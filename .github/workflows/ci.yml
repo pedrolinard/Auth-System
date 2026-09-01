@@ -39,6 +39,7 @@ jobs:
       JWT_REDEFINICAO_SENHA_SECRET: ci-redefinicao-senha-secret-00000000
       JWT_ALTERACAO_EMAIL_SECRET: ci-alteracao-email-secret-0000000000
       JWT_PASSKEY_SECRET: ci-passkey-secret-00000000000000000000
+      JWT_CONVITE_ORGANIZACAO_SECRET: ci-convite-organizacao-secret-000000
       PASSKEY_RP_ID: localhost
       PASSKEY_RP_NAME: Auth Gateway CI
       PASSKEY_ORIGIN: http://localhost:3100

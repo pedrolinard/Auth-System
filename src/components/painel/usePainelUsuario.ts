@@ -2,22 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { obterUsuarioAtual } from "@/lib/clienteAuth";
+import { obterUsuarioAtual, type UsuarioAtual } from "@/lib/clienteAuth";
 
-export type UsuarioPainel = {
-  id: string;
-  nome: string;
-  email: string;
-  criadoEm: string;
-  mfaAtivado: boolean;
-  emailVerificado: boolean;
-  // Papel de SISTEMA (quem opera a instalação inteira — painel de
-  // auditoria). Não confundir com papelOrganizacao abaixo, que é o que
-  // decide acesso a "Usuários" (gestão de membros).
-  papel: "usuario" | "admin";
-  organizacaoId: string;
-  papelOrganizacao: "dono" | "admin" | "membro";
-};
+// Reexportado com o nome antigo — só pra não quebrar quem já importava daqui
+// (o tipo de verdade vive junto de obterUsuarioAtual em clienteAuth.ts).
+export type UsuarioPainel = UsuarioAtual;
 
 // Guarda compartilhada das telas do painel que exigem o usuário carregado
 // (visão geral, conta, segurança): busca única em /me no mount, redireciona
@@ -25,7 +14,7 @@ export type UsuarioPainel = {
 // usam isto porque já falham nas próprias chamadas de API quando sem sessão.
 export function usePainelUsuario() {
   const router = useRouter();
-  const [usuario, setUsuario] = useState<UsuarioPainel | null>(null);
+  const [usuario, setUsuario] = useState<UsuarioAtual | null>(null);
   const [carregando, setCarregando] = useState(true);
 
   useEffect(() => {
@@ -37,7 +26,7 @@ export function usePainelUsuario() {
           router.replace("/login");
           return;
         }
-        setUsuario(atual as UsuarioPainel);
+        setUsuario(atual);
       })
       .finally(() => {
         if (ativo) setCarregando(false);

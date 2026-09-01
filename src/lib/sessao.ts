@@ -59,12 +59,38 @@ export async function resolverOrganizacaoAtiva(usuarioId: string) {
   return { organizacaoId: membro.organizacaoId, papelOrganizacao: membro.papel };
 }
 
+// Mesma forma de resolverOrganizacaoAtiva, mas pra uma organização
+// ESPECÍFICA em vez da primeira — usado só por POST
+// /api/auth/organizacoes/[id]/entrar (troca de organização). A rota já
+// confere a filiação antes de chamar (pra devolver um 404 limpo); esta
+// checagem aqui é defesa em profundidade, não o único lugar que valida —
+// nunca confia num organizacaoId vindo de fora sem reler o Membro.
+async function obterOrganizacaoOuFalhar(usuarioId: string, organizacaoId: string) {
+  const membro = await prisma.membro.findUnique({
+    where: { organizacaoId_usuarioId: { organizacaoId, usuarioId } },
+    select: { organizacaoId: true, papel: true },
+  });
+  if (!membro) {
+    throw new Error(`Usuário ${usuarioId} não é membro da organização ${organizacaoId}.`);
+  }
+  return { organizacaoId: membro.organizacaoId, papelOrganizacao: membro.papel };
+}
+
 // Emite o par de tokens (acesso + atualização), persiste o hash do token de
 // atualização e seta o cookie httpOnly. Usado tanto pelo login direto quanto
 // pela conclusão do desafio de MFA, para os dois caminhos terminarem no mesmo
-// formato de sessão.
-export async function criarSessao(usuario: UsuarioParaSessao, req: Request) {
-  const { organizacaoId, papelOrganizacao } = await resolverOrganizacaoAtiva(usuario.id);
+// formato de sessão. `organizacaoIdDesejada` é opcional — só a troca de
+// organização passa (todos os outros chamadores continuam pegando a
+// primeira organização do usuário, sem precisar saber que esse parâmetro
+// existe).
+export async function criarSessao(
+  usuario: UsuarioParaSessao,
+  req: Request,
+  organizacaoIdDesejada?: string,
+) {
+  const { organizacaoId, papelOrganizacao } = organizacaoIdDesejada
+    ? await obterOrganizacaoOuFalhar(usuario.id, organizacaoIdDesejada)
+    : await resolverOrganizacaoAtiva(usuario.id);
 
   const tokenAcesso = await gerarTokenAcesso({
     sub: usuario.id,
