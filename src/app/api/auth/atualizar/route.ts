@@ -120,8 +120,10 @@ export async function POST(req: Request) {
   // do Membro (não copia do token antigo) pelo mesmo motivo do IP/UA/geo
   // abaixo — se alguém mudou o papel do usuário nessa organização desde o
   // último login, o token renovado já reflete o valor atual.
-  const organizacaoId =
-    registroToken.organizacaoId ?? (await resolverOrganizacaoAtiva(registroToken.usuarioId)).organizacaoId;
+  let organizacaoId = registroToken.organizacaoId;
+  if (!organizacaoId) {
+    organizacaoId = (await resolverOrganizacaoAtiva(registroToken.usuarioId)).organizacaoId;
+  }
   const membro = await prisma.membro.findUnique({
     where: { organizacaoId_usuarioId: { organizacaoId, usuarioId: registroToken.usuarioId } },
     select: { papel: true },
