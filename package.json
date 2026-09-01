@@ -12,6 +12,7 @@
     "limpeza:tokens": "node -r dotenv/config scripts/limpar-tokens.mjs dotenv_config_path=.env",
     "gerar:chaves-rs256": "node scripts/gerar-chaves-rs256.mjs",
     "rotacionar:chave-mfa": "node -r dotenv/config scripts/rotacionar-chave-mfa.mjs dotenv_config_path=.env",
+    "backfill:organizacoes": "node -r dotenv/config scripts/backfill-organizacoes.mjs dotenv_config_path=.env",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },

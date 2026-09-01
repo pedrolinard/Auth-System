@@ -12,6 +12,7 @@ import {
 import { csrfValido, gerarTokenCsrf } from "@/lib/csrf";
 import { obterGeo } from "@/lib/geo";
 import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
+import { resolverOrganizacaoAtiva } from "@/lib/sessao";
 import {
   gerarTokenAcesso,
   gerarTokenAtualizacao,
@@ -113,6 +114,25 @@ export async function POST(req: Request) {
     return recusarTokenInvalido();
   }
 
+  // Organização da sessão: normalmente já vem salva no próprio token de
+  // atualização (setada em criarSessao); sessões emitidas ANTES da coluna
+  // existir caem no mesmo fallback que uma sessão nova usaria. Relê o papel
+  // do Membro (não copia do token antigo) pelo mesmo motivo do IP/UA/geo
+  // abaixo — se alguém mudou o papel do usuário nessa organização desde o
+  // último login, o token renovado já reflete o valor atual.
+  const organizacaoId =
+    registroToken.organizacaoId ?? (await resolverOrganizacaoAtiva(registroToken.usuarioId)).organizacaoId;
+  const membro = await prisma.membro.findUnique({
+    where: { organizacaoId_usuarioId: { organizacaoId, usuarioId: registroToken.usuarioId } },
+    select: { papel: true },
+  });
+  if (!membro) {
+    // Foi removido da organização (ou ela foi excluída) desde o login —
+    // sessão não faz mais sentido pra essa organização, trata como token
+    // inválido em vez de reemitir acesso a algo que não existe mais.
+    return recusarTokenInvalido();
+  }
+
   // Rotação: revoga o token usado e emite um novo par de tokens. IP/UA/geo
   // são recapturados da requisição de refresh (não copiados do token
   // antigo) pra a lista de sessões refletir onde o dispositivo está agora,
@@ -131,6 +151,7 @@ export async function POST(req: Request) {
         data: {
           tokenHash: hashToken(novoTokenAtualizacao),
           usuarioId: registroToken.usuarioId,
+          organizacaoId,
           expiraEm: novaExpiracao,
           ip: obterIp(req),
           userAgent: req.headers.get("user-agent"),
@@ -152,6 +173,8 @@ export async function POST(req: Request) {
     sub: registroToken.usuario.id,
     email: registroToken.usuario.email,
     papel: registroToken.usuario.papel,
+    organizacaoId,
+    papelOrganizacao: membro.papel,
   });
 
   await definirCookieAtualizacao(novoTokenAtualizacao);

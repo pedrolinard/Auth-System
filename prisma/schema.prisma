@@ -15,6 +15,17 @@ enum Papel {
   admin
 }
 
+// Papel de ORGANIZAÇÃO (dono/admin/membro de uma Organizacao) — separado do
+// Papel de SISTEMA acima (Usuario.papel), que continua existindo pra quem
+// opera a instalação inteira (painel de auditoria, /api/auth/usuarios).
+// Um usuário pode ser "membro" numa organização e "admin" de sistema ao
+// mesmo tempo — são eixos independentes.
+enum PapelOrganizacao {
+  dono
+  admin
+  membro
+}
+
 // Todo campo DateTime deste schema usa @db.Timestamptz — sem essa anotação
 // o Prisma mapeia pra `timestamp` (SEM fuso) no Postgres, que grava só os
 // números "de parede" sob o fuso da sessão (aqui sempre GMT, então o valor
@@ -62,6 +73,9 @@ model Usuario {
   codigosBackup  CodigoBackupMfa[]
   dispositivosConfiaveis DispositivoConfiavel[]
   passkeys       PasskeyCredencial[]
+  // Organizações de que este usuário participa (dono, admin ou membro) —
+  // ver Membro abaixo. Multi-tenant: um usuário pode pertencer a várias.
+  membros        Membro[]
 
   @@map("usuarios")
 }
@@ -71,6 +85,14 @@ model TokenAtualizacao {
   tokenHash    String    @unique
   usuarioId    String
   usuario      Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  // Organização ATIVA desta sessão (a que o access token reemitido em
+  // /api/auth/atualizar carrega no claim organizacaoId) — nullable só pelas
+  // sessões emitidas ANTES desta coluna existir; toda sessão nova (login,
+  // conclusão de MFA, troca de organização) sempre preenche. Sessões velhas
+  // sem organizacaoId expiram sozinhas (refresh token dura no máximo 30
+  // dias), não precisou de backfill como Projeto/Tarefa no Django.
+  organizacaoId String?
+  organizacao   Organizacao? @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
   // IP, User-Agent e geolocalização capturados no momento em que ESTA linha
   // foi criada (login, conclusão de MFA ou rotação em /atualizar) — exibidos
   // na lista de "sessões ativas" pra o usuário reconhecer cada dispositivo.
@@ -86,6 +108,7 @@ model TokenAtualizacao {
   revogadoEm   DateTime? @db.Timestamptz(3)
 
   @@index([usuarioId])
+  @@index([organizacaoId])
   @@map("tokens_atualizacao")
 }
 
@@ -208,4 +231,73 @@ model LimiteTaxa {
 
   @@index([expiraEm])
   @@map("limites_taxa")
+}
+
+// Multi-tenant: uma conta (Usuario) pode pertencer a várias organizações
+// (Membro), cada uma com seus próprios dados (Projeto/Tarefa no Django,
+// isolados por organizacao_id — ver django/tarefas/models.py) e seu próprio
+// papel (dono/admin/membro, PapelOrganizacao). A organização ATIVA de uma
+// sessão vai no claim `organizacaoId` do access token (ver
+// src/lib/token.ts) — trocar de organização reemite os tokens, não troca
+// contexto dentro do mesmo token (ver decisão de design no plano de
+// implementação: o Django só confia no JWT, nunca consulta esta tabela
+// diretamente).
+model Organizacao {
+  id       String   @id @default(cuid())
+  nome     String
+  // Usado em URLs/exibição — único pra não colidir duas organizações com o
+  // mesmo nome (ex.: dois "Acme" viram acme e acme-2).
+  slug     String   @unique
+  criadoEm DateTime @default(now()) @db.Timestamptz(3)
+
+  membros  Membro[]
+  convites ConviteOrganizacao[]
+  sessoes  TokenAtualizacao[]
+
+  @@map("organizacoes")
+}
+
+// Associação usuário<->organização com papel — é a tabela que o RBAC de
+// organização consulta (ver src/lib/rbacOrganizacao.ts). Um par
+// (organizacaoId, usuarioId) só pode existir uma vez: um usuário tem UM
+// papel por organização, não papéis cumulativos.
+model Membro {
+  id            String           @id @default(cuid())
+  organizacaoId String
+  organizacao   Organizacao      @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
+  usuarioId     String
+  usuario       Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  papel         PapelOrganizacao @default(membro)
+  criadoEm      DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@unique([organizacaoId, usuarioId])
+  // Suporta "de quais organizações este usuário é membro" (seletor de
+  // organização, tela de cadastro/login quando há mais de uma).
+  @@index([usuarioId])
+  @@map("membros")
+}
+
+// Convite pendente pra alguém entrar numa organização — token stateless
+// (JWT, mesmo padrão de gerarTokenVerificacaoEmail/gerarTokenRedefinicaoSenha
+// em token.ts) mandado por e-mail; esta linha existe só pra listar convites
+// pendentes na UI e pra invalidar (aceitoEm) o reuso do mesmo convite depois
+// de aceito — o token em si não é persistido aqui (mesma lógica dos outros
+// tokens stateless do projeto: o jti/claims bastam pra validar).
+model ConviteOrganizacao {
+  id            String           @id @default(cuid())
+  organizacaoId String
+  organizacao   Organizacao      @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
+  email         String
+  papel         PapelOrganizacao @default(membro)
+  // Quem convidou — sem relation pra Usuario de propósito (mesmo padrão do
+  // autorId em LogAuditoria): não queremos que excluir a conta de quem
+  // convidou apague o histórico do convite.
+  criadoPorId   String
+  aceitoEm      DateTime?        @db.Timestamptz(3)
+  criadoEm      DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([organizacaoId])
+  // Suporta "convites pendentes pra este e-mail" na tela de cadastro/login.
+  @@index([email])
+  @@map("convites_organizacao")
 }

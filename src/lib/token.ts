@@ -71,10 +71,22 @@ export const DURACAO_TOKEN_DESAFIO_PASSKEY_MS = 2 * 60 * 1000;
 
 export type Papel = "usuario" | "admin";
 
+// Papel dentro da ORGANIZAÇÃO ativa da sessão — eixo separado do `papel` de
+// sistema acima (Usuario.papel, inalterado). Um usuário pode ser "membro"
+// numa organização e "admin" de sistema ao mesmo tempo.
+export type PapelOrganizacao = "dono" | "admin" | "membro";
+
 export type PayloadTokenAcesso = {
   sub: string;
   email: string;
   papel: Papel;
+  // Organização ATIVA desta sessão — toda rota que opera em dados de
+  // organização (projetos/tarefas no Django, gestão de membros) usa este
+  // claim. Trocar de organização reemite o token (ver
+  // POST /api/auth/organizacoes/[id]/entrar), não muda o claim de um token
+  // já emitido.
+  organizacaoId: string;
+  papelOrganizacao: PapelOrganizacao;
 };
 
 export type PayloadTokenAtualizacao = {

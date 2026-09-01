@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { enviarEmailVerificacao } from "@/lib/email";
 import { contarEventosPorIp, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
+import { criarOrganizacaoPessoal } from "@/lib/organizacao";
 import { gerarHashSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { gerarTokenVerificacaoEmail } from "@/lib/token";
@@ -63,9 +64,17 @@ export async function POST(req: Request) {
   const senhaHash = await gerarHashSenha(senha);
 
   try {
-    const usuario = await prisma.usuario.create({
-      data: { nome, email, senhaHash },
-      select: { id: true, nome: true, email: true, criadoEm: true },
+    // Usuario + organização pessoal + associação (dono) numa transação só —
+    // nunca deve existir um usuário sem organização (criarSessao depende de
+    // achar pelo menos uma pra emitir o access token) nem uma organização
+    // órfã se o passo do usuário falhar antes.
+    const usuario = await prisma.$transaction(async (tx) => {
+      const usuarioCriado = await tx.usuario.create({
+        data: { nome, email, senhaHash },
+        select: { id: true, nome: true, email: true, criadoEm: true },
+      });
+      await criarOrganizacaoPessoal(tx, usuarioCriado);
+      return usuarioCriado;
     });
 
     await registrarEvento({ req, evento: "cadastro", usuarioId: usuario.id, email });
