@@ -3,6 +3,8 @@
 > Gerado em 2026-07-13. Atualizado em 2026-07-16 (índice composto em `LogAuditoria` pra acelerar as consultas do rate limit). Atualizado em 2026-07-14 (todos os itens de prioridade Alta e Média entregues: paridade da página de cadastro, recuperação de senha, testes automatizados das rotas de auth do Next.js, rate limiting, verificação de e-mail, RBAC, sair de todos os dispositivos, access token em cookie httpOnly, CSRF explícito, logs de auditoria — além do serviço de domínio Django/DRF e das 5 melhorias anteriores). **Nenhum item pendente no momento.** Sistema em produção na Vercel desde 2026-07-14 (ver seção "Deploy em produção" abaixo).
 >
 > Atualizado em 2026-08-31 (varredura de segurança — 1ª leva: senha na troca de e-mail, `userVerification: required` nas passkeys, `.max` no nome, CSP libera Rollbar, hardening do Django, upgrade de deps com CVE. 2ª leva: export LGPD exige senha + vira POST, limite por e-mail no `esqueci-senha`, `iss`/`aud` no access token, retenção da auditoria, CSP com `object-src 'none'`, export de auditoria em PDF). Contagens de teste: **197 no total** — 159 Vitest + 6 E2E Playwright + 32 Django. A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
+>
+> Atualizado em 2026-09-01 (Turnstile ativado em produção com chaves reais da Cloudflare — era o último item da varredura de 08-31; corrigido também um `.vercelignore` desatualizado que fazia `vercel deploy` local subir `node_modules`/`.next` inteiros por ignorar o `.gitignore`).
 
 ## ✅ Feito
 
@@ -96,12 +98,12 @@
 - Retenção da trilha de auditoria: `POST /api/cron/limpar-tokens` poda `LogAuditoria` > 365 dias e `DesafioMfaConsumido` expirado (índice `criadoEm` novo)
 - CSP com `object-src 'none'` e `upgrade-insecure-requests`
 - Exportação da auditoria em PDF pra admins (jsPDF carregado sob demanda no clique)
+- CAPTCHA (Turnstile) ativo em produção: `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY` configuradas na Vercel — fricção progressiva a partir da 5ª falha de login/cadastro por IP passa a exigir o desafio de verdade (fail-closed, confirmado em prod)
 
 ## 🔧 O que falta / pode fazer
 
 Da varredura de segurança de 2026-08-31, ainda em aberto (prioridade decrescente):
 
-- **CAPTCHA (Turnstile) inativo em produção** — `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY` ausentes: `verificarTurnstile` retorna `true` (fail-open), então a fricção progressiva contra brute-force/stuffing não roda. O código já está pronto; falta configurar as 2 chaves da Cloudflare no Vercel.
 - **CSP com `script-src 'unsafe-inline'`** em produção — nonce por request força renderização dinâmica em todas as páginas (perde a otimização estática de `/`, `/login`, etc. e o cache de CDN); SRI hash-based é experimental. Adiado até valer o custo.
 - **Contador de rate limit dedicado** — ainda é `count()` sobre `LogAuditoria` a cada login/cadastro/reset. A retenção acima limita o crescimento da tabela; falta o contador com TTL próprio.
 - **Enumeração de contas no cadastro** (409 "e-mail já cadastrado") — mantido de propósito: a alternativa tem custo de UX real pra quem esqueceu que já tem conta, e login/recuperação (os fluxos que importam) já não enumeram.

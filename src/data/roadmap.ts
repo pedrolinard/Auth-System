@@ -252,10 +252,11 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "turnstile-producao",
     titulo: "Ativar o Turnstile em produção",
     descricao:
-      "As duas chaves (TURNSTILE_SECRET_KEY + NEXT_PUBLIC_TURNSTILE_SITE_KEY) nunca foram configuradas na Vercel — o CAPTCHA de fricção progressiva está inativo em produção. O código já está pronto; falta criar o widget na Cloudflare e setar as env vars.",
+      "As duas chaves (TURNSTILE_SECRET_KEY + NEXT_PUBLIC_TURNSTILE_SITE_KEY) foram criadas na Cloudflare e configuradas na Vercel (produção), com redeploy pra embutir a chave pública no build. Confirmado em prod: após 5 falhas de login por IP, a 6ª já responde `captchaNecessario: true` em vez de deixar passar (fail-closed).",
     categoria: "Segurança",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-09-01",
   },
   {
     id: "desconectar-neon",

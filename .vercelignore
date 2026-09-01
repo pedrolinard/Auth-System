@@ -1,1 +1,30 @@
-.next-test/
+# Quando este arquivo existe, o Vercel CLI ignora o .gitignore por completo
+# (não faz merge dos dois) — então ele precisa listar tudo que não pode ir
+# no upload do `vercel deploy`, não só o que é específico daqui. Manter em
+# sincronia com .gitignore.
+
+# dependências
+/node_modules
+
+# next.js
+/.next/
+/.next-test/
+/.next-e2e/
+/out/
+
+# testes
+/coverage
+/coverage-vitest
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# build
+/build
+
+# git
+/.git
+
+# vercel
+/.vercel
