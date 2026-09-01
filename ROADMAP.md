@@ -4,7 +4,7 @@
 >
 > Atualizado em 2026-08-31 (varredura de segurança — 1ª leva: senha na troca de e-mail, `userVerification: required` nas passkeys, `.max` no nome, CSP libera Rollbar, hardening do Django, upgrade de deps com CVE. 2ª leva: export LGPD exige senha + vira POST, limite por e-mail no `esqueci-senha`, `iss`/`aud` no access token, retenção da auditoria, CSP com `object-src 'none'`, export de auditoria em PDF). Contagens de teste: **197 no total** — 159 Vitest + 6 E2E Playwright + 32 Django. A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
 >
-> Atualizado em 2026-09-01 (Turnstile ativado em produção com chaves reais da Cloudflare; corrigido também um `.vercelignore` desatualizado que fazia `vercel deploy` local subir `node_modules`/`.next` inteiros por ignorar o `.gitignore`. Depois: contador de rate limit dedicado — tabela `limites_taxa` substitui o `count()` sobre `LogAuditoria`, fechando o último item pendente da varredura de 08-31).
+> Atualizado em 2026-09-01 (Turnstile ativado em produção com chaves reais da Cloudflare; corrigido também um `.vercelignore` desatualizado que fazia `vercel deploy` local subir `node_modules`/`.next` inteiros por ignorar o `.gitignore`. Depois: contador de rate limit dedicado — tabela `limites_taxa` substitui o `count()` sobre `LogAuditoria`. Depois: observabilidade no Django — recurso Rollbar próprio via Vercel Marketplace + `RollbarNotifierMiddleware`, fechando o último item pendente da varredura de 08-31 que não era um trade-off deliberado).
 
 ## ✅ Feito
 
@@ -100,6 +100,7 @@
 - Exportação da auditoria em PDF pra admins (jsPDF carregado sob demanda no clique)
 - CAPTCHA (Turnstile) ativo em produção: `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY` configuradas na Vercel — fricção progressiva a partir da 5ª falha de login/cadastro por IP passa a exigir o desafio de verdade (fail-closed, confirmado em prod)
 - Contador de rate limit dedicado (`limites_taxa`): uma linha por chave (ip/e-mail + evento), incrementada com `INSERT ... ON CONFLICT DO UPDATE` em janela fixa — substitui o `count()` sobre `LogAuditoria` que rodava a cada tentativa de login/cadastro/redefinição; `LogAuditoria` segue intacta para auditoria e detecção de dispositivo novo
+- Observabilidade no Django: recurso Rollbar próprio (Vercel Marketplace, projeto `auth-gateway-django`) + `RollbarNotifierMiddleware` — mesmo provedor do Next.js, um 500 não tratado no serviço de domínio agora chega ao mesmo dashboard
 
 ## 🔧 O que falta / pode fazer
 
@@ -107,7 +108,6 @@ Da varredura de segurança de 2026-08-31, ainda em aberto (prioridade decrescent
 
 - **CSP com `script-src 'unsafe-inline'`** em produção — nonce por request força renderização dinâmica em todas as páginas (perde a otimização estática de `/`, `/login`, etc. e o cache de CDN); SRI hash-based é experimental. Adiado até valer o custo.
 - **Enumeração de contas no cadastro** (409 "e-mail já cadastrado") — mantido de propósito: a alternativa tem custo de UX real pra quem esqueceu que já tem conta, e login/recuperação (os fluxos que importam) já não enumeram.
-- **Observabilidade no Django** — o Rollbar cobre só o Next.js.
 
 Itens fora de escopo intencional (rate limiting distribuído/Redis, envio real de e-mail) seguem documentados no `README.md`.
 

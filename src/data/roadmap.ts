@@ -115,9 +115,10 @@ export const concluido: GrupoConcluido[] = [
   {
     categoria: "Serviço de domínio (Django/DRF)",
     itens: [
-      "Valida o mesmo token de acesso (RS256) do Next.js, com `algorithms` fixo e `iss`/`aud`/`exp` obrigatórios, sem login próprio nem model de usuário",
+      "Valida o mesmo token de acesso (RS256) do Next.js, com `algorithms` fixo e `iss`/`exp` obrigatórios, sem login próprio nem model de usuário",
       "Entidades reais (Projeto/Tarefa) isoladas por usuário, mesma proteção CSRF do lado Next.js (double-submit cookie comparado em tempo constante com hmac.compare_digest, igual ao timingSafeEqual do Node)",
       "Postgres compartilhado com o Next.js — database própria no local, schema próprio (dominio) na mesma instância Supabase em produção",
+      "Observabilidade (Rollbar): recurso próprio via Vercel Marketplace, RollbarNotifierMiddleware captura erro 500 não tratado — mesmo provedor do Next.js, dashboard único pros dois serviços",
     ],
   },
   {
@@ -244,10 +245,11 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "django-observabilidade",
     titulo: "Observabilidade no Django",
     descricao:
-      "O Rollbar cobre só o app Next.js. Um erro 500 inesperado do serviço de domínio some nos logs da Vercel, sem alerta nem agregação.",
+      "O Rollbar cobria só o app Next.js — um erro 500 inesperado do serviço de domínio sumia nos logs da Vercel, sem alerta nem agregação. Resolvido: recurso Rollbar próprio provisionado via Vercel Marketplace no projeto auth-gateway-django (mesmo provedor do Next.js, um dashboard só para os dois), `rollbar.contrib.django.middleware.RollbarNotifierMiddleware` como último item de MIDDLEWARE (precisa ser o último — escuta o sinal got_request_exception, que só dispara depois que os middlewares anteriores e a view já tiveram a chance de tratar a exceção). Exceções que o DRF já converte em Response (APIException, Http404, PermissionDenied) nunca chegam a esse sinal — só bug de verdade (exceção não tratada) é reportado. Middleware só entra na lista quando o token está presente (degrada em silêncio sem ele, mesmo princípio do turnstile.ts/email.ts do lado Next.js).",
     categoria: "Infraestrutura",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-09-01",
   },
   {
     id: "turnstile-producao",

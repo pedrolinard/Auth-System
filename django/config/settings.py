@@ -108,6 +108,35 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Observabilidade: um 500 não tratado aqui antes só aparecia nos logs da
+# Vercel, sem alerta nem agregação — o Rollbar já cobria o Next.js
+# (src/lib/rollbarServidor.ts), mas não o serviço de domínio. Mesmo provedor,
+# recurso próprio (`vercel integration add rollbar/error-tracking` no projeto
+# auth-gateway-django) — nome real da env var gerado pela integração do
+# Vercel Marketplace, o sufixo numérico não é escolha nossa (ver `vercel env
+# ls` nesse projeto).
+#
+# RollbarNotifierMiddleware precisa ser o ÚLTIMO da lista: ele escuta o
+# sinal got_request_exception, que só dispara depois que os middlewares
+# anteriores (e a view) já tiveram a chance de tratar a exceção — colocado
+# antes dos outros, perderia exceções levantadas por eles.
+#
+# Guardado atrás do token (mesmo princípio de degradação do turnstile.ts e
+# email.ts do lado Next.js): sem ROLLBAR_...DJANGO_SERVER_TOKEN..., o
+# middleware nem entra na lista — não faz sentido pagar o custo (nem
+# arriscar um erro de configuração) de um notifier sem access_token, e dev
+# local não precisa de conta no Rollbar pra rodar o servidor.
+ROLLBAR_ACCESS_TOKEN = os.environ.get('ROLLBAR_AUTH_GATEWAY_DJANGO_SERVER_TOKEN_1788275086')
+
+if ROLLBAR_ACCESS_TOKEN:
+    MIDDLEWARE = MIDDLEWARE + ['rollbar.contrib.django.middleware.RollbarNotifierMiddleware']
+
+    ROLLBAR = {
+        'access_token': ROLLBAR_ACCESS_TOKEN,
+        'environment': 'development' if DEBUG else 'production',
+        'root': str(BASE_DIR),
+    }
+
 ROOT_URLCONF = 'config.urls'
 
 TEMPLATES = [

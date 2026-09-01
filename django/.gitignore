@@ -12,3 +12,5 @@ staticfiles/
 .agents/
 .claude/
 skills-lock.json
+
+.env*
