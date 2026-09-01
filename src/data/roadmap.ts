@@ -82,7 +82,7 @@ export const concluido: GrupoConcluido[] = [
   {
     categoria: "Proteção contra automação",
     itens: [
-      "Rate limiting por IP e por conta em login, cadastro e recuperação de senha (reaproveita LogAuditoria); renovação de token (só falhas, 20/15 min) e início de MFA (10/h) também limitados",
+      "Rate limiting por IP e por conta em login, cadastro e recuperação de senha (contador dedicado, tabela `limites_taxa`, janela fixa); renovação de token (só falhas, 20/15 min) e início de MFA (10/h) também limitados",
       "CAPTCHA (Cloudflare Turnstile) como fricção progressiva antes do bloqueio duro",
       "Limite de IP generoso (20 tentativas/15 min) pra não travar redes compartilhadas — CAPTCHA e limite por conta seguram a barra de verdade",
       "IP extraído de x-vercel-forwarded-for / x-real-ip (a Vercel controla, cliente não forja); o x-forwarded-for cru só como fallback de dev, porque na Vercel o item à esquerda é controlado pelo cliente",

@@ -37,11 +37,11 @@ consumido por outras aplicações como camada intermediária de identidade.
   admins.
 - **Logs de auditoria**: `LogAuditoria` (`src/lib/auditoria.ts`) registra
   login (sucesso/falha), cadastro e logout com IP e user-agent.
-- **Rate limiting**: `src/lib/rateLimit.ts` reaproveita o `LogAuditoria` (sem
-  tabela nova) para bloquear com `429` login (20 tentativas erradas/15 min
-  por IP — ver nota sobre IP compartilhado abaixo — ou 20/15 min por conta,
-  o que estourar primeiro), cadastro e recuperação de senha (5 tentativas/
-  hora) do mesmo IP.
+- **Rate limiting**: `src/lib/rateLimit.ts` usa uma tabela dedicada
+  (`limites_taxa`, contador em janela fixa) para bloquear com `429` login
+  (20 tentativas erradas/15 min por IP — ver nota sobre IP compartilhado
+  abaixo — ou 20/15 min por conta, o que estourar primeiro), cadastro e
+  recuperação de senha (5 tentativas/hora) do mesmo IP.
 - **CAPTCHA (Cloudflare Turnstile)**: fricção progressiva antes do bloqueio
   duro em login (5 falhas do mesmo IP) e cadastro (3 falhas do mesmo IP) —
   passa a exigir um token válido do Turnstile além das credenciais (ver
@@ -105,6 +105,20 @@ ele só valida o token de acesso (RS256) emitido pelo Next.js e usa o claim
   `/dashboard/projetos/[id]` (listar/criar tarefas, mudar status, excluir) —
   `src/lib/clienteDominio.ts` centraliza as chamadas, mesmo padrão de
   `clienteAuth.ts`.
+- **Observabilidade (Rollbar)**: recurso próprio, provisionado via Vercel
+  Marketplace no projeto `auth-gateway-django` (mesmo provedor do Next.js,
+  ver seção "Observabilidade (Rollbar)" acima — token e dashboard
+  independentes, mas o dashboard do Rollbar agrega os dois). Middleware
+  oficial (`rollbar.contrib.django.middleware.RollbarNotifierMiddleware`)
+  como último item de `MIDDLEWARE` em `config/settings.py` — precisa ser o
+  último porque escuta o sinal `got_request_exception`, que só dispara
+  depois que os middlewares anteriores e a view já tiveram a chance de
+  tratar a exceção. Só entra na lista quando
+  `ROLLBAR_AUTH_GATEWAY_DJANGO_SERVER_TOKEN_...` está presente (mesmo
+  princípio de degradação silenciosa das outras integrações opcionais);
+  exceções que o DRF já converte em `Response` (`APIException`, `Http404`,
+  `PermissionDenied`) nunca chegam a esse sinal, então só bug de verdade é
+  reportado.
 
 Para rodar localmente:
 
@@ -529,7 +543,7 @@ antes do cookie httpOnly, ou uma sessão deixada aberta).
 registros de `LogAuditoria` — mais recentes primeiro, com filtro opcional
 por `?evento=` e `?email=` (`contains`, case-sensitive pelo collation do
 Postgres). Não é uma tabela nova nem um pipeline novo: `LogAuditoria` já
-existia desde o rate limiting; esta rota só expõe o que já é gravado.
+existia desde login/cadastro/logout; esta rota só expõe o que já é gravado.
 `/dashboard/auditoria` é a tela correspondente, pro admin não precisar abrir
 o Prisma Studio ou uma conexão direta no banco pra investigar um incidente.
 
@@ -726,9 +740,18 @@ segunda tentativa) sem precisar de uma tabela de tokens usados.
 
 ### Rate limiting / proteção contra força bruta
 
-`src/lib/rateLimit.ts` reaproveita `LogAuditoria` (sem tabela nova): conta
-quantos eventos de um tipo vieram do mesmo IP dentro de uma janela de tempo
-e responde `429` antes mesmo de processar a requisição. Aplicado em login (20 tentativas
+`src/lib/rateLimit.ts` usa uma tabela dedicada (`limites_taxa`): uma linha
+por chave (`ip:evento:<ip>` ou `email:evento:<email>`), incrementada com
+`INSERT ... ON CONFLICT DO UPDATE` numa janela fixa — mesmo padrão do
+`INCR`+`EXPIRE` do Redis, sem precisar de Redis (rate limiting distribuído é
+decisão de escopo deliberada, não uma lacuna: o tráfego atual não justifica
+a complexidade extra de um serviço dedicado). O check de leitura é O(1)
+(busca por chave primária, não um `count()` numa tabela que cresce);
+responde `429` antes mesmo de processar a requisição. Antes disso o
+contador reaproveitava `LogAuditoria` — mesma tabela usada como trilha de
+auditoria e detector de dispositivo novo, sem nenhuma relação com rate
+limit; separado em 2026-09-01 (`LogAuditoria` continua intacta pros outros
+dois usos). Aplicado em login (20 tentativas
 erradas/15 min por IP — ver nota de IP compartilhado abaixo — **e** 20/15 min
 por conta, o que vier primeiro), cadastro e recuperação de senha (5
 tentativas/hora cada, só por IP).
@@ -934,14 +957,22 @@ projeto Vercel). Variáveis configuradas em cada projeto:
   `ROLLBAR_AUTH_GATEWAY_SERVER_TOKEN_1787151157` /
   `NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157` (injetadas
   automaticamente pela integração Rollbar, nos 3 ambientes — production,
-  preview e development).
+  preview e development) e `TURNSTILE_SECRET_KEY` /
+  `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (criadas manualmente no dashboard da
+  Cloudflare, ver "CAPTCHA (Cloudflare Turnstile)" acima — sem elas o
+  `verificarTurnstile` fica fail-open, ver "Checagem de config de produção"
+  abaixo pro que trava o boot vs. só avisa).
 - **`auth-gateway-django`**: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`
   (explícita — ver abaixo), `DJANGO_ALLOWED_HOSTS`
   (`auth-gateway-django.vercel.app` — o domínio exato de produção, não um
   wildcard `*.vercel.app`; ajustar se um domínio próprio for configurado),
   `JWT_ACCESS_PUBLIC_KEY_B64` (mesma chave pública do projeto Next.js, para
   validar o mesmo token), `DATABASE_URL` (a **mesma instância Supabase** do
-  `auth-gateway`) e `DATABASE_SCHEMA=dominio`. As tabelas deste serviço
+  `auth-gateway`), `DATABASE_SCHEMA=dominio` e
+  `ROLLBAR_AUTH_GATEWAY_DJANGO_SERVER_TOKEN_...` (opcional — injetada pela
+  integração Rollbar própria deste projeto, ver "Observabilidade (Rollbar)"
+  acima; sem ela o middleware nem entra na lista, não trava o boot). As
+  tabelas deste serviço
   ficam no schema `dominio` (via `-c search_path=dominio,public` nas OPTIONS,
   ver `config/settings.py`), isoladas do `public` do Next.js — mantém a
   separação lógica de antes (nenhuma FK entre os dois, só o claim `sub`) sem

@@ -33,7 +33,7 @@
 - `cookies.ts` — cookies httpOnly (atualização, acesso) + cookie CSRF não-httpOnly, todos `secure`/`sameSite=lax`
 - `csrf.ts` — geração e validação do token CSRF (double-submit cookie)
 - `auditoria.ts` — registro de eventos (login, cadastro, logout) com IP/user-agent, best-effort
-- `rateLimit.ts` — rate limiting por IP reaproveitando `LogAuditoria` (login, cadastro, recuperação de senha)
+- `rateLimit.ts` — rate limiting por IP e por conta, contador dedicado (`limites_taxa`, janela fixa) (login, cadastro, recuperação de senha)
 - `validacao.ts` — schemas Zod (cadastro, login, atualização, código MFA, verificação de e-mail, esqueci/redefinir senha)
 - `clienteAuth.ts` — cliente client-side: cookies httpOnly (sem sessionStorage), refresh automático em 401, header CSRF automático, sessões, MFA e recuperação de senha
 - `autenticar.ts` — helper que aceita o token via cookie httpOnly ou Bearer nas rotas
@@ -85,7 +85,7 @@
 - Job de limpeza de tokens expirados/revogados antigos
 - Segredos JWT gerados aleatoriamente (não mais placeholders) e documentados
 - Recuperação de senha (token stateless, 1h, revoga todas as sessões ao redefinir, resposta anti-enumeração)
-- Rate limiting por IP em login, cadastro e recuperação de senha (reaproveita `LogAuditoria`)
+- Rate limiting por IP em login, cadastro e recuperação de senha (contador dedicado, `limites_taxa`)
 - Troca de e-mail exige a senha atual e avisa o endereço antigo já no pedido (não só na conclusão)
 - Passkeys com `userVerification: required` no registro e no login + `requireUserVerification` no verify — a verificação local (biometria/PIN) é sempre exigida, então a passkey vale como 2 fatores mesmo pulando o TOTP
 - `nome` com teto de 80 caracteres no schema Zod (renderizado no painel e em e-mails)
