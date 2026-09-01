@@ -6,7 +6,13 @@ import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { enviarEmailDispositivoNovo, enviarEmailViagemImpossivel } from "@/lib/email";
 import { formatarLocalizacao, obterGeo } from "@/lib/geo";
 import { verificarLoginPasskey } from "@/lib/passkey";
-import { limiteExcedido, limiteExcedidoPorEmail, obterIp } from "@/lib/rateLimit";
+import {
+  limiteExcedido,
+  limiteExcedidoPorEmail,
+  obterIp,
+  registrarTentativaEmail,
+  registrarTentativaIp,
+} from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
 import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
 import { verificarTokenDesafioPasskey } from "@/lib/token";
@@ -32,7 +38,6 @@ export async function POST(req: Request) {
       ip,
       evento: "passkey_login_falha",
       maximo: MAX_TENTATIVAS_LOGIN_PASSKEY,
-      janelaMs: JANELA_LOGIN_PASSKEY_MS,
     })
   ) {
     return NextResponse.json(
@@ -69,6 +74,14 @@ export async function POST(req: Request) {
 
   if (!credencial) {
     await registrarEvento({ req, evento: "passkey_login_falha" });
+    // Ainda não sabemos de qual conta é (credentialId não bateu com
+    // nenhuma) — só dá pra alimentar o contador por IP aqui, o por e-mail
+    // exige já ter encontrado a credencial (abaixo).
+    await registrarTentativaIp({
+      ip,
+      evento: "passkey_login_falha",
+      janelaMs: JANELA_LOGIN_PASSKEY_MS,
+    });
     return NextResponse.json({ erro: "Passkey não reconhecida." }, { status: 401 });
   }
   const { usuario } = credencial;
@@ -78,7 +91,6 @@ export async function POST(req: Request) {
       email: usuario.email,
       evento: "passkey_login_falha",
       maximo: MAX_TENTATIVAS_LOGIN_PASSKEY,
-      janelaMs: JANELA_LOGIN_PASSKEY_MS,
     })
   ) {
     return NextResponse.json(
@@ -96,10 +108,22 @@ export async function POST(req: Request) {
     );
   } catch {
     await registrarEvento({ req, evento: "passkey_login_falha", usuarioId: usuario.id, email: usuario.email });
+    await registrarTentativaIp({ ip, evento: "passkey_login_falha", janelaMs: JANELA_LOGIN_PASSKEY_MS });
+    await registrarTentativaEmail({
+      email: usuario.email,
+      evento: "passkey_login_falha",
+      janelaMs: JANELA_LOGIN_PASSKEY_MS,
+    });
     return NextResponse.json({ erro: "Não foi possível verificar a passkey." }, { status: 401 });
   }
   if (!verificacao.verified) {
     await registrarEvento({ req, evento: "passkey_login_falha", usuarioId: usuario.id, email: usuario.email });
+    await registrarTentativaIp({ ip, evento: "passkey_login_falha", janelaMs: JANELA_LOGIN_PASSKEY_MS });
+    await registrarTentativaEmail({
+      email: usuario.email,
+      evento: "passkey_login_falha",
+      janelaMs: JANELA_LOGIN_PASSKEY_MS,
+    });
     return NextResponse.json({ erro: "Não foi possível verificar a passkey." }, { status: 401 });
   }
 

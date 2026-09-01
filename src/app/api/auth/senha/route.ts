@@ -6,7 +6,13 @@ import { obterCookieAtualizacao, obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { revogarDispositivosConfiaveis } from "@/lib/dispositivoConfiavel";
 import { enviarEmailSenhaAlterada } from "@/lib/email";
-import { limiteExcedido, limiteExcedidoPorEmail, obterIp } from "@/lib/rateLimit";
+import {
+  limiteExcedido,
+  limiteExcedidoPorEmail,
+  obterIp,
+  registrarTentativaEmail,
+  registrarTentativaIp,
+} from "@/lib/rateLimit";
 import { gerarHashSenha, verificarSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { hashToken } from "@/lib/token";
@@ -35,7 +41,6 @@ export async function PUT(req: Request) {
       ip,
       evento: "senha_atual_falha",
       maximo: MAX_TENTATIVAS_SENHA_ATUAL,
-      janelaMs: JANELA_SENHA_ATUAL_MS,
     })
   ) {
     return NextResponse.json(
@@ -67,7 +72,6 @@ export async function PUT(req: Request) {
       email: usuario.email,
       evento: "senha_atual_falha",
       maximo: MAX_TENTATIVAS_SENHA_ATUAL,
-      janelaMs: JANELA_SENHA_ATUAL_MS,
     })
   ) {
     return NextResponse.json(
@@ -82,6 +86,12 @@ export async function PUT(req: Request) {
       evento: "senha_atual_falha",
       usuarioId: usuario.id,
       email: usuario.email,
+    });
+    await registrarTentativaIp({ ip, evento: "senha_atual_falha", janelaMs: JANELA_SENHA_ATUAL_MS });
+    await registrarTentativaEmail({
+      email: usuario.email,
+      evento: "senha_atual_falha",
+      janelaMs: JANELA_SENHA_ATUAL_MS,
     });
     return NextResponse.json({ erro: "Senha atual incorreta." }, { status: 401 });
   }

@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { enviarEmailRedefinicaoSenha } from "@/lib/email";
-import { limiteExcedido, limiteExcedidoPorEmail, obterIp } from "@/lib/rateLimit";
+import {
+  limiteExcedido,
+  limiteExcedidoPorEmail,
+  obterIp,
+  registrarTentativaEmail,
+  registrarTentativaIp,
+} from "@/lib/rateLimit";
 import { gerarTokenRedefinicaoSenha } from "@/lib/token";
 import { esquemaEsqueciSenha } from "@/lib/validacao";
 
@@ -23,7 +29,6 @@ export async function POST(req: Request) {
       ip,
       evento: "recuperacao_tentativa",
       maximo: MAX_TENTATIVAS_RECUPERACAO,
-      janelaMs: JANELA_RECUPERACAO_MS,
     })
   ) {
     return NextResponse.json(
@@ -32,6 +37,11 @@ export async function POST(req: Request) {
     );
   }
   await registrarEvento({ req, evento: "recuperacao_tentativa" });
+  await registrarTentativaIp({
+    ip,
+    evento: "recuperacao_tentativa",
+    janelaMs: JANELA_RECUPERACAO_MS,
+  });
 
   const corpo = await req.json().catch(() => null);
   const dadosValidados = esquemaEsqueciSenha.safeParse(corpo);
@@ -52,9 +62,13 @@ export async function POST(req: Request) {
     email,
     evento: "recuperacao_email",
     maximo: MAX_RECUPERACAO_POR_EMAIL,
-    janelaMs: JANELA_RECUPERACAO_MS,
   });
   await registrarEvento({ req, evento: "recuperacao_email", email });
+  await registrarTentativaEmail({
+    email,
+    evento: "recuperacao_email",
+    janelaMs: JANELA_RECUPERACAO_MS,
+  });
 
   const usuario = await prisma.usuario.findUnique({ where: { email } });
 

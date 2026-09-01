@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { consumirCodigoBackup, contarCodigosRestantes } from "@/lib/backupMfa";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
-import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
 import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
@@ -22,7 +22,6 @@ export async function POST(req: Request) {
       ip,
       evento: "mfa_backup_falha",
       maximo: MAX_TENTATIVAS_MFA,
-      janelaMs: JANELA_MFA_MS,
     })
   ) {
     return NextResponse.json(
@@ -63,6 +62,7 @@ export async function POST(req: Request) {
   const codigoValido = await consumirCodigoBackup(usuario.id, codigo);
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_backup_falha", usuarioId: usuario.id });
+    await registrarTentativaIp({ ip, evento: "mfa_backup_falha", janelaMs: JANELA_MFA_MS });
     return NextResponse.json({ erro: "Código de backup inválido." }, { status: 401 });
   }
 

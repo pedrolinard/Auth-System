@@ -6,7 +6,7 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { criptografar } from "@/lib/cripto";
 import { csrfValido } from "@/lib/csrf";
 import { gerarQrCodeMfa, gerarSegredoMfa } from "@/lib/mfa";
-import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 
 // Cada chamada gera um segredo TOTP novo e grava no usuário; ativar o MFA é
 // algo que se faz uma vez, então um limite baixo por IP basta pra cortar
@@ -30,7 +30,6 @@ export async function POST(req: Request) {
       ip,
       evento: "mfa_iniciar_tentativa",
       maximo: MAX_TENTATIVAS_MFA_INICIAR,
-      janelaMs: JANELA_MFA_INICIAR_MS,
     })
   ) {
     return NextResponse.json(
@@ -39,6 +38,11 @@ export async function POST(req: Request) {
     );
   }
   await registrarEvento({ req, evento: "mfa_iniciar_tentativa", usuarioId: payload.sub });
+  await registrarTentativaIp({
+    ip,
+    evento: "mfa_iniciar_tentativa",
+    janelaMs: JANELA_MFA_INICIAR_MS,
+  });
 
   const usuario = await prisma.usuario.findUnique({
     where: { id: payload.sub },

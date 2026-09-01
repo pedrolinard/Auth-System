@@ -14,12 +14,18 @@ export type ResultadoLimpeza = {
   tokens: number;
   auditoria: number;
   desafiosMfa: number;
+  limitesTaxa: number;
 };
 
 // Remove o que não serve mais para nada: tokens expirados ou revogados há
 // mais de RETENCAO_REVOGADOS_MS, cookies de dispositivo confiável expirados,
-// registros de auditoria além da janela de retenção e jtis de desafio MFA já
-// expirados (não podem mais ser replayed de qualquer forma).
+// registros de auditoria além da janela de retenção, jtis de desafio MFA já
+// expirados (não podem mais ser replayed de qualquer forma) e linhas do
+// contador de rate limit cuja janela já fechou. Este último não afeta a
+// CORREÇÃO do rate limit — uma chave expirada já é lida como zero (ver
+// contar() em rateLimit.ts) e se resetada no próximo incrementar() — só
+// existe pra a tabela não crescer sem limite com chaves mortas (ex.: um IP
+// que errou a senha 5 vezes e nunca mais voltou).
 export async function limparTokensExpirados(): Promise<ResultadoLimpeza> {
   const agora = new Date();
   const limiteRevogados = new Date(agora.getTime() - RETENCAO_REVOGADOS_MS);
@@ -47,9 +53,14 @@ export async function limparTokensExpirados(): Promise<ResultadoLimpeza> {
     where: { expiraEm: { lt: agora } },
   });
 
+  const limitesTaxa = await prisma.limiteTaxa.deleteMany({
+    where: { expiraEm: { lt: agora } },
+  });
+
   return {
     tokens: tokens.count,
     auditoria: auditoria.count,
     desafiosMfa: desafiosMfa.count,
+    limitesTaxa: limitesTaxa.count,
   };
 }

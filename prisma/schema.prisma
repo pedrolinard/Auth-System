@@ -192,3 +192,20 @@ model LogAuditoria {
   @@index([criadoEm])
   @@map("logs_auditoria")
 }
+
+// Contador dedicado de rate limit: uma linha por chave (ip/e-mail + evento),
+// incrementada atomicamente em janela fixa (ver incrementar() em
+// src/lib/rateLimit.ts) — substitui o count() sobre LogAuditoria que rodava
+// a cada tentativa de login/cadastro/redefinição. LogAuditoria continua
+// existindo do mesmo jeito pra trilha permanente (outro propósito: histórico
+// pra investigação, não contagem); esta tabela é só um contador efêmero, sem
+// valor histórico — expiraEm é tanto o fim da janela quanto o critério de
+// poda do job de limpeza.
+model LimiteTaxa {
+  chave    String   @id
+  contagem Int      @default(1)
+  expiraEm DateTime @db.Timestamptz(3)
+
+  @@index([expiraEm])
+  @@map("limites_taxa")
+}

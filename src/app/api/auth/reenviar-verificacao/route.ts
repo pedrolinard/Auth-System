@@ -5,7 +5,7 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { enviarEmailVerificacao } from "@/lib/email";
-import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { gerarTokenVerificacaoEmail } from "@/lib/token";
 
 const MAX_TENTATIVAS_REENVIO = 3;
@@ -27,7 +27,6 @@ export async function POST(req: Request) {
       ip,
       evento: "reenvio_verificacao_tentativa",
       maximo: MAX_TENTATIVAS_REENVIO,
-      janelaMs: JANELA_REENVIO_MS,
     })
   ) {
     return NextResponse.json(
@@ -36,6 +35,11 @@ export async function POST(req: Request) {
     );
   }
   await registrarEvento({ req, evento: "reenvio_verificacao_tentativa", usuarioId: payload.sub });
+  await registrarTentativaIp({
+    ip,
+    evento: "reenvio_verificacao_tentativa",
+    janelaMs: JANELA_REENVIO_MS,
+  });
 
   const usuario = await prisma.usuario.findUnique({ where: { id: payload.sub } });
   if (!usuario) {

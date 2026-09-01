@@ -8,7 +8,13 @@ import {
   enviarEmailAlteracaoEmailSolicitada,
   enviarEmailConfirmacaoAlteracaoEmail,
 } from "@/lib/email";
-import { limiteExcedido, limiteExcedidoPorEmail, obterIp } from "@/lib/rateLimit";
+import {
+  limiteExcedido,
+  limiteExcedidoPorEmail,
+  obterIp,
+  registrarTentativaEmail,
+  registrarTentativaIp,
+} from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { gerarTokenAlteracaoEmail } from "@/lib/token";
 import { esquemaAlterarEmail } from "@/lib/validacao";
@@ -35,7 +41,6 @@ export async function POST(req: Request) {
       ip,
       evento: "senha_atual_falha",
       maximo: MAX_TENTATIVAS_SENHA_ATUAL,
-      janelaMs: JANELA_SENHA_ATUAL_MS,
     })
   ) {
     return NextResponse.json(
@@ -64,7 +69,6 @@ export async function POST(req: Request) {
       email: usuario.email,
       evento: "senha_atual_falha",
       maximo: MAX_TENTATIVAS_SENHA_ATUAL,
-      janelaMs: JANELA_SENHA_ATUAL_MS,
     })
   ) {
     return NextResponse.json(
@@ -79,6 +83,12 @@ export async function POST(req: Request) {
       evento: "senha_atual_falha",
       usuarioId: usuario.id,
       email: usuario.email,
+    });
+    await registrarTentativaIp({ ip, evento: "senha_atual_falha", janelaMs: JANELA_SENHA_ATUAL_MS });
+    await registrarTentativaEmail({
+      email: usuario.email,
+      evento: "senha_atual_falha",
+      janelaMs: JANELA_SENHA_ATUAL_MS,
     });
     return NextResponse.json({ erro: "Senha atual incorreta." }, { status: 401 });
   }

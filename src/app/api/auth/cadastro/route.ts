@@ -3,7 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { enviarEmailVerificacao } from "@/lib/email";
-import { contarEventosPorIp, obterIp } from "@/lib/rateLimit";
+import { contarEventosPorIp, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { gerarHashSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { gerarTokenVerificacaoEmail } from "@/lib/token";
@@ -19,11 +19,7 @@ const LIMITE_TENTATIVAS_ANTES_DE_CAPTCHA = 3;
 
 export async function POST(req: Request) {
   const ip = obterIp(req);
-  const tentativasIp = await contarEventosPorIp({
-    ip,
-    evento: "cadastro_tentativa",
-    janelaMs: JANELA_CADASTRO_MS,
-  });
+  const tentativasIp = await contarEventosPorIp({ ip, evento: "cadastro_tentativa" });
   if (tentativasIp >= MAX_TENTATIVAS_CADASTRO) {
     return NextResponse.json(
       { erro: "Muitas tentativas. Tente novamente mais tarde." },
@@ -31,6 +27,7 @@ export async function POST(req: Request) {
     );
   }
   await registrarEvento({ req, evento: "cadastro_tentativa" });
+  await registrarTentativaIp({ ip, evento: "cadastro_tentativa", janelaMs: JANELA_CADASTRO_MS });
 
   const corpo = await req.json().catch(() => null);
   const dadosValidados = esquemaCadastro.safeParse(corpo);

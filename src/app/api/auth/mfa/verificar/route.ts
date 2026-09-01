@@ -5,7 +5,7 @@ import { definirCookieDispositivoConfiavel } from "@/lib/cookies";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { criarDispositivoConfiavel } from "@/lib/dispositivoConfiavel";
 import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
-import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
 import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
@@ -21,7 +21,6 @@ export async function POST(req: Request) {
       ip,
       evento: "mfa_codigo_falha",
       maximo: MAX_TENTATIVAS_MFA,
-      janelaMs: JANELA_MFA_MS,
     })
   ) {
     return NextResponse.json(
@@ -78,6 +77,7 @@ export async function POST(req: Request) {
   }
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
+    await registrarTentativaIp({ ip, evento: "mfa_codigo_falha", janelaMs: JANELA_MFA_MS });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
   }
 

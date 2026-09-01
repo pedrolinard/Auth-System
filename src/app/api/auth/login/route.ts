@@ -9,6 +9,8 @@ import {
   contarEventosPorIp,
   limiteExcedidoPorEmail,
   obterIp,
+  registrarTentativaEmail,
+  registrarTentativaIp,
 } from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { criarSessao } from "@/lib/sessao";
@@ -60,11 +62,7 @@ const JANELA_VIAGEM_IMPOSSIVEL_MS = 2 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
   const ip = obterIp(req);
-  const falhasIp = await contarEventosPorIp({
-    ip,
-    evento: "login_falha",
-    janelaMs: JANELA_LOGIN_MS,
-  });
+  const falhasIp = await contarEventosPorIp({ ip, evento: "login_falha" });
   if (falhasIp >= MAX_TENTATIVAS_LOGIN) {
     return NextResponse.json(
       { erro: "Muitas tentativas. Tente novamente mais tarde." },
@@ -89,7 +87,6 @@ export async function POST(req: Request) {
       email,
       evento: "login_falha",
       maximo: MAX_TENTATIVAS_LOGIN_POR_CONTA,
-      janelaMs: JANELA_LOGIN_POR_CONTA_MS,
     })
   ) {
     return NextResponse.json(
@@ -119,6 +116,12 @@ export async function POST(req: Request) {
 
   if (!credenciaisValidas) {
     await registrarEvento({ req, evento: "login_falha", email });
+    await registrarTentativaIp({ ip, evento: "login_falha", janelaMs: JANELA_LOGIN_MS });
+    await registrarTentativaEmail({
+      email,
+      evento: "login_falha",
+      janelaMs: JANELA_LOGIN_POR_CONTA_MS,
+    });
     return NextResponse.json(
       { erro: "E-mail ou senha inválidos." },
       { status: 401 },

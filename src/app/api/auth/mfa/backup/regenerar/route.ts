@@ -7,7 +7,7 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { enviarEmailCodigosBackupRegenerados } from "@/lib/email";
 import { csrfValido } from "@/lib/csrf";
 import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
-import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
 
 const MAX_TENTATIVAS_MFA = 5;
@@ -29,7 +29,6 @@ export async function POST(req: Request) {
       ip,
       evento: "mfa_codigo_falha",
       maximo: MAX_TENTATIVAS_MFA,
-      janelaMs: JANELA_MFA_MS,
     })
   ) {
     return NextResponse.json(
@@ -80,6 +79,7 @@ export async function POST(req: Request) {
   }
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
+    await registrarTentativaIp({ ip, evento: "mfa_codigo_falha", janelaMs: JANELA_MFA_MS });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
   }
 

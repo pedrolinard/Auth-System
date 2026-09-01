@@ -33,7 +33,8 @@ export async function POST(req: Request) {
   // `removidos` continua sendo o total (compat com quem só olha o número);
   // o detalhamento por tabela vai junto pra observabilidade do job.
   return NextResponse.json({
-    removidos: resultado.tokens + resultado.auditoria + resultado.desafiosMfa,
+    removidos:
+      resultado.tokens + resultado.auditoria + resultado.desafiosMfa + resultado.limitesTaxa,
     detalhe: resultado,
   });
 }

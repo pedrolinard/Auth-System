@@ -196,10 +196,11 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "separar-ratelimit-auditoria",
     titulo: "Separar o contador de rate limit da trilha de auditoria",
     descricao:
-      "`src/lib/rateLimit.ts` conta linhas de `LogAuditoria` — a mesma tabela é trilha de auditoria (append-only, LGPD), contador de rate limit E detector de dispositivo novo. **Feito em parte** (2026-08-31): o job de limpeza agora poda `LogAuditoria` além de 365 dias e `DesafioMfaConsumido` já expirado, com índice `criadoEm` novo pro DELETE não varrer a tabela. **Falta** o contador de rate limit com TTL próprio (hoje ainda é `count()` sobre `LogAuditoria` a cada login/cadastro/reset).",
+      "`src/lib/rateLimit.ts` contava linhas de `LogAuditoria` — a mesma tabela era trilha de auditoria (append-only, LGPD), contador de rate limit E detector de dispositivo novo. Feito em duas levas: (2026-08-31) job de limpeza podando `LogAuditoria` além de 365 dias, com índice `criadoEm` novo. (2026-09-01) tabela dedicada `limites_taxa` — uma linha por chave (ip/e-mail + evento), incrementada com `INSERT ... ON CONFLICT DO UPDATE` em janela fixa (mesmo padrão do INCR+EXPIRE do Redis, sem precisar de Redis). `contarEventosPorIp`/`limiteExcedido`/`limiteExcedidoPorEmail` agora leem essa tabela (O(1) por chamada) em vez de fazer `count()` em `LogAuditoria`; o job de limpeza poda linhas expiradas. `LogAuditoria` continua intacta para auditoria e detecção de dispositivo novo — só parou de ser o contador.",
     categoria: "Infraestrutura",
     prioridade: "media",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-09-01",
   },
   {
     id: "varredura-seguranca-2026-08",

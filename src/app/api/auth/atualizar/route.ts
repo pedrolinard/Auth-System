@@ -11,7 +11,7 @@ import {
 } from "@/lib/cookies";
 import { csrfValido, gerarTokenCsrf } from "@/lib/csrf";
 import { obterGeo } from "@/lib/geo";
-import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import {
   gerarTokenAcesso,
   gerarTokenAtualizacao,
@@ -41,7 +41,6 @@ export async function POST(req: Request) {
       ip,
       evento: "atualizar_falha",
       maximo: MAX_FALHAS_ATUALIZAR,
-      janelaMs: JANELA_ATUALIZAR_MS,
     })
   ) {
     return NextResponse.json(
@@ -55,6 +54,7 @@ export async function POST(req: Request) {
   // numa renovação bem-sucedida.
   const recusarTokenInvalido = async () => {
     await registrarEvento({ req, evento: "atualizar_falha" });
+    await registrarTentativaIp({ ip, evento: "atualizar_falha", janelaMs: JANELA_ATUALIZAR_MS });
     return NextResponse.json(RESPOSTA_TOKEN_INVALIDO, { status: 401 });
   };
 
