@@ -23,9 +23,17 @@ const MAX_TENTATIVAS_SENHA_ATUAL = 5;
 const JANELA_SENHA_ATUAL_MS = 5 * 60 * 1000;
 
 // DELETE exclui a conta permanentemente (cascata: sessões, dispositivos
-// confiáveis, códigos de backup — ver onDelete: Cascade no schema).
+// confiáveis, códigos de backup, Membro — ver onDelete: Cascade no schema).
 // LogAuditoria não tem FK de propósito, então o histórico de auditoria
 // sobrevive, como já acontece na exclusão feita por um admin.
+//
+// Multi-tenant: Membro cascade-deleta, mas Organizacao NÃO cascade-deleta
+// de Membro — sem tratar isso aqui, a organização pessoal (nome derivado do
+// próprio nome da pessoa) sobreviveria órfã pra sempre, direito ao
+// esquecimento incompleto. E se a pessoa for a única "dono" de uma
+// organização com OUTROS membros, apagar a conta deixaria a organização sem
+// ninguém pra gerenciá-la — mesmo risco que a remoção via admin já evita
+// (ver DELETE /api/auth/usuarios/[id]), só que faltava aqui.
 export async function DELETE(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
     return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
@@ -98,7 +106,43 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ erro: "Senha incorreta." }, { status: 401 });
   }
 
-  await prisma.usuario.delete({ where: { id: usuario.id } });
+  const donatarios = await prisma.membro.findMany({
+    where: { usuarioId: usuario.id, papel: "dono" },
+    select: { organizacaoId: true },
+  });
+
+  const organizacoesParaExcluir: string[] = [];
+  for (const { organizacaoId } of donatarios) {
+    const outrosMembros = await prisma.membro.count({
+      where: { organizacaoId, usuarioId: { not: usuario.id } },
+    });
+    if (outrosMembros === 0) {
+      // Organização exclusiva dela (o caso comum: a organização pessoal
+      // criada no cadastro) — vira órfã depois do cascade de Membro, então
+      // some junto.
+      organizacoesParaExcluir.push(organizacaoId);
+      continue;
+    }
+    const outrosDonos = await prisma.membro.count({
+      where: { organizacaoId, papel: "dono", usuarioId: { not: usuario.id } },
+    });
+    if (outrosDonos === 0) {
+      return NextResponse.json(
+        {
+          erro:
+            "Você é a única pessoa dona de uma organização com outros membros. Promova outro dono ou remova os demais membros antes de excluir sua conta.",
+        },
+        { status: 409 },
+      );
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.usuario.delete({ where: { id: usuario.id } }),
+    ...(organizacoesParaExcluir.length > 0
+      ? [prisma.organizacao.deleteMany({ where: { id: { in: organizacoesParaExcluir } } })]
+      : []),
+  ]);
   await registrarEvento({
     req,
     evento: "conta_excluida_pelo_titular",

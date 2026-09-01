@@ -91,7 +91,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Senha atual incorreta." }, { status: 401 });
   }
 
-  const [sessoes, dispositivosConfiaveis, codigosBackup, passkeys, logsAuditoria] =
+  const [sessoes, dispositivosConfiaveis, codigosBackup, passkeys, logsAuditoria, membros, convitesCriados] =
     await Promise.all([
       prisma.tokenAtualizacao.findMany({
         where: { usuarioId: usuario.id },
@@ -127,6 +127,31 @@ export async function POST(req: Request) {
         take: 500,
         select: { evento: true, ip: true, userAgent: true, criadoEm: true },
       }),
+      // Multi-tenant: em quais organizações a pessoa é membro e com que
+      // papel — sem isso o export ficava incompleto (dado pessoal de verdade,
+      // não só metadado técnico).
+      prisma.membro.findMany({
+        where: { usuarioId: usuario.id },
+        orderBy: { criadoEm: "asc" },
+        select: {
+          papel: true,
+          criadoEm: true,
+          organizacao: { select: { nome: true, slug: true } },
+        },
+      }),
+      // Convites que a pessoa criou (não os que recebeu — esses não deixam
+      // rastro em nome dela até serem aceitos).
+      prisma.conviteOrganizacao.findMany({
+        where: { criadoPorId: usuario.id },
+        orderBy: { criadoEm: "desc" },
+        select: {
+          email: true,
+          papel: true,
+          aceitoEm: true,
+          criadoEm: true,
+          organizacao: { select: { nome: true } },
+        },
+      }),
     ]);
 
   await registrarEvento({ req, evento: "dados_exportados", usuarioId: usuario.id });
@@ -154,5 +179,7 @@ export async function POST(req: Request) {
     codigosBackupMfa: codigosBackup,
     passkeys,
     logsAuditoria,
+    organizacoes: membros.map(({ organizacao, ...resto }) => ({ ...resto, ...organizacao })),
+    convitesCriados,
   });
 }

@@ -152,6 +152,73 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     expect(resposta.status).toBe(403);
   });
 
+  it("o export inclui as organizações de que a pessoa é membro", async () => {
+    const usuario = await criarUsuarioTeste("minha-conta-export-org");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const resposta = await exportar(cabecalhos, usuario.senha);
+    expect(resposta.status).toBe(200);
+    const corpo = await resposta.json();
+
+    // Toda conta ganha a organização pessoal no cadastro, como dona.
+    expect(Array.isArray(corpo.organizacoes)).toBe(true);
+    expect(corpo.organizacoes).toHaveLength(1);
+    expect(corpo.organizacoes[0].papel).toBe("dono");
+    expect(Array.isArray(corpo.convitesCriados)).toBe(true);
+  });
+
+  it("exclui a própria conta e apaga a organização pessoal órfã junto", async () => {
+    const usuario = await criarUsuarioTeste("minha-conta-excluir-org-orfa");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const membro = await prisma.membro.findFirstOrThrow({ where: { usuarioId: registro.id } });
+    const organizacaoId = membro.organizacaoId;
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/minha-conta`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...cabecalhos },
+      body: JSON.stringify({ senha: usuario.senha }),
+    });
+    expect(resposta.status).toBe(200);
+
+    const organizacaoRestante = await prisma.organizacao.findUnique({
+      where: { id: organizacaoId },
+    });
+    expect(organizacaoRestante).toBeNull();
+  });
+
+  it("bloqueia exclusão sendo a única pessoa dona de uma organização com outros membros", async () => {
+    const dono = await criarUsuarioTeste("minha-conta-dono-bloqueado");
+    emailsCriados.push(dono.email);
+    const outroMembro = await criarUsuarioTeste("minha-conta-outro-membro");
+    emailsCriados.push(outroMembro.email);
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
+
+    const registroDono = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const registroOutro = await prisma.usuario.findUniqueOrThrow({
+      where: { email: outroMembro.email },
+    });
+    const membroDono = await prisma.membro.findFirstOrThrow({
+      where: { usuarioId: registroDono.id },
+    });
+    await prisma.membro.create({
+      data: { organizacaoId: membroDono.organizacaoId, usuarioId: registroOutro.id, papel: "membro" },
+    });
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/minha-conta`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json", ...cabecalhos },
+      body: JSON.stringify({ senha: dono.senha }),
+    });
+    expect(resposta.status).toBe(409);
+
+    const registroAinda = await prisma.usuario.findUnique({ where: { email: dono.email } });
+    expect(registroAinda).not.toBeNull();
+  });
+
   it("bloqueia com 429 após estourar tentativas de senha errada", async () => {
     const usuario = await criarUsuarioTeste("minha-conta-rate-limit");
     emailsCriados.push(usuario.email);

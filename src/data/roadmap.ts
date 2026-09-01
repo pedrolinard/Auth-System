@@ -40,7 +40,7 @@ export const metricas = {
   migracoesPrisma: 19,
   modulosLib: 32,
   tabelas: 11,
-  testesVitest: 176,
+  testesVitest: 179,
   testesE2e: 6,
   testesDjango: 36,
 };
@@ -95,7 +95,7 @@ export const concluido: GrupoConcluido[] = [
       "Admin pode suspender (temporária ou permanente) ou excluir permanentemente a conta de outro usuário",
       "Suspensão revoga todas as sessões ativas na hora e bloqueia login imediatamente",
       "Auditoria de ações administrativas registra também QUEM (qual admin) suspendeu/reativou/excluiu, não só o alvo",
-      "Autoatendimento LGPD: POST /api/auth/minha-conta/exportar e DELETE /api/auth/minha-conta — o próprio titular exporta os dados que o serviço guarda sobre ele (dados pessoais, sessões, dispositivos confiáveis, códigos de backup, passkeys, auditoria) ou exclui a conta; os dois exigem a senha atual + CSRF + rate limit (o export virou POST porque o arquivo traz IP/geolocalização/user-agents)",
+      "Autoatendimento LGPD: POST /api/auth/minha-conta/exportar e DELETE /api/auth/minha-conta — o próprio titular exporta os dados que o serviço guarda sobre ele (dados pessoais, sessões, dispositivos confiáveis, códigos de backup, passkeys, auditoria, organizações de que é membro e convites que criou) ou exclui a conta; os dois exigem a senha atual + CSRF + rate limit (o export virou POST porque o arquivo traz IP/geolocalização/user-agents). Excluir a conta também apaga a organização pessoal órfã (Membro cascade-deleta, Organizacao sozinha não) e bloqueia quem é a única pessoa dona de uma organização com outros membros",
       "E-mails de segurança: dispositivo novo, MFA ativado/desativado, senha alterada, códigos de backup regenerados, reuso de refresh token detectado, viagem impossível (login em país diferente do último, tempo curto demais pra ser real)",
     ],
   },
@@ -140,7 +140,7 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "218 testes: 176 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 36 Django (pytest-django)",
+      "221 testes: 179 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 36 Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
       "Django não carrega .env na Vercel (load_dotenv só fora da plataforma) e .vercelignore mantém o arquivo fora do bundle — sem isso o serviço subia com DEBUG=True em produção",
     ],
@@ -289,7 +289,7 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "multi-tenant-organizacoes",
     titulo: "Multi-tenant (organizações)",
     descricao:
-      "Sistema passa de single-tenant (papel global, dados isolados só por usuario_id) pra multi-tenant: uma conta pode ser membro de várias organizações, com papel próprio por organização (dono/admin/membro). Organização ativa vira claim no access token (organizacaoId/papelOrganizacao); trocar de organização reemite tokens sem reautenticar. Django isolado por organizacao_id. RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização. Convites por e-mail com token JWT próprio, aceite idempotente sob corrida. Rate limit dedicado pra criar organização e enviar convite. Frontend: seletor de organização, /dashboard/organizacoes, /aceitar-convite. Implementado em 5 fases (schema/backfill → sessão/token → Django → RBAC → convites/UI), cada uma revisada e corrigida antes da seguinte. Backfill pra contas/dados pré-existentes escrito e testado, mas ainda não rodado em produção — feature não implantada.",
+      "Sistema passa de single-tenant (papel global, dados isolados só por usuario_id) pra multi-tenant: uma conta pode ser membro de várias organizações, com papel próprio por organização (dono/admin/membro). Organização ativa vira claim no access token (organizacaoId/papelOrganizacao); trocar de organização reemite tokens sem reautenticar. Django isolado por organizacao_id. RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização. Convites por e-mail com token JWT próprio, aceite idempotente sob corrida. Rate limit dedicado pra criar organização e enviar convite. Frontend: seletor de organização, /dashboard/organizacoes, /aceitar-convite. Implementado em 5 fases (schema/backfill → sessão/token → Django → RBAC → convites/UI), cada uma revisada e corrigida antes da seguinte. Backfill pra contas/dados pré-existentes escrito e testado, mas ainda não rodado em produção — feature não implantada. Achado no processo de deploy: os endpoints de autoatendimento LGPD (export/exclusão da própria conta) tinham ficado pra trás — export não incluía organizações/convites, exclusão deixava a organização pessoal órfã e não bloqueava a única pessoa dona de uma organização com outros membros; corrigidos no mesmo dia.",
     categoria: "Multi-tenant",
     prioridade: "alta",
     status: "feito",
