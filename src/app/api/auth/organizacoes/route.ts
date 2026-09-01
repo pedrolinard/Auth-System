@@ -5,8 +5,17 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { criarOrganizacao } from "@/lib/organizacao";
+import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
 import { esquemaCriarOrganizacao } from "@/lib/validacao";
+
+// Toda rota autenticada que cria estado persistente tem algum limite no
+// projeto (reenviar-verificacao 3/h, mfa/iniciar 10/h) — criar organização
+// não tinha nenhum, apesar de gravar linhas de verdade (Organizacao, Membro,
+// sessão nova) a cada chamada. Generoso o bastante pra onboarding real
+// (criar duas ou três organizações num dia não é incomum).
+const MAX_ORGANIZACOES_POR_HORA = 10;
+const JANELA_ORGANIZACOES_MS = 60 * 60 * 1000;
 
 // Lista as organizações de que o usuário autenticado é membro (dono, admin
 // ou membro) — usado pelo seletor de organização no frontend.
@@ -43,6 +52,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
 
+  const ip = obterIp(req);
+  if (
+    await limiteExcedido({
+      ip,
+      evento: "organizacao_criada",
+      maximo: MAX_ORGANIZACOES_POR_HORA,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitas organizações criadas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
   const corpo = await req.json().catch(() => null);
   const dadosValidados = esquemaCriarOrganizacao.safeParse(corpo);
   if (!dadosValidados.success) {
@@ -66,6 +89,11 @@ export async function POST(req: Request) {
     evento: "organizacao_criada",
     usuarioId: usuario.id,
     email: usuario.email,
+  });
+  await registrarTentativaIp({
+    ip,
+    evento: "organizacao_criada",
+    janelaMs: JANELA_ORGANIZACOES_MS,
   });
 
   const sessao = await criarSessao(usuario, req, organizacao.id);

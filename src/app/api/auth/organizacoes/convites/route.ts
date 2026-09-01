@@ -5,7 +5,13 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { enviarEmailConviteOrganizacao } from "@/lib/email";
-import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
+import {
+  limiteExcedido,
+  limiteExcedidoPorEmail,
+  obterIp,
+  registrarTentativaEmail,
+  registrarTentativaIp,
+} from "@/lib/rateLimit";
 import { temPapelOrganizacao } from "@/lib/rbacOrganizacao";
 import { gerarTokenConviteOrganizacao } from "@/lib/token";
 import { esquemaCriarConvite } from "@/lib/validacao";
@@ -17,6 +23,13 @@ import { esquemaCriarConvite } from "@/lib/validacao";
 // uma vez) sem abrir a torneira.
 const MAX_CONVITES_POR_HORA = 30;
 const JANELA_CONVITES_MS = 60 * 60 * 1000;
+
+// Limite por E-MAIL ALVO, além do de IP acima — sem isso, "convidar de
+// novo" pro MESMO e-mail (que reaproveita a linha e reenvia, ver abaixo)
+// ficaria só preso ao teto de 30/h do admin, dando pra martelar uma única
+// caixa de entrada várias vezes. Mesmo raciocínio de esqueci-senha (3/h por
+// e-mail): o limite por IP sozinho não protege um ALVO específico.
+const MAX_CONVITES_POR_EMAIL = 5;
 
 // Lista os convites PENDENTES da organização ativa.
 export async function GET(req: Request) {
@@ -79,6 +92,19 @@ export async function POST(req: Request) {
   }
   const { email, papel } = dadosValidados.data;
 
+  if (
+    await limiteExcedidoPorEmail({
+      email,
+      evento: "convite_organizacao_criado",
+      maximo: MAX_CONVITES_POR_EMAIL,
+    })
+  ) {
+    return NextResponse.json(
+      { erro: "Muitos convites enviados para este e-mail. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
   const jaEhMembro = await prisma.membro.findFirst({
     where: { organizacaoId: payload.organizacaoId, usuario: { email } },
   });
@@ -129,6 +155,11 @@ export async function POST(req: Request) {
   });
   await registrarTentativaIp({
     ip,
+    evento: "convite_organizacao_criado",
+    janelaMs: JANELA_CONVITES_MS,
+  });
+  await registrarTentativaEmail({
+    email,
     evento: "convite_organizacao_criado",
     janelaMs: JANELA_CONVITES_MS,
   });

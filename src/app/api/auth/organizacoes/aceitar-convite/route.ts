@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
@@ -10,7 +11,7 @@ import { esquemaAceitarConvite } from "@/lib/validacao";
 
 // Aceita um convite — exige estar AUTENTICADO (não é um link stateless puro
 // como verificar-email/redefinir-senha) porque criar o Membro precisa saber
-// pra QUAL conta, e a única forma seura de amarrar "este e-mail convidado" a
+// pra QUAL conta, e a única forma segura de amarrar "este e-mail convidado" a
 // "esta conta" é a pessoa já ter provado a posse fazendo login. Sem conta
 // ainda, o frontend (/aceitar-convite) redireciona pro cadastro preservando
 // o token, mesmo padrão de link com conta inexistente.
@@ -76,21 +77,32 @@ export async function POST(req: Request) {
   });
 
   if (!jaEhMembro) {
-    await prisma.$transaction([
-      prisma.membro.create({
-        data: { organizacaoId: convite.organizacaoId, usuarioId: usuario.id, papel: convite.papel },
-      }),
-      prisma.conviteOrganizacao.update({
-        where: { id: convite.id },
-        data: { aceitoEm: new Date() },
-      }),
-    ]);
-    await registrarEvento({
-      req,
-      evento: "convite_organizacao_aceito",
-      usuarioId: usuario.id,
-      email: usuario.email,
-    });
+    try {
+      await prisma.$transaction([
+        prisma.membro.create({
+          data: { organizacaoId: convite.organizacaoId, usuarioId: usuario.id, papel: convite.papel },
+        }),
+        prisma.conviteOrganizacao.update({
+          where: { id: convite.id },
+          data: { aceitoEm: new Date() },
+        }),
+      ]);
+      await registrarEvento({
+        req,
+        evento: "convite_organizacao_aceito",
+        usuarioId: usuario.id,
+        email: usuario.email,
+      });
+    } catch (erro) {
+      // Duas abas/cliques aceitando o MESMO convite ao mesmo tempo: as duas
+      // passam pela checagem de jaEhMembro antes de qualquer uma escrever, a
+      // segunda esbarra na constraint única de Membro. Não é erro de
+      // verdade — a pessoa já entrou na organização pela outra requisição —
+      // só segue pra emitir a sessão normalmente em vez de estourar 500.
+      const jaMembroPorCorrida =
+        erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002";
+      if (!jaMembroPorCorrida) throw erro;
+    }
   } else if (!convite.aceitoEm) {
     // Já era membro (ex.: dois convites concorrentes) — só fecha o convite
     // como aceito, idempotente, sem tentar criar o Membro de novo.

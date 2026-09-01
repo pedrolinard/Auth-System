@@ -91,6 +91,28 @@ describe("Organizações — criar, listar, trocar", () => {
     });
     expect(resposta.status).toBe(404);
   });
+
+  it("bloqueia com 429 depois de criar organizações demais do mesmo IP", async () => {
+    const dono = await criarUsuarioTeste("org-rate-limit");
+    emailsCriados.push(dono.email);
+    const ip = ipAleatorio();
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha, ip);
+
+    async function criar() {
+      return fetch(`${BASE_URL}/api/auth/organizacoes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": ip, ...cabecalhos },
+        body: JSON.stringify({ nome: `Org ${Math.random()}` }),
+      });
+    }
+
+    for (let i = 0; i < 10; i++) {
+      const resposta = await criar();
+      expect(resposta.status).toBe(201);
+    }
+    const decimaPrimeira = await criar();
+    expect(decimaPrimeira.status).toBe(429);
+  }, 30000);
 });
 
 describe("Convites de organização", () => {
@@ -321,5 +343,71 @@ describe("Convites de organização", () => {
       body: JSON.stringify({ token }),
     });
     expect(respostaAceitar.status).toBe(400);
+  });
+
+  it("bloqueia com 429 depois de convidar o MESMO e-mail várias vezes", async () => {
+    const dono = await criarUsuarioTeste("convite-rate-limit-email");
+    emailsCriados.push(dono.email);
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
+    const emailAlvo = "alvo-de-spam@teste.local";
+
+    async function convidar() {
+      return fetch(`${BASE_URL}/api/auth/organizacoes/convites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio(), ...cabecalhos },
+        body: JSON.stringify({ email: emailAlvo, papel: "membro" }),
+      });
+    }
+
+    for (let i = 0; i < 5; i++) {
+      const resposta = await convidar();
+      expect(resposta.status).toBe(201);
+    }
+    const sexta = await convidar();
+    expect(sexta.status).toBe(429);
+  }, 30000);
+
+  it("aceitar o mesmo convite duas vezes ao mesmo tempo não gera 500", async () => {
+    const dono = await criarUsuarioTeste("convite-corrida-dono");
+    const convidado = await criarUsuarioTeste("convite-corrida-alvo");
+    emailsCriados.push(dono.email, convidado.email);
+    const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
+    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const convite = await prisma.conviteOrganizacao.create({
+      data: { organizacaoId, email: convidado.email, papel: "membro", criadoPorId: donoRegistro.id },
+    });
+    const token = await gerarTokenConviteOrganizacao({
+      conviteId: convite.id,
+      organizacaoId,
+      email: convidado.email,
+      papel: "membro",
+    });
+
+    const { cabecalhos } = await loginTeste(convidado.email, convidado.senha);
+    const aceitar = () =>
+      fetch(`${BASE_URL}/api/auth/organizacoes/aceitar-convite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...cabecalhos },
+        body: JSON.stringify({ token }),
+      });
+
+    const [respostaA, respostaB] = await Promise.all([aceitar(), aceitar()]);
+    // As duas costumam passar pela checagem de "já é membro" antes de
+    // qualquer uma escrever (é exatamente a corrida que o catch de P2002
+    // existe pra cobrir) — então normalmente as DUAS voltam 200. O que
+    // importa aqui é que nenhuma delas estoura 500.
+    expect(respostaA.status).not.toBe(500);
+    expect(respostaB.status).not.toBe(500);
+    expect([respostaA.status, respostaB.status]).toContain(200);
+
+    const convidadoRegistro = await prisma.usuario.findUniqueOrThrow({
+      where: { email: convidado.email },
+    });
+    const membro = await prisma.membro.findUnique({
+      where: {
+        organizacaoId_usuarioId: { organizacaoId, usuarioId: convidadoRegistro.id },
+      },
+    });
+    expect(membro).not.toBeNull();
   });
 });
