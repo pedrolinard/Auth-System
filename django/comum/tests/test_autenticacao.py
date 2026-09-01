@@ -34,11 +34,10 @@ def usar_chave_de_teste(settings):
 
 
 def _gerar_token(payload, chave_pem=_CHAVE_PRIVADA_PEM, algoritmo="RS256"):
-    # Preenche iss/aud/exp esperados por padrão (o gateway Next.js sempre os
+    # Preenche iss/exp esperados por padrão (o gateway Next.js sempre os
     # carimba) — cada teste ainda pode sobrescrever pra exercitar o caso ruim.
     corpo = {
         "iss": settings.JWT_ACCESS_ISSUER,
-        "aud": settings.JWT_ACCESS_AUDIENCE,
         "exp": int(time.time()) + 900,
         **payload,
     }
@@ -133,19 +132,19 @@ def test_token_com_emissor_errado_rejeitado():
         AutenticacaoJWT().authenticate(_requisicao_com_token(token))
 
 
-def test_token_com_audiencia_errada_rejeitado():
-    token = _gerar_token({"sub": "usuario-123", "aud": "outra-audiencia"})
+def test_token_sem_emissor_rejeitado():
+    token = jwt.encode(
+        {"sub": "usuario-123", "exp": int(time.time()) + 900},
+        _CHAVE_PRIVADA_PEM,
+        algorithm="RS256",
+    )
     with pytest.raises(AuthenticationFailed, match="inválido"):
         AutenticacaoJWT().authenticate(_requisicao_com_token(token))
 
 
 def test_token_sem_exp_rejeitado():
     token = jwt.encode(
-        {
-            "sub": "usuario-123",
-            "iss": settings.JWT_ACCESS_ISSUER,
-            "aud": settings.JWT_ACCESS_AUDIENCE,
-        },
+        {"sub": "usuario-123", "iss": settings.JWT_ACCESS_ISSUER},
         _CHAVE_PRIVADA_PEM,
         algorithm="RS256",
     )

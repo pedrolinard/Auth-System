@@ -45,13 +45,18 @@ const SEGREDO_PASSKEY = new TextEncoder().encode(process.env.JWT_PASSKEY_SECRET)
 export const DURACAO_TOKEN_ACESSO = "15m";
 export const DURACAO_TOKEN_ACESSO_SEGUNDOS = 15 * 60;
 
-// Emissor e audiência do access token — carimbados na assinatura e checados
-// na verificação (aqui e no serviço Django, ver django/comum/autenticacao.py
-// e django/config/settings.py). Amarra o token a este emissor e a estes
-// consumidores: um JWT válido de outro contexto/produto que reusasse o mesmo
-// par de chaves não passaria. Valores fixos (não são segredo, só rótulos).
+// Emissor do access token — carimbado na assinatura e checado na verificação
+// (aqui e no serviço Django, ver django/comum/autenticacao.py). Amarra o
+// token a este emissor: um JWT válido de outro contexto/produto que reusasse
+// o mesmo par de chaves não passaria. Valor fixo (não é segredo, só rótulo).
+//
+// Só `iss`, sem `aud`: um verificador que NÃO espera `iss` simplesmente o
+// ignora (compatível com qualquer consumidor antigo), enquanto um `aud`
+// presente no token faz o PyJWT REJEITAR se o `decode` não passar
+// `audience=` — o que quebraria todo consumidor até ele ser atualizado em
+// sincronia. `iss` sozinho já cobre o cenário (emissor único, keypair
+// dedicado).
 export const EMISSOR_TOKEN_ACESSO = "auth-gateway";
-export const AUDIENCIA_TOKEN_ACESSO = "auth-gateway-servicos";
 export const DURACAO_TOKEN_ATUALIZACAO_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 export const DURACAO_TOKEN_DESAFIO_MFA = "5m";
 export const DURACAO_TOKEN_DESAFIO_MFA_MS = 5 * 60 * 1000;
@@ -132,7 +137,6 @@ export async function gerarTokenAcesso(payload: PayloadTokenAcesso) {
     .setProtectedHeader({ alg: "RS256" })
     .setIssuedAt()
     .setIssuer(EMISSOR_TOKEN_ACESSO)
-    .setAudience(AUDIENCIA_TOKEN_ACESSO)
     .setExpirationTime(DURACAO_TOKEN_ACESSO)
     .sign(await obterChavePrivadaAcesso());
 }
@@ -145,7 +149,6 @@ export async function verificarTokenAcesso(token: string) {
       {
         algorithms: ["RS256"],
         issuer: EMISSOR_TOKEN_ACESSO,
-        audience: AUDIENCIA_TOKEN_ACESSO,
       },
     );
     return payload;

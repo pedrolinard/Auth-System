@@ -52,15 +52,14 @@ class AutenticacaoJWT(BaseAuthentication):
                 settings.JWT_ACCESS_PUBLIC_KEY,
                 algorithms=["RS256"],
                 issuer=settings.JWT_ACCESS_ISSUER,
-                audience=settings.JWT_ACCESS_AUDIENCE,
                 # `sub` fica de fora do require de propósito — a checagem
                 # explícita logo abaixo dá uma mensagem mais específica.
-                options={"require": ["exp", "iss", "aud"]},
+                options={"require": ["exp", "iss"]},
             )
         except jwt.ExpiredSignatureError:
             raise AuthenticationFailed("Token expirado.")
         except jwt.InvalidTokenError:
-            # Cobre assinatura, iss/aud errados, claims obrigatórios ausentes.
+            # Cobre assinatura, iss errado, claims obrigatórios ausentes.
             raise AuthenticationFailed("Token inválido.")
 
         sub = payload.get("sub")
