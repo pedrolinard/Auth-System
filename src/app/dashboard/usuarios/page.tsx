@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Users } from "lucide-react";
 import {
-  excluirUsuario,
   listarUsuarios,
   obterUsuarioAtual,
   reativarUsuario,
+  removerMembroDaOrganizacao,
   suspenderUsuario,
   type UsuarioAdmin,
 } from "@/lib/clienteAuth";
@@ -95,16 +95,16 @@ export default function PaginaUsuarios() {
     }
   }
 
-  async function aoExcluir(usuario: UsuarioAdmin) {
+  async function aoRemover(usuario: UsuarioAdmin) {
     setProcessandoId(usuario.id);
     try {
-      await excluirUsuario(usuario.id);
+      await removerMembroDaOrganizacao(usuario.id);
       setConfirmandoExclusaoId(null);
       await carregar();
-      notificar.info(`A conta de ${usuario.email} foi excluída.`);
+      notificar.info(`${usuario.nome} foi removido da organização.`);
     } catch (erroCapturado) {
       notificar.erro(
-        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra excluir a conta.",
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra remover.",
       );
     } finally {
       setProcessandoId(null);
@@ -118,7 +118,7 @@ export default function PaginaUsuarios() {
           icone={Users}
           eyebrow="Admin"
           titulo="Usuários"
-          descricao="Suspenda, reative ou remova contas. Você não aparece com ações sobre si mesmo."
+          descricao="Suspenda, reative ou remova membros desta organização. Você não aparece com ações sobre si mesmo."
           acao={
             usuarios ? (
               <span className="rounded-full bg-black/[.05] px-2.5 py-1 text-xs font-medium text-zinc-500 tabular-nums dark:bg-white/[.06] dark:text-zinc-400">
@@ -198,7 +198,7 @@ export default function PaginaUsuarios() {
                       <td className="px-4 py-3">
                         <span
                           className={
-                            usuario.papel === "admin"
+                            usuario.papel === "dono" || usuario.papel === "admin"
                               ? "rounded-full bg-black/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-black dark:bg-white/10 dark:text-white"
                               : "text-xs text-zinc-500 dark:text-zinc-400"
                           }
@@ -261,15 +261,15 @@ export default function PaginaUsuarios() {
                         ) : confirmandoExclusaoId === usuario.id ? (
                           <div className="flex flex-col gap-2">
                             <p className="text-xs text-red-600 dark:text-red-400">
-                              Excluir a conta de {usuario.email} de vez?
+                              Remover {usuario.email} desta organização?
                             </p>
                             <div className="flex flex-wrap gap-1.5">
                               <button
-                                onClick={() => aoExcluir(usuario)}
+                                onClick={() => aoRemover(usuario)}
                                 disabled={processandoId === usuario.id}
                                 className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition-all duration-150 hover:-translate-y-px hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
                               >
-                                {processandoId === usuario.id ? "Excluindo..." : "Sim, excluir"}
+                                {processandoId === usuario.id ? "Removendo..." : "Sim, remover"}
                               </button>
                               <button
                                 onClick={() => setConfirmandoExclusaoId(null)}
@@ -302,7 +302,7 @@ export default function PaginaUsuarios() {
                               disabled={processandoId === usuario.id}
                               className="inline-flex items-center justify-center rounded-full border border-red-600/30 px-4 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 disabled:opacity-50 dark:text-red-400"
                             >
-                              Excluir
+                              Remover
                             </button>
                           </div>
                         )}

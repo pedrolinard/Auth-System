@@ -4,6 +4,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
+import { obterMembroDaOrganizacao, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
 
 export async function POST(
   req: Request,
@@ -17,14 +18,21 @@ export async function POST(
   if (!payload) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
-  if (payload.papel !== "admin") {
+  if (!temPapelOrganizacao(payload.papelOrganizacao, ["dono", "admin"])) {
     return NextResponse.json(
-      { erro: "Acesso restrito a administradores." },
+      { erro: "Acesso restrito a administradores da organização." },
       { status: 403 },
     );
   }
 
   const { id } = await params;
+
+  if (!(await obterMembroDaOrganizacao(payload.organizacaoId, id))) {
+    return NextResponse.json(
+      { erro: "Usuário não encontrado nesta organização." },
+      { status: 404 },
+    );
+  }
 
   const usuario = await prisma.usuario.findUnique({ where: { id } });
   if (!usuario) {

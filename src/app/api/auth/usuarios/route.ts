@@ -1,41 +1,54 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { autenticarRequisicao } from "@/lib/autenticar";
+import { temPapelOrganizacao } from "@/lib/rbacOrganizacao";
 import { estaSuspenso } from "@/lib/suspensao";
 
-// Lista todos os usuários — acessível apenas para quem tem papel "admin".
+// Lista os MEMBROS da organização ativa — acessível a quem tem papel "dono"
+// ou "admin" NESSA organização. Antes do multi-tenant, listava todo mundo do
+// sistema (Usuario.papel === "admin"); agora é escopado (ver
+// src/lib/rbacOrganizacao.ts sobre a mudança).
 export async function GET(req: Request) {
   const payload = await autenticarRequisicao(req);
   if (!payload) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
-  if (payload.papel !== "admin") {
+  if (!temPapelOrganizacao(payload.papelOrganizacao, ["dono", "admin"])) {
     return NextResponse.json(
-      { erro: "Acesso restrito a administradores." },
+      { erro: "Acesso restrito a administradores da organização." },
       { status: 403 },
     );
   }
 
-  const usuarios = await prisma.usuario.findMany({
+  const membros = await prisma.membro.findMany({
+    where: { organizacaoId: payload.organizacaoId },
     select: {
-      id: true,
-      nome: true,
-      email: true,
       papel: true,
-      criadoEm: true,
-      suspenso: true,
-      suspensoAte: true,
-      suspensoMotivo: true,
+      usuario: {
+        select: {
+          id: true,
+          nome: true,
+          email: true,
+          criadoEm: true,
+          suspenso: true,
+          suspensoAte: true,
+          suspensoMotivo: true,
+        },
+      },
     },
     orderBy: { criadoEm: "asc" },
   });
 
   // suspensoAtivo já vem calculado (suspensão temporária expirada = false)
   // pra o cliente não precisar refazer essa conta com o relógio local.
-  const usuariosComStatus = usuarios.map((usuario) => ({
+  // Suspensão continua sendo por CONTA (Usuario), não por organização — ver
+  // nota em rbacOrganizacao.ts: suspender aqui afeta a conta em qualquer
+  // organização de que o usuário participe, trade-off aceito por enquanto.
+  const usuarios = membros.map(({ papel, usuario }) => ({
     ...usuario,
+    papel,
     suspensoAtivo: estaSuspenso(usuario),
   }));
 
-  return NextResponse.json({ usuarios: usuariosComStatus });
+  return NextResponse.json({ usuarios });
 }

@@ -31,10 +31,10 @@ export default function PaginaConta() {
           eyebrow="Conta"
           titulo="Perfil"
           acao={
-            usuario.papel === "admin" ? (
+            usuario.papelOrganizacao === "dono" || usuario.papelOrganizacao === "admin" ? (
               <span className="flex items-center gap-1 rounded-full bg-[var(--accent-wash)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]">
                 <BadgeCheck className="h-3 w-3" aria-hidden="true" />
-                admin
+                {usuario.papelOrganizacao}
               </span>
             ) : undefined
           }

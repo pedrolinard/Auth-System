@@ -5,21 +5,56 @@ import { apagarUsuariosTeste, BASE_URL, criarUsuarioTeste, loginTeste } from "..
 
 const emailsCriados: string[] = [];
 
-async function promoverAdmin(email: string) {
-  await prisma.usuario.update({ where: { email }, data: { papel: "admin" } });
+// Todo cadastro já cria uma organização pessoal e vira "dono" dela (ver
+// src/lib/organizacao.ts) — é a organização que resolverOrganizacaoAtiva usa
+// no login (primeira por criadoEm), então é sempre esta que a sessão de
+// login normal do ator usa. Testes de RBAC de organização manipulam
+// diretamente Membro (sem invite/troca de org, que são fase 5) pra montar o
+// cenário: rebaixar o papel do próprio ator na PRÓPRIA organização, e
+// adicionar o alvo como membro dessa mesma organização.
+async function obterOrganizacaoDoUsuario(usuarioId: string) {
+  const membro = await prisma.membro.findFirstOrThrow({
+    where: { usuarioId },
+    orderBy: { criadoEm: "asc" },
+  });
+  return membro.organizacaoId;
 }
 
-describe("Admin — suspender/reativar/excluir usuário", () => {
+async function definirPapelNaPropriaOrganizacao(
+  usuarioId: string,
+  papel: "dono" | "admin" | "membro",
+) {
+  const organizacaoId = await obterOrganizacaoDoUsuario(usuarioId);
+  await prisma.membro.update({
+    where: { organizacaoId_usuarioId: { organizacaoId, usuarioId } },
+    data: { papel },
+  });
+  return organizacaoId;
+}
+
+async function adicionarComoMembro(
+  organizacaoId: string,
+  usuarioId: string,
+  papel: "dono" | "admin" | "membro" = "membro",
+) {
+  await prisma.membro.create({ data: { organizacaoId, usuarioId, papel } });
+}
+
+describe("Admin de organização — suspender/reativar/remover membro", () => {
   afterAll(async () => {
     await apagarUsuariosTeste(emailsCriados);
   });
 
-  it("usuário comum recebe 403 ao tentar suspender outro usuário", async () => {
-    const admin = await criarUsuarioTeste("admin-susp-403");
+  it("membro comum recebe 403 ao tentar suspender outro membro da organização", async () => {
+    const ator = await criarUsuarioTeste("membro-susp-403");
     const alvo = await criarUsuarioTeste("alvo-susp-403");
-    emailsCriados.push(admin.email, alvo.email);
-    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
+    emailsCriados.push(ator.email, alvo.email);
+    const atorRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: ator.email } });
     const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+
+    const organizacaoId = await definirPapelNaPropriaOrganizacao(atorRegistro.id, "membro");
+    await adicionarComoMembro(organizacaoId, alvoRegistro.id);
+    const { cabecalhos } = await loginTeste(ator.email, ator.senha);
 
     const resposta = await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
       method: "POST",
@@ -29,13 +64,15 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
     expect(resposta.status).toBe(403);
   });
 
-  it("admin suspende temporariamente e o login passa a ser bloqueado", async () => {
-    const admin = await criarUsuarioTeste("admin-susp-temp");
+  it("dono suspende temporariamente e o login passa a ser bloqueado", async () => {
+    const dono = await criarUsuarioTeste("dono-susp-temp");
     const alvo = await criarUsuarioTeste("alvo-susp-temp");
-    emailsCriados.push(admin.email, alvo.email);
-    await promoverAdmin(admin.email);
-    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
+    emailsCriados.push(dono.email, alvo.email);
+    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
     const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
+    await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
 
     const respostaSuspender = await fetch(
       `${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`,
@@ -63,13 +100,15 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
     expect(linha.suspensoMotivo).toBe("teste automatizado");
   });
 
-  it("admin suspende permanentemente (sem dias) e reativa depois", async () => {
-    const admin = await criarUsuarioTeste("admin-susp-perm");
-    const alvo = await criarUsuarioTeste("alvo-susp-perm");
+  it("admin da organização (não dono) também suspende e reativa", async () => {
+    const admin = await criarUsuarioTeste("admin-org-susp-perm");
+    const alvo = await criarUsuarioTeste("alvo-org-susp-perm");
     emailsCriados.push(admin.email, alvo.email);
-    await promoverAdmin(admin.email);
-    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
+    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
     const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const organizacaoDoAdmin = await definirPapelNaPropriaOrganizacao(adminRegistro.id, "admin");
+    await adicionarComoMembro(organizacaoDoAdmin, alvoRegistro.id);
+    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
 
     await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
       method: "POST",
@@ -99,13 +138,15 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
   });
 
   it("suspender revoga as sessões ativas na hora", async () => {
-    const admin = await criarUsuarioTeste("admin-susp-sessao");
+    const dono = await criarUsuarioTeste("dono-susp-sessao");
     const alvo = await criarUsuarioTeste("alvo-susp-sessao");
-    emailsCriados.push(admin.email, alvo.email);
-    await promoverAdmin(admin.email);
-    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
-    const sessaoAlvo = await loginTeste(alvo.email, alvo.senha);
+    emailsCriados.push(dono.email, alvo.email);
+    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
     const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
+    await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
+    const sessaoAlvo = await loginTeste(alvo.email, alvo.senha);
 
     await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
       method: "POST",
@@ -120,15 +161,14 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
     expect(respostaAtualizar.status).toBe(401);
   });
 
-  it("admin não consegue suspender nem excluir a própria conta", async () => {
-    const admin = await criarUsuarioTeste("admin-auto-susp");
-    emailsCriados.push(admin.email);
-    await promoverAdmin(admin.email);
-    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
-    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
+  it("dono não consegue suspender nem remover a si mesmo", async () => {
+    const dono = await criarUsuarioTeste("dono-auto-susp");
+    emailsCriados.push(dono.email);
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
+    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
 
     const respostaSuspender = await fetch(
-      `${BASE_URL}/api/auth/usuarios/${adminRegistro.id}/suspender`,
+      `${BASE_URL}/api/auth/usuarios/${donoRegistro.id}/suspender`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", ...cabecalhos },
@@ -137,19 +177,22 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
     );
     expect(respostaSuspender.status).toBe(400);
 
-    const respostaExcluir = await fetch(`${BASE_URL}/api/auth/usuarios/${adminRegistro.id}`, {
+    const respostaRemover = await fetch(`${BASE_URL}/api/auth/usuarios/${donoRegistro.id}`, {
       method: "DELETE",
       headers: cabecalhos,
     });
-    expect(respostaExcluir.status).toBe(400);
+    expect(respostaRemover.status).toBe(400);
   });
 
   it("suspender no meio do desafio de MFA bloqueia a conclusão do login", async () => {
-    const admin = await criarUsuarioTeste("admin-susp-mfa");
+    const dono = await criarUsuarioTeste("dono-susp-mfa");
     const alvo = await criarUsuarioTeste("alvo-susp-mfa");
-    emailsCriados.push(admin.email, alvo.email);
-    await promoverAdmin(admin.email);
-    const { cabecalhos: cabecalhosAdmin } = await loginTeste(admin.email, admin.senha);
+    emailsCriados.push(dono.email, alvo.email);
+    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
+    await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
+    const { cabecalhos: cabecalhosDono } = await loginTeste(dono.email, dono.senha);
     const { cabecalhos: cabecalhosAlvo } = await loginTeste(alvo.email, alvo.senha);
 
     // Ativa MFA no alvo.
@@ -179,11 +222,10 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
     const { mfaToken } = await respostaLogin.json();
     expect(mfaToken).toBeTruthy();
 
-    // Admin suspende a conta ANTES do código de MFA ser enviado.
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    // Dono suspende a conta ANTES do código de MFA ser enviado.
     await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...cabecalhosAdmin },
+      headers: { "Content-Type": "application/json", ...cabecalhosDono },
       body: JSON.stringify({}),
     });
 
@@ -202,14 +244,15 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
     expect(respostaVerificar.status).toBe(403);
   });
 
-  it("registra o admin autor em suspensão/reativação, não só o alvo", async () => {
-    const admin = await criarUsuarioTeste("admin-autor-log");
+  it("registra o dono autor em suspensão/reativação, não só o alvo", async () => {
+    const dono = await criarUsuarioTeste("dono-autor-log");
     const alvo = await criarUsuarioTeste("alvo-autor-log");
-    emailsCriados.push(admin.email, alvo.email);
-    await promoverAdmin(admin.email);
-    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
-    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
+    emailsCriados.push(dono.email, alvo.email);
+    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
     const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
+    await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
 
     await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
       method: "POST",
@@ -225,49 +268,110 @@ describe("Admin — suspender/reativar/excluir usuário", () => {
       where: { evento: "usuario_suspenso_por_admin", usuarioId: alvoRegistro.id },
       orderBy: { criadoEm: "desc" },
     });
-    expect(logSuspensao?.autorId).toBe(adminRegistro.id);
-    expect(logSuspensao?.autorEmail).toBe(admin.email);
+    expect(logSuspensao?.autorId).toBe(donoRegistro.id);
+    expect(logSuspensao?.autorEmail).toBe(dono.email);
 
     const logReativacao = await prisma.logAuditoria.findFirst({
       where: { evento: "usuario_reativado_por_admin", usuarioId: alvoRegistro.id },
       orderBy: { criadoEm: "desc" },
     });
-    expect(logReativacao?.autorId).toBe(adminRegistro.id);
-    expect(logReativacao?.autorEmail).toBe(admin.email);
+    expect(logReativacao?.autorId).toBe(donoRegistro.id);
+    expect(logReativacao?.autorEmail).toBe(dono.email);
   });
 
-  it("admin exclui a conta de outro usuário permanentemente", async () => {
-    const admin = await criarUsuarioTeste("admin-excluir");
-    const alvo = await criarUsuarioTeste("alvo-excluir");
-    emailsCriados.push(admin.email, alvo.email);
-    await promoverAdmin(admin.email);
-    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
-    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+  it("dono não consegue agir sobre alguém que não é membro da própria organização", async () => {
+    const dono = await criarUsuarioTeste("dono-fora-org");
+    const estranho = await criarUsuarioTeste("estranho-fora-org");
+    emailsCriados.push(dono.email, estranho.email);
+    const estranhoRegistro = await prisma.usuario.findUniqueOrThrow({
+      where: { email: estranho.email },
+    });
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
 
-    const respostaExcluir = await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}`, {
+    const resposta = await fetch(
+      `${BASE_URL}/api/auth/usuarios/${estranhoRegistro.id}/suspender`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...cabecalhos },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(resposta.status).toBe(404);
+  });
+
+  it("dono remove membro da organização — conta continua existindo e ele segue logando na própria", async () => {
+    const dono = await criarUsuarioTeste("dono-remover");
+    const alvo = await criarUsuarioTeste("alvo-remover");
+    emailsCriados.push(dono.email, alvo.email);
+    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
+    await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
+
+    const respostaRemover = await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}`, {
       method: "DELETE",
       headers: cabecalhos,
     });
-    expect(respostaExcluir.status).toBe(200);
+    expect(respostaRemover.status).toBe(200);
 
-    const registroApagado = await prisma.usuario.findUnique({ where: { id: alvoRegistro.id } });
-    expect(registroApagado).toBeNull();
+    const membro = await prisma.membro.findUnique({
+      where: {
+        organizacaoId_usuarioId: { organizacaoId: organizacaoDoDono, usuarioId: alvoRegistro.id },
+      },
+    });
+    expect(membro).toBeNull();
 
-    // LogAuditoria não tem FK pro usuário (de propósito, ver comentário na
-    // rota DELETE) — o registro de QUEM excluiu sobrevive à exclusão da conta.
-    const logExclusao = await prisma.logAuditoria.findFirst({
-      where: { evento: "usuario_excluido_por_admin", usuarioId: alvoRegistro.id },
+    // A conta em si NÃO foi excluída — só o vínculo com esta organização.
+    const contaAlvo = await prisma.usuario.findUnique({ where: { id: alvoRegistro.id } });
+    expect(contaAlvo).not.toBeNull();
+
+    const logRemocao = await prisma.logAuditoria.findFirst({
+      where: { evento: "membro_removido_da_organizacao", usuarioId: alvoRegistro.id },
       orderBy: { criadoEm: "desc" },
     });
-    expect(logExclusao?.autorId).toBe(adminRegistro.id);
-    expect(logExclusao?.autorEmail).toBe(admin.email);
+    expect(logRemocao?.autorId).toBe(donoRegistro.id);
 
-    const loginApagado = await fetch(`${BASE_URL}/api/auth/login`, {
+    // Alvo continua conseguindo logar — na PRÓPRIA organização pessoal, que
+    // nunca foi afetada por ele ter sido removido da organização do dono.
+    const loginAlvo = await fetch(`${BASE_URL}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: alvo.email, senha: alvo.senha }),
     });
-    expect(loginApagado.status).toBe(401);
+    expect(loginAlvo.status).toBe(200);
+  });
+
+  it("não deixa remover o único dono da organização", async () => {
+    // O ator precisa logar numa sessão escopada pra ESTA organização — como
+    // fase 5 (troca de organização) ainda não existe, a única forma de
+    // conseguir isso é a organização ser a PRÓPRIA (primeira por criadoEm,
+    // que é o que resolverOrganizacaoAtiva usa no login). Por isso quem age
+    // aqui é "admin" na PRÓPRIA organização (rebaixado de dono pra admin), e
+    // quem é removido é OUTRO usuário adicionado como o único dono dela.
+    const admin = await criarUsuarioTeste("admin-remover-dono");
+    emailsCriados.push(admin.email);
+    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
+    const organizacao = await definirPapelNaPropriaOrganizacao(adminRegistro.id, "admin");
+
+    const dono = await criarUsuarioTeste("dono-unico");
+    emailsCriados.push(dono.email);
+    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    await adicionarComoMembro(organizacao, donoRegistro.id, "dono");
+
+    const { cabecalhos } = await loginTeste(admin.email, admin.senha);
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/usuarios/${donoRegistro.id}`, {
+      method: "DELETE",
+      headers: cabecalhos,
+    });
+    expect(resposta.status).toBe(400);
+
+    const membroDono = await prisma.membro.findUnique({
+      where: {
+        organizacaoId_usuarioId: { organizacaoId: organizacao, usuarioId: donoRegistro.id },
+      },
+    });
+    expect(membroDono).not.toBeNull();
   });
 });

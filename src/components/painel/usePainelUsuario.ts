@@ -11,7 +11,12 @@ export type UsuarioPainel = {
   criadoEm: string;
   mfaAtivado: boolean;
   emailVerificado: boolean;
+  // Papel de SISTEMA (quem opera a instalação inteira — painel de
+  // auditoria). Não confundir com papelOrganizacao abaixo, que é o que
+  // decide acesso a "Usuários" (gestão de membros).
   papel: "usuario" | "admin";
+  organizacaoId: string;
+  papelOrganizacao: "dono" | "admin" | "membro";
 };
 
 // Guarda compartilhada das telas do painel que exigem o usuário carregado

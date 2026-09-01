@@ -4,8 +4,16 @@ import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
+import { obterMembroDaOrganizacao, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
 import { esquemaSuspensao } from "@/lib/validacao";
 
+// Quem pode suspender é escopado por organização (dono/admin da org ativa),
+// mas suspenso/suspensoAte/suspensoMotivo continuam campos GLOBAIS do
+// Usuario — suspender aqui bloqueia login em QUALQUER organização de que a
+// pessoa participe, não só nesta. Trade-off aceito por enquanto (mesma
+// categoria de decisão consciente do README: mover suspensão pra dentro de
+// Membro é escopo de uma fase futura, não crítico o bastante pra bloquear
+// esta); documentado aqui e no roadmap.
 export async function POST(
   req: Request,
   { params }: RouteContext<"/api/auth/usuarios/[id]/suspender">,
@@ -18,9 +26,9 @@ export async function POST(
   if (!payload) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
-  if (payload.papel !== "admin") {
+  if (!temPapelOrganizacao(payload.papelOrganizacao, ["dono", "admin"])) {
     return NextResponse.json(
-      { erro: "Acesso restrito a administradores." },
+      { erro: "Acesso restrito a administradores da organização." },
       { status: 403 },
     );
   }
@@ -39,6 +47,16 @@ export async function POST(
     return NextResponse.json(
       { erro: "Dados inválidos.", detalhes: dadosValidados.error.flatten() },
       { status: 400 },
+    );
+  }
+
+  // Alvo precisa ser membro da MESMA organização de quem está agindo — sem
+  // isso, um admin da organização A suspenderia qualquer conta do sistema
+  // só sabendo o id.
+  if (!(await obterMembroDaOrganizacao(payload.organizacaoId, id))) {
+    return NextResponse.json(
+      { erro: "Usuário não encontrado nesta organização." },
+      { status: 404 },
     );
   }
 

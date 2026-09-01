@@ -37,5 +37,17 @@ export async function GET(req: Request) {
     ? await contarCodigosRestantes(usuario.id)
     : null;
 
-  return NextResponse.json({ usuario: { ...usuario, codigosBackupRestantes } });
+  return NextResponse.json({
+    usuario: {
+      ...usuario,
+      codigosBackupRestantes,
+      // Direto do token (não é preciso consultar Membro de novo) — é o que
+      // o frontend usa pra decidir se mostra as ações de admin de
+      // organização (ver dashboard/page.tsx e dashboard/usuarios). Não é o
+      // mesmo campo que `papel` acima (esse é o papel de SISTEMA,
+      // Usuario.papel).
+      organizacaoId: payload.organizacaoId,
+      papelOrganizacao: payload.papelOrganizacao,
+    },
+  });
 }

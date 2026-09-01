@@ -336,7 +336,9 @@ export type UsuarioAdmin = {
   id: string;
   nome: string;
   email: string;
-  papel: "usuario" | "admin";
+  // Papel NA ORGANIZAÇÃO ativa (dono/admin/membro) — desde o multi-tenant,
+  // não é mais o papel de sistema global (usuario/admin).
+  papel: "dono" | "admin" | "membro";
   criadoEm: string;
   suspenso: boolean;
   suspensoAte: string | null;
@@ -351,14 +353,17 @@ export async function listarUsuarios(): Promise<UsuarioAdmin[]> {
   return corpo.usuarios;
 }
 
-export async function excluirUsuario(id: string) {
+// Remove o membro da organização ATIVA — não exclui a conta dele (que pode
+// pertencer a outras organizações). Exclusão de conta de verdade é
+// autoatendimento do próprio titular (excluirMinhaConta).
+export async function removerMembroDaOrganizacao(id: string) {
   const resposta = await fetch(`/api/auth/usuarios/${id}`, {
     method: "DELETE",
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
   const corpo = await resposta.json();
-  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao excluir usuário."));
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao remover membro."));
 }
 
 export async function suspenderUsuario(id: string, dados: { dias?: number; motivo?: string }) {

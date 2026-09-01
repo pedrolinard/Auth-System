@@ -48,7 +48,12 @@ export default function PaginaVisaoGeral() {
   useEffect(() => {
     if (!usuario) return;
     let ativo = true;
-    const ehAdmin = usuario.papel === "admin";
+    // Dois eixos de admin separados desde o multi-tenant: "Usuários" é
+    // gerenciar membros da ORGANIZAÇÃO ativa (papelOrganizacao), "Auditoria"
+    // continua sendo o papel de SISTEMA (usuario.papel) — ver
+    // src/lib/rbacOrganizacao.ts sobre por que não é a mesma coisa.
+    const ehAdminOrganizacao = usuario.papelOrganizacao === "dono" || usuario.papelOrganizacao === "admin";
+    const ehAdminSistema = usuario.papel === "admin";
 
     function tamanho(resultado: PromiseSettledResult<{ length: number }>): Contagem {
       return resultado.status === "fulfilled" ? resultado.value.length : "erro";
@@ -63,12 +68,17 @@ export default function PaginaVisaoGeral() {
       },
     );
 
-    if (ehAdmin) {
-      Promise.allSettled([listarUsuarios(), listarAuditoria()]).then(([u, a]) => {
-        if (!ativo) return;
-        setUsuarios(tamanho(u));
-        setEventosAuditoria(tamanho(a));
-      });
+    if (ehAdminOrganizacao) {
+      listarUsuarios().then(
+        (u) => ativo && setUsuarios(u.length),
+        () => ativo && setUsuarios("erro"),
+      );
+    }
+    if (ehAdminSistema) {
+      listarAuditoria().then(
+        (a) => ativo && setEventosAuditoria(a.length),
+        () => ativo && setEventosAuditoria("erro"),
+      );
     }
 
     return () => {
@@ -190,23 +200,23 @@ export default function PaginaVisaoGeral() {
           valor={projetos}
           detalhe="Seus projetos e tarefas"
         />
+        {(usuario.papelOrganizacao === "dono" || usuario.papelOrganizacao === "admin") && (
+          <CartaoIndicador
+            href="/dashboard/usuarios"
+            icone={Users}
+            rotulo="Usuários"
+            valor={usuarios}
+            detalhe="Gerenciar membros"
+          />
+        )}
         {usuario.papel === "admin" && (
-          <>
-            <CartaoIndicador
-              href="/dashboard/usuarios"
-              icone={Users}
-              rotulo="Usuários"
-              valor={usuarios}
-              detalhe="Gerenciar contas"
-            />
-            <CartaoIndicador
-              href="/dashboard/auditoria"
-              icone={ScrollText}
-              rotulo="Auditoria"
-              valor={eventosAuditoria}
-              detalhe="Eventos recentes"
-            />
-          </>
+          <CartaoIndicador
+            href="/dashboard/auditoria"
+            icone={ScrollText}
+            rotulo="Auditoria"
+            valor={eventosAuditoria}
+            detalhe="Eventos recentes"
+          />
         )}
       </div>
     </div>
