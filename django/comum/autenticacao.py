@@ -20,6 +20,12 @@ class UsuarioRemoto:
     id: str
     email: str | None = None
     papel: str = "usuario"
+    # Organização ATIVA da sessão (claim organizacaoId) — é o que isola os
+    # dados de tarefas/projetos entre organizações diferentes (ver
+    # tarefas/views.py). Multi-tenant: o Django nunca consulta a tabela de
+    # organizações/membros do Next.js, só confia neste claim.
+    organizacao_id: str | None = None
+    papel_organizacao: str | None = None
     is_authenticated: bool = True
     is_anonymous: bool = False
 
@@ -54,6 +60,12 @@ class AutenticacaoJWT(BaseAuthentication):
                 issuer=settings.JWT_ACCESS_ISSUER,
                 # `sub` fica de fora do require de propósito — a checagem
                 # explícita logo abaixo dá uma mensagem mais específica.
+                # `organizacaoId` também fica de fora: access tokens de até
+                # 15 min emitidos ANTES do claim existir ainda circulam por
+                # uma janela curta depois do deploy do multi-tenant — melhor
+                # esse token continuar autenticando (só sem acesso a rotas de
+                # organização, ver tarefas/views.py) do que virar 401 geral
+                # até expirar sozinho.
                 options={"require": ["exp", "iss"]},
             )
         except jwt.ExpiredSignatureError:
@@ -71,6 +83,8 @@ class AutenticacaoJWT(BaseAuthentication):
                 id=sub,
                 email=payload.get("email"),
                 papel=payload.get("papel", "usuario"),
+                organizacao_id=payload.get("organizacaoId"),
+                papel_organizacao=payload.get("papelOrganizacao"),
             ),
             token,
         )

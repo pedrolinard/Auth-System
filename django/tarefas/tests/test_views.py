@@ -7,9 +7,15 @@ from tarefas.models import Projeto, Tarefa
 pytestmark = pytest.mark.django_db
 
 
-def cliente_autenticado(usuario_id):
+# organizacao_id default ("org-a") cobre a maioria dos testes — o isolamento
+# que importa hoje é entre ORGANIZAÇÕES, não entre usuários da mesma
+# organização (que devem ver os mesmos projetos: é o ponto de ter uma
+# organização compartilhada).
+def cliente_autenticado(usuario_id, organizacao_id="org-a"):
     client = APIClient()
-    client.force_authenticate(user=UsuarioRemoto(id=usuario_id))
+    client.force_authenticate(
+        user=UsuarioRemoto(id=usuario_id, organizacao_id=organizacao_id)
+    )
     return client
 
 
@@ -32,6 +38,7 @@ def test_criar_e_listar_projeto():
     resposta = client.post("/api/dominio/projetos", {"nome": "Casa nova"})
     assert resposta.status_code == 201
     assert resposta.data["usuario_id"] == "usuario-a"
+    assert resposta.data["organizacao_id"] == "org-a"
 
     resposta = client.get("/api/dominio/projetos")
     assert resposta.status_code == 200
@@ -39,11 +46,11 @@ def test_criar_e_listar_projeto():
     assert resposta.data[0]["nome"] == "Casa nova"
 
 
-def test_usuario_so_ve_os_proprios_projetos():
-    Projeto.objects.create(nome="Projeto A", usuario_id="usuario-a")
-    Projeto.objects.create(nome="Projeto B", usuario_id="usuario-b")
+def test_organizacoes_diferentes_nao_veem_projetos_uma_da_outra():
+    Projeto.objects.create(nome="Projeto A", organizacao_id="org-a", usuario_id="usuario-a")
+    Projeto.objects.create(nome="Projeto B", organizacao_id="org-b", usuario_id="usuario-b")
 
-    client = cliente_autenticado("usuario-a")
+    client = cliente_autenticado("usuario-a", organizacao_id="org-a")
     resposta = client.get("/api/dominio/projetos")
 
     assert resposta.status_code == 200
@@ -51,8 +58,42 @@ def test_usuario_so_ve_os_proprios_projetos():
     assert resposta.data[0]["nome"] == "Projeto A"
 
 
-def test_criar_tarefa_vinculada_a_projeto_proprio():
-    projeto = Projeto.objects.create(nome="Projeto A", usuario_id="usuario-a")
+def test_dois_membros_da_mesma_organizacao_veem_o_mesmo_projeto():
+    # Diferente do isolamento antigo (por usuario_id): dois membros da MESMA
+    # organização colaboram nos mesmos dados — não é cada um só vendo o que
+    # criou.
+    projeto = Projeto.objects.create(
+        nome="Projeto compartilhado", organizacao_id="org-a", usuario_id="usuario-a"
+    )
+
+    client_criador = cliente_autenticado("usuario-a", organizacao_id="org-a")
+    client_outro_membro = cliente_autenticado("usuario-b", organizacao_id="org-a")
+
+    for client in (client_criador, client_outro_membro):
+        resposta = client.get("/api/dominio/projetos")
+        assert resposta.status_code == 200
+        assert len(resposta.data) == 1
+        assert resposta.data[0]["id"] == projeto.id
+
+
+def test_sessao_sem_organizacao_nao_ve_nem_cria_projeto():
+    # Token emitido antes do claim organizacaoId existir (ver comentário em
+    # comum/autenticacao.py) — autentica normalmente, mas não enxerga nem
+    # consegue criar nada de organização, em vez de vazar/quebrar.
+    Projeto.objects.create(nome="Projeto A", organizacao_id="org-a", usuario_id="usuario-a")
+    client = cliente_autenticado("usuario-sem-org", organizacao_id=None)
+
+    resposta = client.get("/api/dominio/projetos")
+    assert resposta.status_code == 200
+    assert resposta.data == []
+
+    resposta = client.post("/api/dominio/projetos", {"nome": "Não deveria criar"})
+    assert resposta.status_code == 403
+    assert not Projeto.objects.filter(nome="Não deveria criar").exists()
+
+
+def test_criar_tarefa_vinculada_a_projeto_da_mesma_organizacao():
+    projeto = Projeto.objects.create(nome="Projeto A", organizacao_id="org-a", usuario_id="usuario-a")
     client = cliente_autenticado("usuario-a")
 
     resposta = client.post(
@@ -62,16 +103,19 @@ def test_criar_tarefa_vinculada_a_projeto_proprio():
 
     assert resposta.status_code == 201
     assert resposta.data["usuario_id"] == "usuario-a"
+    assert resposta.data["organizacao_id"] == "org-a"
     assert resposta.data["status"] == "pendente"
 
 
-def test_rejeita_criar_tarefa_em_projeto_de_outro_usuario():
-    projeto_de_b = Projeto.objects.create(nome="Projeto B", usuario_id="usuario-b")
-    client = cliente_autenticado("usuario-a")
+def test_rejeita_criar_tarefa_em_projeto_de_outra_organizacao():
+    projeto_de_outra_org = Projeto.objects.create(
+        nome="Projeto B", organizacao_id="org-b", usuario_id="usuario-b"
+    )
+    client = cliente_autenticado("usuario-a", organizacao_id="org-a")
 
     resposta = client.post(
         "/api/dominio/tarefas",
-        {"titulo": "Tarefa intrusa", "projeto": projeto_de_b.id},
+        {"titulo": "Tarefa intrusa", "projeto": projeto_de_outra_org.id},
     )
 
     assert resposta.status_code == 400
@@ -79,9 +123,9 @@ def test_rejeita_criar_tarefa_em_projeto_de_outro_usuario():
 
 
 def test_atualizar_status_da_tarefa():
-    projeto = Projeto.objects.create(nome="Projeto A", usuario_id="usuario-a")
+    projeto = Projeto.objects.create(nome="Projeto A", organizacao_id="org-a", usuario_id="usuario-a")
     tarefa = Tarefa.objects.create(
-        titulo="Pintar parede", projeto=projeto, usuario_id="usuario-a"
+        titulo="Pintar parede", projeto=projeto, organizacao_id="org-a", usuario_id="usuario-a"
     )
     client = cliente_autenticado("usuario-a")
 
@@ -94,21 +138,21 @@ def test_atualizar_status_da_tarefa():
     assert tarefa.status == "concluida"
 
 
-def test_usuario_nao_acessa_tarefa_de_outro():
-    projeto = Projeto.objects.create(nome="Projeto B", usuario_id="usuario-b")
+def test_usuario_de_outra_organizacao_nao_acessa_tarefa():
+    projeto = Projeto.objects.create(nome="Projeto B", organizacao_id="org-b", usuario_id="usuario-b")
     tarefa = Tarefa.objects.create(
-        titulo="Tarefa de B", projeto=projeto, usuario_id="usuario-b"
+        titulo="Tarefa de outra org", projeto=projeto, organizacao_id="org-b", usuario_id="usuario-b"
     )
-    client = cliente_autenticado("usuario-a")
+    client = cliente_autenticado("usuario-a", organizacao_id="org-a")
 
     resposta = client.get(f"/api/dominio/tarefas/{tarefa.id}")
     assert resposta.status_code == 404
 
 
 def test_deletar_tarefa_e_projeto():
-    projeto = Projeto.objects.create(nome="Projeto A", usuario_id="usuario-a")
+    projeto = Projeto.objects.create(nome="Projeto A", organizacao_id="org-a", usuario_id="usuario-a")
     tarefa = Tarefa.objects.create(
-        titulo="Tarefa", projeto=projeto, usuario_id="usuario-a"
+        titulo="Tarefa", projeto=projeto, organizacao_id="org-a", usuario_id="usuario-a"
     )
     client = cliente_autenticado("usuario-a")
 

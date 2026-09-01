@@ -107,6 +107,26 @@ def test_papel_lido_do_token():
     assert usuario.papel == "admin"
 
 
+def test_organizacao_id_ausente_do_token_fica_none():
+    # Token emitido antes do claim organizacaoId existir (ver comentário em
+    # options={"require": [...]} de AutenticacaoJWT) — autentica normalmente
+    # (não é erro), só sem organização; tarefas/views.py trata None como
+    # "sem acesso a nada de organização", não deixa vazar.
+    token = _gerar_token({"sub": "usuario-123"})
+    usuario, _ = AutenticacaoJWT().authenticate(_requisicao_com_token(token))
+    assert usuario.organizacao_id is None
+    assert usuario.papel_organizacao is None
+
+
+def test_organizacao_id_e_papel_organizacao_lidos_do_token():
+    token = _gerar_token(
+        {"sub": "usuario-123", "organizacaoId": "org-abc", "papelOrganizacao": "dono"}
+    )
+    usuario, _ = AutenticacaoJWT().authenticate(_requisicao_com_token(token))
+    assert usuario.organizacao_id == "org-abc"
+    assert usuario.papel_organizacao == "dono"
+
+
 def test_token_expirado_rejeitado():
     token = _gerar_token({"sub": "usuario-123", "exp": int(time.time()) - 60})
     with pytest.raises(AuthenticationFailed, match="expirado"):
