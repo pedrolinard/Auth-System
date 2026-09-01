@@ -13,8 +13,8 @@ import { esquemaSuspensao } from "@/lib/validacao";
 // pessoa participe, não só nesta. Trade-off aceito por enquanto: mover
 // suspensão pra dentro de Membro é escopo maior (schema novo, refazer
 // estaSuspenso() e todos os pontos de login), não crítico o bastante pra
-// bloquear o multi-tenant por causa disso — mas ainda não está no
-// ROADMAP.md/src/data/roadmap.ts, só aqui no código.
+// bloquear o multi-tenant por causa disso — documentado em
+// ROADMAP.md ("O que falta") e src/data/roadmap.ts.
 export async function POST(
   req: Request,
   { params }: RouteContext<"/api/auth/usuarios/[id]/suspender">,

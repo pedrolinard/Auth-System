@@ -30,19 +30,19 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-08-29";
+export const atualizadoEm = "2026-09-01";
 
 // Métricas ESTÁTICAS do código — atualize junto com a mudança que as move
 // (mesma disciplina do resto do arquivo). As métricas AO VIVO (contagens do
 // banco, commit/deploy) são calculadas em tempo de requisição na página.
 export const metricas = {
-  rotasApi: 34,
-  migracoesPrisma: 16,
-  modulosLib: 29,
-  tabelas: 7,
-  testesVitest: 159,
+  rotasApi: 39,
+  migracoesPrisma: 19,
+  modulosLib: 32,
+  tabelas: 11,
+  testesVitest: 176,
   testesE2e: 6,
-  testesDjango: 32,
+  testesDjango: 36,
 };
 
 export const concluido: GrupoConcluido[] = [
@@ -91,7 +91,7 @@ export const concluido: GrupoConcluido[] = [
   {
     categoria: "Contas & RBAC",
     itens: [
-      "RBAC mínimo (usuario/admin) como claim no token de acesso",
+      "RBAC mínimo de sistema (usuario/admin) como claim no token de acesso, mais RBAC por organização (dono/admin/membro) escopando as mesmas ações administrativas — ver categoria \"Multi-tenant (organizações)\" abaixo",
       "Admin pode suspender (temporária ou permanente) ou excluir permanentemente a conta de outro usuário",
       "Suspensão revoga todas as sessões ativas na hora e bloqueia login imediatamente",
       "Auditoria de ações administrativas registra também QUEM (qual admin) suspendeu/reativou/excluiu, não só o alvo",
@@ -116,9 +116,23 @@ export const concluido: GrupoConcluido[] = [
     categoria: "Serviço de domínio (Django/DRF)",
     itens: [
       "Valida o mesmo token de acesso (RS256) do Next.js, com `algorithms` fixo e `iss`/`exp` obrigatórios, sem login próprio nem model de usuário",
-      "Entidades reais (Projeto/Tarefa) isoladas por usuário, mesma proteção CSRF do lado Next.js (double-submit cookie comparado em tempo constante com hmac.compare_digest, igual ao timingSafeEqual do Node)",
+      "Entidades reais (Projeto/Tarefa) isoladas por organização (organizacao_id, claim do JWT — não mais usuario_id sozinho), mesma proteção CSRF do lado Next.js (double-submit cookie comparado em tempo constante com hmac.compare_digest, igual ao timingSafeEqual do Node)",
       "Postgres compartilhado com o Next.js — database própria no local, schema próprio (dominio) na mesma instância Supabase em produção",
       "Observabilidade (Rollbar): recurso próprio via Vercel Marketplace, RollbarNotifierMiddleware captura erro 500 não tratado — mesmo provedor do Next.js, dashboard único pros dois serviços",
+    ],
+  },
+  {
+    categoria: "Multi-tenant (organizações)",
+    itens: [
+      "Modelo \"Slack-style\": uma conta pode ser membro de várias organizações, papel próprio por organização (Membro.papel: dono/admin/membro) — independente do papel de sistema (Usuario.papel) que já existia, mantido só pro painel de auditoria",
+      "Organização ativa da sessão é um claim no próprio access token (organizacaoId/papelOrganizacao), não resolvida por parâmetro de rota — preserva o princípio de que o Django nunca consulta as tabelas do Next.js, só confia no JWT",
+      "Trocar de organização (POST /api/auth/organizacoes/[id]/entrar) reemite tokens sem pedir senha de novo, mesmo padrão da conclusão de MFA; trade-off aceito: uma organização ativa por sessão de navegador",
+      "RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização — dono/admin da organização A não enxerga nem afeta contas da organização B",
+      "Convites por e-mail com token JWT próprio (JWT_CONVITE_ORGANIZACAO_SECRET), reconvidar o mesmo e-mail atualiza o pendente em vez de duplicar, aceite exige a conta dona do e-mail convidado e é idempotente sob aceite concorrente",
+      "Rate limit dedicado: criar organização (10/h por IP) e enviar convite (30/h por IP + 5/h por e-mail alvo)",
+      "Cadastro cria a organização pessoal do usuário numa transação (Usuario + Organizacao + Membro dono) — sem organização órfã se algo falhar no meio",
+      "Frontend: seletor de organização ativa no NavPainel, /dashboard/organizacoes (criar organização, convidar/revogar convite) e /aceitar-convite (autenticado e não-autenticado)",
+      "Backfill idempotente (scripts/backfill-organizacoes.mjs + django/scripts/backfill_organizacoes.py) cria a organização pessoal de cada conta pré-existente e reatribui Projeto/Tarefa antigos — implementado em 5 fases, cada uma revisada; ainda não rodado em produção",
     ],
   },
   {
@@ -126,7 +140,7 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "197 testes: 159 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 32 Django (pytest-django)",
+      "218 testes: 176 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 36 Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
       "Django não carrega .env na Vercel (load_dotenv só fora da plataforma) e .vercelignore mantém o arquivo fora do bundle — sem isso o serviço subia com DEBUG=True em produção",
     ],
@@ -270,6 +284,25 @@ export const proximosPassos: ItemProximoPasso[] = [
     prioridade: "baixa",
     status: "feito",
     concluidoEm: "2026-09-01",
+  },
+  {
+    id: "multi-tenant-organizacoes",
+    titulo: "Multi-tenant (organizações)",
+    descricao:
+      "Sistema passa de single-tenant (papel global, dados isolados só por usuario_id) pra multi-tenant: uma conta pode ser membro de várias organizações, com papel próprio por organização (dono/admin/membro). Organização ativa vira claim no access token (organizacaoId/papelOrganizacao); trocar de organização reemite tokens sem reautenticar. Django isolado por organizacao_id. RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização. Convites por e-mail com token JWT próprio, aceite idempotente sob corrida. Rate limit dedicado pra criar organização e enviar convite. Frontend: seletor de organização, /dashboard/organizacoes, /aceitar-convite. Implementado em 5 fases (schema/backfill → sessão/token → Django → RBAC → convites/UI), cada uma revisada e corrigida antes da seguinte. Backfill pra contas/dados pré-existentes escrito e testado, mas ainda não rodado em produção — feature não implantada.",
+    categoria: "Multi-tenant",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-01",
+  },
+  {
+    id: "suspensao-por-organizacao",
+    titulo: "Suspensão de conta por organização, não por conta inteira",
+    descricao:
+      "suspenso/suspensoAte/suspensoMotivo continuam campos globais do Usuario — suspender bloqueia login em QUALQUER organização de que a pessoa participe, não só na organização de quem suspendeu. Mover pra dentro de Membro é escopo maior (schema novo, refazer estaSuspenso() e todos os pontos de login); trade-off aceito por enquanto, não crítico o bastante pra ter bloqueado o multi-tenant.",
+    categoria: "Multi-tenant",
+    prioridade: "baixa",
+    status: "pendente",
   },
   {
     id: "django-csrf-constant-time",
