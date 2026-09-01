@@ -76,6 +76,10 @@ model Usuario {
   // Organizações de que este usuário participa (dono, admin ou membro) —
   // ver Membro abaixo. Multi-tenant: um usuário pode pertencer a várias.
   membros        Membro[]
+  // Convites que este usuário mandou (ver ConviteOrganizacao.criadoPorId) —
+  // não é "convites que este usuário recebeu" (esses são por e-mail, sem
+  // conta necessariamente existir ainda).
+  convitesCriados ConviteOrganizacao[]
 
   @@map("usuarios")
 }
@@ -289,10 +293,14 @@ model ConviteOrganizacao {
   organizacao   Organizacao      @relation(fields: [organizacaoId], references: [id], onDelete: Cascade)
   email         String
   papel         PapelOrganizacao @default(membro)
-  // Quem convidou — sem relation pra Usuario de propósito (mesmo padrão do
-  // autorId em LogAuditoria): não queremos que excluir a conta de quem
-  // convidou apague o histórico do convite.
-  criadoPorId   String
+  // Quem convidou — relation de verdade (diferente do autorId solto em
+  // LogAuditoria, que é trilha histórica). Um convite PENDENTE ainda tem
+  // efeito prático (alguém pode aceitá-lo), então excluir a conta de quem
+  // convidou não deveria matar o convite — só onDelete: SetNull, não
+  // Cascade: a organização continua querendo essa pessoa dentro mesmo que
+  // quem mandou o convite tenha saído nesse meio-tempo.
+  criadoPorId   String?
+  criadoPor     Usuario?         @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
   aceitoEm      DateTime?        @db.Timestamptz(3)
   criadoEm      DateTime         @default(now()) @db.Timestamptz(3)
 

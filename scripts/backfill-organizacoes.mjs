@@ -21,6 +21,18 @@ function requerEnv(nome) {
   return valor;
 }
 
+// Mesmo formato VISUAL dos ids que o Prisma gera pro resto do app (cuid(),
+// via @paralleldrive/cuid2 internamente) — não o mesmo algoritmo (esse
+// pacote não é dependência direta deste projeto, só do Prisma por baixo dos
+// panos, e não dá pra importar um módulo TS/app daqui, mesmo motivo já
+// documentado em rotacionar-chave-mfa.mjs). Sem isso, toda linha criada por
+// este script tinha um id com "cara" de UUID, visualmente diferente de
+// qualquer linha criada pela aplicação depois — cosmético (a coluna é só
+// String @id, sem validação de formato), mas evitável.
+function gerarId() {
+  return `c${randomBytes(12).toString("hex").slice(0, 23)}`;
+}
+
 // Mesmo espírito de slug de qualquer gerador simples: minúsculas, sem
 // acento, só [a-z0-9-]. Base curta o bastante pra sobrar espaço pro sufixo
 // de desempate.
@@ -81,14 +93,14 @@ async function principal() {
 
       const { rows: [organizacao] } = await client.query(
         `INSERT INTO organizacoes (id, nome, slug, "criadoEm")
-         VALUES (gen_random_uuid()::text, $1, $2, now())
+         VALUES ($1, $2, $3, now())
          RETURNING id`,
-        [nomeOrganizacao, slug],
+        [gerarId(), nomeOrganizacao, slug],
       );
       await client.query(
         `INSERT INTO membros (id, "organizacaoId", "usuarioId", papel, "criadoEm")
-         VALUES (gen_random_uuid()::text, $1, $2, 'dono', now())`,
-        [organizacao.id, usuario.id],
+         VALUES ($1, $2, $3, 'dono', now())`,
+        [gerarId(), organizacao.id, usuario.id],
       );
       await client.query("COMMIT");
       criadas++;
