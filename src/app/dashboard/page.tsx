@@ -36,6 +36,16 @@ function primeiroNome(nome: string) {
 export default function PaginaVisaoGeral() {
   const { usuario, carregando } = usePainelUsuario();
 
+  // Dois eixos de admin separados desde o multi-tenant: "Usuários" é
+  // gerenciar membros da ORGANIZAÇÃO ativa (papelOrganizacao), "Auditoria"
+  // continua sendo o papel de SISTEMA (usuario.papel) — ver
+  // src/lib/rbacOrganizacao.ts sobre por que não é a mesma coisa. Calculado
+  // aqui (não dentro do efeito nem repetido no JSX) porque os dois lugares
+  // precisam do mesmo valor.
+  const ehAdminOrganizacao =
+    usuario?.papelOrganizacao === "dono" || usuario?.papelOrganizacao === "admin";
+  const ehAdminSistema = usuario?.papel === "admin";
+
   const [passkeys, setPasskeys] = useState<Contagem>(null);
   const [sessoes, setSessoes] = useState<Contagem>(null);
   const [projetos, setProjetos] = useState<Contagem>(null);
@@ -48,12 +58,6 @@ export default function PaginaVisaoGeral() {
   useEffect(() => {
     if (!usuario) return;
     let ativo = true;
-    // Dois eixos de admin separados desde o multi-tenant: "Usuários" é
-    // gerenciar membros da ORGANIZAÇÃO ativa (papelOrganizacao), "Auditoria"
-    // continua sendo o papel de SISTEMA (usuario.papel) — ver
-    // src/lib/rbacOrganizacao.ts sobre por que não é a mesma coisa.
-    const ehAdminOrganizacao = usuario.papelOrganizacao === "dono" || usuario.papelOrganizacao === "admin";
-    const ehAdminSistema = usuario.papel === "admin";
 
     function tamanho(resultado: PromiseSettledResult<{ length: number }>): Contagem {
       return resultado.status === "fulfilled" ? resultado.value.length : "erro";
@@ -84,7 +88,7 @@ export default function PaginaVisaoGeral() {
     return () => {
       ativo = false;
     };
-  }, [usuario]);
+  }, [usuario, ehAdminOrganizacao, ehAdminSistema]);
 
   async function aoReenviarVerificacao() {
     setReenviando(true);
@@ -200,7 +204,7 @@ export default function PaginaVisaoGeral() {
           valor={projetos}
           detalhe="Seus projetos e tarefas"
         />
-        {(usuario.papelOrganizacao === "dono" || usuario.papelOrganizacao === "admin") && (
+        {ehAdminOrganizacao && (
           <CartaoIndicador
             href="/dashboard/usuarios"
             icone={Users}
@@ -209,7 +213,7 @@ export default function PaginaVisaoGeral() {
             detalhe="Gerenciar membros"
           />
         )}
-        {usuario.papel === "admin" && (
+        {ehAdminSistema && (
           <CartaoIndicador
             href="/dashboard/auditoria"
             icone={ScrollText}

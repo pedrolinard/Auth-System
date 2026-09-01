@@ -10,10 +10,11 @@ import { esquemaSuspensao } from "@/lib/validacao";
 // Quem pode suspender é escopado por organização (dono/admin da org ativa),
 // mas suspenso/suspensoAte/suspensoMotivo continuam campos GLOBAIS do
 // Usuario — suspender aqui bloqueia login em QUALQUER organização de que a
-// pessoa participe, não só nesta. Trade-off aceito por enquanto (mesma
-// categoria de decisão consciente do README: mover suspensão pra dentro de
-// Membro é escopo de uma fase futura, não crítico o bastante pra bloquear
-// esta); documentado aqui e no roadmap.
+// pessoa participe, não só nesta. Trade-off aceito por enquanto: mover
+// suspensão pra dentro de Membro é escopo maior (schema novo, refazer
+// estaSuspenso() e todos os pontos de login), não crítico o bastante pra
+// bloquear o multi-tenant por causa disso — mas ainda não está no
+// ROADMAP.md/src/data/roadmap.ts, só aqui no código.
 export async function POST(
   req: Request,
   { params }: RouteContext<"/api/auth/usuarios/[id]/suspender">,
