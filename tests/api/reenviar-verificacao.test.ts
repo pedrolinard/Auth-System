@@ -31,7 +31,7 @@ describe("POST /api/auth/reenviar-verificacao", () => {
   it("rejeita quem já verificou o e-mail com 409", async () => {
     const usuario = await criarUsuarioTeste("reenviar-verificacao-ja-ok");
     emailsCriados.push(usuario.email);
-    await prisma.usuario.update({
+    await prisma.usuario.updateMany({
       where: { email: usuario.email },
       data: { emailVerificado: true },
     });

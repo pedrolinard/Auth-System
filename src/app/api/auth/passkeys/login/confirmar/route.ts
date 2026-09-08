@@ -5,6 +5,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { enviarEmailDispositivoNovo, enviarEmailViagemImpossivel } from "@/lib/email";
 import { formatarLocalizacao, obterGeo } from "@/lib/geo";
+import { origemPermitida, resolverAplicacao } from "@/lib/aplicacao";
 import { verificarLoginPasskey } from "@/lib/passkey";
 import {
   limiteExcedido,
@@ -32,6 +33,14 @@ const JANELA_LOGIN_PASSKEY_MS = 15 * 60 * 1000;
 const JANELA_VIAGEM_IMPOSSIVEL_MS = 2 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
+  const aplicacao = await resolverAplicacao(req);
+  if (!aplicacao) {
+    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  }
+  if (!origemPermitida(aplicacao, req)) {
+    return NextResponse.json({ erro: "Origem não autorizada para esta aplicação." }, { status: 403 });
+  }
+
   const ip = obterIp(req);
   if (
     await limiteExcedido({
@@ -73,7 +82,7 @@ export async function POST(req: Request) {
     : null;
 
   if (!credencial) {
-    await registrarEvento({ req, evento: "passkey_login_falha" });
+    await registrarEvento({ req, evento: "passkey_login_falha", aplicacaoId: aplicacao.id });
     // Ainda não sabemos de qual conta é (credentialId não bateu com
     // nenhuma) — só dá pra alimentar o contador por IP aqui, o por e-mail
     // exige já ter encontrado a credencial (abaixo).
@@ -86,8 +95,26 @@ export async function POST(req: Request) {
   }
   const { usuario } = credencial;
 
+  // Uma passkey de outra aplicação não autentica aqui. Na prática o RP ID já
+  // barraria (a credencial nasceu presa ao domínio do outro cliente e a
+  // verificação usaria o RP ID deste), mas duas aplicações podem
+  // legitimamente compartilhar o mesmo domínio-pai — e nesse caso só esta
+  // checagem separa uma da outra. Resposta idêntica à de credencial
+  // desconhecida: dizer "essa passkey é de outro cliente" confirmaria a
+  // existência da conta lá.
+  if (usuario.aplicacaoId !== aplicacao.id) {
+    await registrarEvento({ req, evento: "passkey_login_falha" });
+    await registrarTentativaIp({
+      ip,
+      evento: "passkey_login_falha",
+      janelaMs: JANELA_LOGIN_PASSKEY_MS,
+    });
+    return NextResponse.json({ erro: "Passkey não reconhecida." }, { status: 401 });
+  }
+
   if (
     await limiteExcedidoPorEmail({
+      aplicacaoId: usuario.aplicacaoId,
       email: usuario.email,
       evento: "passkey_login_falha",
       maximo: MAX_TENTATIVAS_LOGIN_PASSKEY,
@@ -105,11 +132,13 @@ export async function POST(req: Request) {
       resposta as unknown as AuthenticationResponseJSON,
       payloadDesafio.challenge,
       credencial,
+      aplicacao,
     );
   } catch {
     await registrarEvento({ req, evento: "passkey_login_falha", usuarioId: usuario.id, email: usuario.email });
     await registrarTentativaIp({ ip, evento: "passkey_login_falha", janelaMs: JANELA_LOGIN_PASSKEY_MS });
     await registrarTentativaEmail({
+      aplicacaoId: usuario.aplicacaoId,
       email: usuario.email,
       evento: "passkey_login_falha",
       janelaMs: JANELA_LOGIN_PASSKEY_MS,
@@ -120,6 +149,7 @@ export async function POST(req: Request) {
     await registrarEvento({ req, evento: "passkey_login_falha", usuarioId: usuario.id, email: usuario.email });
     await registrarTentativaIp({ ip, evento: "passkey_login_falha", janelaMs: JANELA_LOGIN_PASSKEY_MS });
     await registrarTentativaEmail({
+      aplicacaoId: usuario.aplicacaoId,
       email: usuario.email,
       evento: "passkey_login_falha",
       janelaMs: JANELA_LOGIN_PASSKEY_MS,

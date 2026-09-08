@@ -81,7 +81,7 @@ export async function POST(req: Request) {
   }
 
   const organizacao = await prisma.$transaction((tx) =>
-    criarOrganizacao(tx, dadosValidados.data.nome, usuario.id),
+    criarOrganizacao(tx, usuario.aplicacaoId, dadosValidados.data.nome, usuario.id),
   );
 
   await registrarEvento({

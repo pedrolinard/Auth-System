@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
+import { obterAplicacaoPorId } from "@/lib/aplicacao";
 import { gerarOpcoesRegistroPasskey } from "@/lib/passkey";
 import { gerarTokenDesafioPasskey } from "@/lib/token";
 
@@ -29,7 +30,11 @@ export async function POST(req: Request) {
     select: { credentialId: true, transportes: true },
   });
 
-  const options = await gerarOpcoesRegistroPasskey(usuario, credenciaisExistentes);
+  // A aplicação sai da conta, não do header: o RP ID precisa ser o da
+  // aplicação DONA da conta, senão a credencial nasce presa ao domínio errado
+  // e nunca mais valida.
+  const aplicacao = await obterAplicacaoPorId(usuario.aplicacaoId);
+  const options = await gerarOpcoesRegistroPasskey(usuario, credenciaisExistentes, aplicacao);
   const { token: passkeyToken } = await gerarTokenDesafioPasskey(options.challenge, usuario.id);
 
   return NextResponse.json({ options, passkeyToken });

@@ -99,7 +99,7 @@ describe("POST /api/auth/mfa/backup/regenerar", () => {
     });
     expect(respostaBackupNovo.status).toBe(200);
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const log = await prisma.logAuditoria.findFirst({
       where: { usuarioId: usuarioDb.id, evento: "codigos_backup_regenerados" },
     });

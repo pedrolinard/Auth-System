@@ -175,6 +175,7 @@ export async function POST(req: Request) {
     sub: registroToken.usuario.id,
     email: registroToken.usuario.email,
     papel: registroToken.usuario.papel,
+    aplicacaoId: registroToken.usuario.aplicacaoId,
     organizacaoId,
     papelOrganizacao: membro.papel,
   });

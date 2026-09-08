@@ -1,31 +1,14 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
-import { SignJWT, jwtVerify, errors, importPKCS8, importSPKI } from "jose";
+import { SignJWT, jwtVerify, errors } from "jose";
 
-let chavePrivadaAcesso: Promise<CryptoKey> | null = null;
-function obterChavePrivadaAcesso() {
-  if (!chavePrivadaAcesso) {
-    const pem = Buffer.from(
-      process.env.JWT_ACCESS_PRIVATE_KEY_B64!,
-      "base64",
-    ).toString("utf8");
-    chavePrivadaAcesso = importPKCS8(pem, "RS256");
-  }
-  return chavePrivadaAcesso;
-}
+import { obterChaveAtiva, obterChavePublica } from "@/lib/chavesAssinatura";
 
-let chavePublicaAcesso: Promise<CryptoKey> | null = null;
-function obterChavePublicaAcesso() {
-  if (!chavePublicaAcesso) {
-    const pem = Buffer.from(
-      process.env.JWT_ACCESS_PUBLIC_KEY_B64!,
-      "base64",
-    ).toString("utf8");
-    chavePublicaAcesso = importSPKI(pem, "RS256");
-  }
-  return chavePublicaAcesso;
-}
+// As chaves do access token saíram daqui: viraram um conjunto nomeado em
+// chavesAssinatura.ts, carregado do banco. As env vars JWT_ACCESS_*_B64
+// continuam existindo como bootstrap (banco ainda sem chave importada) e como
+// fonte do backfill — por isso seguem na checagem obrigatória mais abaixo.
 
 const SEGREDO_ATUALIZACAO = new TextEncoder().encode(
   process.env.JWT_REFRESH_SECRET,
@@ -53,12 +36,12 @@ export const DURACAO_TOKEN_ACESSO_SEGUNDOS = 15 * 60;
 // token a este emissor: um JWT válido de outro contexto/produto que reusasse
 // o mesmo par de chaves não passaria. Valor fixo (não é segredo, só rótulo).
 //
-// Só `iss`, sem `aud`: um verificador que NÃO espera `iss` simplesmente o
-// ignora (compatível com qualquer consumidor antigo), enquanto um `aud`
-// presente no token faz o PyJWT REJEITAR se o `decode` não passar
-// `audience=` — o que quebraria todo consumidor até ele ser atualizado em
-// sincronia. `iss` sozinho já cobre o cenário (emissor único, keypair
-// dedicado).
+// O `aud` voltou (ver gerarTokenAcesso): num provedor com mais de uma
+// aplicação, um token sem audiência emitido para a aplicação A é aceito pela
+// aplicação B. Foi ele que quebrou produção em 2026-09-01, quando o Django
+// ainda não passava `audience=` no decode — o que mudou não é o risco, é
+// existir agora um caminho de migração (kid + JWKS) em vez de dois deploys
+// que precisam pousar juntos.
 export const EMISSOR_TOKEN_ACESSO = "auth-gateway";
 export const DURACAO_TOKEN_ATUALIZACAO_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 export const DURACAO_TOKEN_DESAFIO_MFA = "5m";
@@ -87,6 +70,10 @@ export type PayloadTokenAcesso = {
   sub: string;
   email: string;
   papel: Papel;
+  // Aplicação cliente dona desta identidade. Vai também como `aud` do JWT: o
+  // consumidor rejeita um token emitido para outra aplicação sem precisar
+  // consultar o banco, mesmo princípio do claim de organização abaixo.
+  aplicacaoId: string;
   // Organização ATIVA desta sessão — toda rota que opera em dados de
   // organização (projetos/tarefas no Django, gestão de membros) usa este
   // claim. Trocar de organização reemite o token (ver
@@ -167,19 +154,39 @@ if (
 }
 
 export async function gerarTokenAcesso(payload: PayloadTokenAcesso) {
+  const { kid, privada } = await obterChaveAtiva();
   return new SignJWT(payload)
-    .setProtectedHeader({ alg: "RS256" })
+    // `kid` diz ao consumidor QUAL chave do JWKS valida este token. É o que
+    // torna a rotação possível sem downtime: sem ele, todo verificador só
+    // conhece "a chave", e trocá-la é um evento coordenado entre serviços.
+    .setProtectedHeader({ alg: "RS256", kid })
     .setIssuedAt()
     .setIssuer(EMISSOR_TOKEN_ACESSO)
+    // `aud` = a aplicação a que este token pertence. Foi removido em
+    // 2026-09-01 porque quebrou um consumidor que ainda não tinha subido —
+    // volta agora porque num provedor ele não é opcional: sem audiência, um
+    // token emitido para a aplicação A é aceito pela aplicação B. A diferença
+    // é que agora existe o mecanismo (kid + JWKS) pra fazer essa mudança de
+    // contrato sem coordenar deploys.
+    .setAudience(payload.aplicacaoId)
     .setExpirationTime(DURACAO_TOKEN_ACESSO)
-    .sign(await obterChavePrivadaAcesso());
+    .sign(privada);
 }
 
 export async function verificarTokenAcesso(token: string) {
   try {
+    // A chave sai do conjunto pelo `kid` do próprio token, em vez de ser uma
+    // constante do processo. `algorithms` continua fixo em RS256: deixar o
+    // token escolher o algoritmo é a confusão HS256/RS256 clássica, e a
+    // resolução por kid não muda isso — o kid escolhe QUAL chave, nunca COMO
+    // ela é usada.
     const { payload } = await jwtVerify<PayloadTokenAcesso>(
       token,
-      await obterChavePublicaAcesso(),
+      async (protectedHeader) => {
+        const chave = await obterChavePublica(protectedHeader.kid);
+        if (!chave) throw new errors.JWKSNoMatchingKey();
+        return chave;
+      },
       {
         algorithms: ["RS256"],
         issuer: EMISSOR_TOKEN_ACESSO,

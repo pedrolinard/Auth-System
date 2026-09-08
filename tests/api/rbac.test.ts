@@ -26,7 +26,7 @@ describe("RBAC — GET /api/auth/usuarios", () => {
   it("membro comum (rebaixado da organização) recebe 403", async () => {
     const usuario = await criarUsuarioTeste("rbac-membro");
     emailsCriados.push(usuario.email);
-    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const membro = await prisma.membro.findFirstOrThrow({ where: { usuarioId: registro.id } });
     await prisma.membro.update({ where: { id: membro.id }, data: { papel: "membro" } });
 
@@ -45,7 +45,7 @@ describe("RBAC — GET /api/auth/usuarios", () => {
     // (ver token.ts), mas essa rota não olha mais pra ele.
     const usuario = await criarUsuarioTeste("rbac-papel-sistema");
     emailsCriados.push(usuario.email);
-    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const membro = await prisma.membro.findFirstOrThrow({ where: { usuarioId: registro.id } });
     await prisma.membro.update({ where: { id: membro.id }, data: { papel: "membro" } });
     await prisma.usuario.update({ where: { id: registro.id }, data: { papel: "admin" } });

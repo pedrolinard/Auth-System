@@ -13,7 +13,7 @@ describe("POST /api/auth/verificar-email", () => {
   it("token válido marca emailVerificado", async () => {
     const usuario = await criarUsuarioTeste("verificar-email-ok");
     emailsCriados.push(usuario.email);
-    const registro = await prisma.usuario.findUniqueOrThrow({
+    const registro = await prisma.usuario.findFirstOrThrow({
       where: { email: usuario.email },
     });
     const token = await gerarTokenVerificacaoEmail(registro.id);

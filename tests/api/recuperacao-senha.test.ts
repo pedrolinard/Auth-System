@@ -48,7 +48,7 @@ describe("Recuperação de senha", () => {
     const sessaoAntiga = await loginTeste(usuario.email, usuario.senha, ip);
 
     const token = await gerarTokenRedefinicaoSenha(
-      (await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } })).id,
+      (await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } })).id,
     );
     const novaSenha = "NovaSenhaForte456!";
 
@@ -97,7 +97,7 @@ describe("Recuperação de senha", () => {
     const ip = ipAleatorio();
 
     const token = await gerarTokenRedefinicaoSenha(
-      (await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } })).id,
+      (await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } })).id,
     );
 
     async function redefinir(novaSenha: string) {
@@ -130,7 +130,7 @@ describe("Recuperação de senha", () => {
     emailsCriados.push(usuario.email);
 
     const token = await gerarTokenRedefinicaoSenha(
-      (await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } })).id,
+      (await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } })).id,
     );
 
     const resposta = await fetch(`${BASE_URL}/api/auth/redefinir-senha`, {

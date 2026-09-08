@@ -66,6 +66,7 @@ export async function POST(req: Request) {
 
   if (
     await limiteExcedidoPorEmail({
+      aplicacaoId: usuario.aplicacaoId,
       email: usuario.email,
       evento: "senha_atual_falha",
       maximo: MAX_TENTATIVAS_SENHA_ATUAL,
@@ -86,6 +87,7 @@ export async function POST(req: Request) {
     });
     await registrarTentativaIp({ ip, evento: "senha_atual_falha", janelaMs: JANELA_SENHA_ATUAL_MS });
     await registrarTentativaEmail({
+      aplicacaoId: usuario.aplicacaoId,
       email: usuario.email,
       evento: "senha_atual_falha",
       janelaMs: JANELA_SENHA_ATUAL_MS,
@@ -100,7 +102,11 @@ export async function POST(req: Request) {
     );
   }
 
-  const emailEmUso = await prisma.usuario.findUnique({ where: { email: novoEmail } });
+  // "Em uso" passa a significar "em uso NESTA aplicação": o mesmo endereço
+  // pertencendo a um usuário final de outro cliente não é conflito nenhum.
+  const emailEmUso = await prisma.usuario.findUnique({
+    where: { aplicacaoId_email: { aplicacaoId: usuario.aplicacaoId, email: novoEmail } },
+  });
   if (emailEmUso) {
     return NextResponse.json({ erro: "Este e-mail já está em uso." }, { status: 409 });
   }

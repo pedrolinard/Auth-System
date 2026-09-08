@@ -15,7 +15,7 @@ const emailsCriados: string[] = [];
 async function criarUsuarioDeVerdade(prefixo: string) {
   const usuario = await criarUsuarioTeste(prefixo);
   emailsCriados.push(usuario.email);
-  return prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+  return prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
 }
 
 describe("Códigos de backup de MFA (src/lib/backupMfa.ts)", () => {

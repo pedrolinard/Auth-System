@@ -69,6 +69,7 @@ export async function PUT(req: Request) {
   // por IP sozinho.
   if (
     await limiteExcedidoPorEmail({
+      aplicacaoId: usuario.aplicacaoId,
       email: usuario.email,
       evento: "senha_atual_falha",
       maximo: MAX_TENTATIVAS_SENHA_ATUAL,
@@ -89,6 +90,7 @@ export async function PUT(req: Request) {
     });
     await registrarTentativaIp({ ip, evento: "senha_atual_falha", janelaMs: JANELA_SENHA_ATUAL_MS });
     await registrarTentativaEmail({
+      aplicacaoId: usuario.aplicacaoId,
       email: usuario.email,
       evento: "senha_atual_falha",
       janelaMs: JANELA_SENHA_ATUAL_MS,

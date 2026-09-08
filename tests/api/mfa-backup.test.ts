@@ -78,7 +78,7 @@ describe("POST /api/auth/mfa/backup", () => {
     expect(corpo.tokenAcesso).toBeTruthy();
     expect(corpo.codigosBackupRestantes).toBe(9);
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const logSucesso = await prisma.logAuditoria.findFirst({
       where: { usuarioId: usuarioDb.id, evento: "mfa_backup_sucesso" },
     });
@@ -102,7 +102,7 @@ describe("POST /api/auth/mfa/backup", () => {
     });
     expect(segunda.status).toBe(401);
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const logFalha = await prisma.logAuditoria.findFirst({
       where: { usuarioId: usuarioDb.id, evento: "mfa_backup_falha" },
     });

@@ -82,7 +82,7 @@ describe("Passkeys (WebAuthn) — rotas de API", () => {
     const usuario = await criarUsuarioTeste("passkey-registro-forjado");
     emailsCriados.push(usuario.email);
     const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
-    const usuarioRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
 
     const respostaOpcoes = await fetch(`${BASE_URL}/api/auth/passkeys/registro/opcoes`, {
       method: "POST",
@@ -141,7 +141,7 @@ describe("Passkeys (WebAuthn) — rotas de API", () => {
     const { cabecalhos: cabecalhosDono } = await loginTeste(dono.email, dono.senha);
     const { cabecalhos: cabecalhosOutro } = await loginTeste(outro.email, outro.senha);
 
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
 
     // Fabricado direto no banco (bypassando a ceremônia WebAuthn de verdade,
     // que só é exercitável com browser) — suficiente pra testar list/delete.

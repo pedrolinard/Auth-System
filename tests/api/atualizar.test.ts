@@ -62,7 +62,7 @@ describe("POST /api/auth/atualizar — rotação e detecção de reuso", () => {
     const respostaComTokenNovo = await atualizar(cabecalhosNovos);
     expect(respostaComTokenNovo.status).toBe(401);
 
-    const usuarioDb = await prisma.usuario.findUnique({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirst({ where: { email: usuario.email } });
     const logReuso = await prisma.logAuditoria.findFirst({
       where: { usuarioId: usuarioDb!.id, evento: "reuso_token_detectado" },
     });

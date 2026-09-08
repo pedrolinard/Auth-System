@@ -22,12 +22,24 @@ export function obterIp(req: Request): string | null {
   );
 }
 
+// O contador por IP fica GLOBAL de propósito, sem aplicação na chave: um IP é
+// um IP, não pertence a nenhum cliente, e este limite existe como rede de
+// segurança do provedor contra varredura maciça — escopá-lo por aplicação
+// daria a um atacante uma cota nova a cada cliente que ele conhecesse. O
+// preço é que dois clientes atrás do mesmo NAT dividem contador; como o
+// limite por IP é generoso de propósito (ver MAX_TENTATIVAS_LOGIN) e quem
+// segura a linha de verdade é o limite por CONTA, que já é por aplicação, o
+// trade-off fica do lado seguro.
 function chaveIp(evento: string, ip: string): string {
   return `ip:${evento}:${ip}`;
 }
 
-function chaveEmail(evento: string, email: string): string {
-  return `email:${evento}:${email}`;
+// A aplicação entra na chave porque o e-mail deixou de ser único no sistema:
+// sem ela, dois clientes diferentes com o mesmo endereço compartilham o mesmo
+// contador, e um consegue trancar o usuário do outro só martelando o e-mail.
+// É isolamento entre tenants, não afinação de limite.
+function chaveEmail(evento: string, aplicacaoId: string, email: string): string {
+  return `email:${evento}:${aplicacaoId}:${email}`;
 }
 
 // Upsert atômico de janela fixa — mesmo padrão do INCR+EXPIRE do Redis, só
@@ -93,15 +105,17 @@ export async function limiteExcedido({
 // muitos IPs diferentes — cada IP isolado fica abaixo do próprio limite,
 // mas a conta-alvo acumula tentativas de todos eles.
 export async function limiteExcedidoPorEmail({
+  aplicacaoId,
   email,
   evento,
   maximo,
 }: {
+  aplicacaoId: string;
   email: string;
   evento: string;
   maximo: number;
 }): Promise<boolean> {
-  return (await contar(chaveEmail(evento, email))) >= maximo;
+  return (await contar(chaveEmail(evento, aplicacaoId, email))) >= maximo;
 }
 
 // Chamadas no mesmo ponto onde a tentativa/falha já é gravada em
@@ -125,13 +139,15 @@ export async function registrarTentativaIp({
 }
 
 export async function registrarTentativaEmail({
+  aplicacaoId,
   email,
   evento,
   janelaMs,
 }: {
+  aplicacaoId: string;
   email: string;
   evento: string;
   janelaMs: number;
 }): Promise<void> {
-  await incrementar(chaveEmail(evento, email), janelaMs);
+  await incrementar(chaveEmail(evento, aplicacaoId, email), janelaMs);
 }

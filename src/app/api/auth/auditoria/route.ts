@@ -25,6 +25,13 @@ export async function GET(req: Request) {
 
   const registros = await prisma.logAuditoria.findMany({
     where: {
+      // Escopo obrigatório: um admin de sistema continua vendo a trilha
+      // inteira DA APLICAÇÃO DELE, e nunca a de outro cliente. Sem esta
+      // linha, o painel de auditoria de um provedor mostra os e-mails, IPs e
+      // horários de login dos usuários finais de todos os clientes pra
+      // qualquer admin — que não é uma folga de permissão, é vazamento de
+      // dado pessoal de terceiro.
+      aplicacaoId: payload.aplicacaoId,
       ...(evento ? { evento } : {}),
       ...(email ? { email: { contains: email } } : {}),
     },

@@ -572,6 +572,49 @@ da outra), não pra detectar toda anomalia geográfica possível. Fora da
 Vercel (dev local), os headers não existem e a checagem simplesmente não
 dispara — sem falso positivo, mas também sem proteção nesse ambiente.
 
+### Identidade por aplicação (provedor)
+
+O sistema tem **dois níveis de isolamento**, e eles resolvem coisas diferentes:
+
+- **Organização** (`Organizacao`/`Membro`) — times dentro de um app. Modelo Slack: uma conta participa de várias, com papel próprio em cada.
+- **Aplicação** (`Aplicacao`) — o cliente que integra o provedor. Os usuários finais dele não são seus usuários; são dele.
+
+O que separa os dois na prática é um índice: `@@unique([aplicacaoId, email])` no lugar de `email @unique`. Enquanto o e-mail é único no sistema inteiro, dois clientes com o mesmo usuário final colidem — e é por isso que um app de primeira parte não vira provedor só adicionando uma tela de cadastro de clientes.
+
+**Como uma requisição descobre a aplicação.** O SDK manda o `clientId` no header `x-aplicacao-id`. Ele seleciona o tenant e nada mais: entra no `where` de toda leitura e no `data` de toda escrita, mas **nunca autoriza** — autorização continua vindo do access token. Ele é público por definição (vive no JavaScript do cliente), então tratá-lo como credencial seria confundir identificação com autenticação.
+
+Requisição **sem** o header cai na *aplicação padrão* (`padrao = true`, garantida única por índice parcial). É ela que faz o dashboard, as páginas de login/cadastro e o serviço Django continuarem funcionando exatamente como antes.
+
+Rotas autenticadas não usam o header: a aplicação vem de `usuario.aplicacaoId` ou do claim do token. Numa sessão já estabelecida quem manda é a conta, não quem está falando.
+
+**Passkeys são por aplicação.** `PASSKEY_RP_ID`/`PASSKEY_ORIGIN` viraram colunas (`passkeyRpId`, `origens`). Uma credencial WebAuthn é presa à origem em que nasceu, então clientes em domínios próprios não podem compartilhar um RP ID. A lista de origens é a estrutura mais sensível do modelo: uma origem indevida ali é uma passkey aceita vinda de um site que não é do cliente.
+
+**Rate limit por e-mail leva a aplicação na chave.** Antes era `email:<evento>:<email>`; com dois clientes, o mesmo endereço compartilhava contador e um conseguia trancar o usuário do outro. O contador por **IP** segue global de propósito: um IP não pertence a cliente nenhum, e escopá-lo daria ao atacante uma cota nova por cliente que conhecesse.
+
+### Rotação da chave de assinatura (JWKS)
+
+O access token é RS256, e a chave que o assina agora vive em `ChaveAssinatura` (privada cifrada em repouso), não em variável de ambiente. Cada token carrega `kid` no header, e `GET /.well-known/jwks.json` publica as chaves públicas.
+
+Isso existe por um motivo concreto: enquanto a chave era uma constante distribuída por env var, trocá-la era um evento coordenado entre o Next.js e o Django. Com JWKS, o consumidor descobre a chave nova sozinho.
+
+A ordem da rotação importa, e o script (`npm run rotacionar:chave-assinatura`) segue ela:
+
+```bash
+node -r dotenv/config scripts/rotacionar-chave-assinatura.mjs gerar dotenv_config_path=.env
+#  → publica a chave nova no JWKS, INATIVA (ninguém assina com ela ainda)
+#  → espere o cache de JWKS dos consumidores expirar
+
+node -r dotenv/config scripts/rotacionar-chave-assinatura.mjs ativar <kid> dotenv_config_path=.env
+#  → passa a assinar com a nova; a anterior segue publicada, validando o que já assinou
+#  → espere a vida de um access token (15 min) + a janela de cache
+
+node -r dotenv/config scripts/rotacionar-chave-assinatura.mjs remover <kid-antigo> dotenv_config_path=.env
+```
+
+Pular o segundo passo é o erro clássico: assinar com uma chave que os consumidores ainda não conhecem derruba toda validação até o cache virar. O comando `remover` recusa apagar uma chave aposentada há menos de 30 min, justamente pra isso não acontecer por acidente.
+
+No Django, `JWT_JWKS_URL` liga o modo JWKS. Sem ela, continua valendo `JWT_ACCESS_PUBLIC_KEY_B64` — é o caminho de dev, dos testes e de rollback.
+
 ### RBAC mínimo
 
 `Usuario.papel` (`"usuario"` ou `"admin"`, default `"usuario"`) vai no claim

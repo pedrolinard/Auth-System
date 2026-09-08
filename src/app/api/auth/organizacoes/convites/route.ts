@@ -94,6 +94,7 @@ export async function POST(req: Request) {
 
   if (
     await limiteExcedidoPorEmail({
+      aplicacaoId: payload.aplicacaoId,
       email,
       evento: "convite_organizacao_criado",
       maximo: MAX_CONVITES_POR_EMAIL,
@@ -159,6 +160,7 @@ export async function POST(req: Request) {
     janelaMs: JANELA_CONVITES_MS,
   });
   await registrarTentativaEmail({
+    aplicacaoId: payload.aplicacaoId,
     email,
     evento: "convite_organizacao_criado",
     janelaMs: JANELA_CONVITES_MS,

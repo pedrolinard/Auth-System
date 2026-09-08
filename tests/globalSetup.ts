@@ -16,6 +16,10 @@ export default async function setup() {
     ...process.env,
     DATABASE_URL: DATABASE_URL_TESTE,
     VITEST_NEXT_DIST_DIR: ".next-test",
+    // Sem cache de aplicação: os testes precisam ver desativar uma aplicação
+    // fazer efeito na requisição seguinte, não 30s depois (ver
+    // src/lib/aplicacao.ts).
+    APLICACAO_CACHE_TTL_MS: "0",
   };
 
   console.log("[tests] Aplicando migrations na autenticacao_test...");

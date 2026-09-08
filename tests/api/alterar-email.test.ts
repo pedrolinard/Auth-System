@@ -24,7 +24,7 @@ describe("Alterar e-mail (confirmação em duas etapas)", () => {
     });
     expect(resposta.status).toBe(200);
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     expect(usuarioDb.email).toBe(usuario.email);
   });
 
@@ -42,14 +42,14 @@ describe("Alterar e-mail (confirmação em duas etapas)", () => {
     });
     expect(resposta.status).toBe(401);
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     expect(usuarioDb.email).toBe(usuario.email);
   });
 
   it("confirmar o link muda o e-mail e marca como verificado", async () => {
     const usuario = await criarUsuarioTeste("alterar-email-confirmar");
     emailsCriados.push(usuario.email);
-    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const novoEmail = gerarEmailTeste("alterar-email-confirmado");
     emailsCriados.push(novoEmail);
 
@@ -87,7 +87,7 @@ describe("Alterar e-mail (confirmação em duas etapas)", () => {
   it("confirmar a troca revoga todas as sessões ativas e os dispositivos confiáveis", async () => {
     const usuario = await criarUsuarioTeste("alterar-email-revoga");
     emailsCriados.push(usuario.email);
-    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     // Duas sessões (dois logins) + um dispositivo confiável fabricado.
     await loginTeste(usuario.email, usuario.senha);
     await loginTeste(usuario.email, usuario.senha);
@@ -122,7 +122,7 @@ describe("Alterar e-mail (confirmação em duas etapas)", () => {
   it("o link de confirmação é de uso único", async () => {
     const usuario = await criarUsuarioTeste("alterar-email-uso-unico");
     emailsCriados.push(usuario.email);
-    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const novoEmail = gerarEmailTeste("alterar-email-uso-unico-novo");
     emailsCriados.push(novoEmail);
 

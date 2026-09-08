@@ -49,8 +49,8 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const ator = await criarUsuarioTeste("membro-susp-403");
     const alvo = await criarUsuarioTeste("alvo-susp-403");
     emailsCriados.push(ator.email, alvo.email);
-    const atorRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: ator.email } });
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const atorRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: ator.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
 
     const organizacaoId = await definirPapelNaPropriaOrganizacao(atorRegistro.id, "membro");
     await adicionarComoMembro(organizacaoId, alvoRegistro.id);
@@ -68,8 +68,8 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const dono = await criarUsuarioTeste("dono-susp-temp");
     const alvo = await criarUsuarioTeste("alvo-susp-temp");
     emailsCriados.push(dono.email, alvo.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
     await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
@@ -104,8 +104,8 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const admin = await criarUsuarioTeste("admin-org-susp-perm");
     const alvo = await criarUsuarioTeste("alvo-org-susp-perm");
     emailsCriados.push(admin.email, alvo.email);
-    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const adminRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: admin.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoAdmin = await definirPapelNaPropriaOrganizacao(adminRegistro.id, "admin");
     await adicionarComoMembro(organizacaoDoAdmin, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(admin.email, admin.senha);
@@ -141,8 +141,8 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const dono = await criarUsuarioTeste("dono-susp-sessao");
     const alvo = await criarUsuarioTeste("alvo-susp-sessao");
     emailsCriados.push(dono.email, alvo.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
     await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
@@ -165,7 +165,7 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const dono = await criarUsuarioTeste("dono-auto-susp");
     emailsCriados.push(dono.email);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
 
     const respostaSuspender = await fetch(
       `${BASE_URL}/api/auth/usuarios/${donoRegistro.id}/suspender`,
@@ -188,8 +188,8 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const dono = await criarUsuarioTeste("dono-susp-mfa");
     const alvo = await criarUsuarioTeste("alvo-susp-mfa");
     emailsCriados.push(dono.email, alvo.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
     await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos: cabecalhosDono } = await loginTeste(dono.email, dono.senha);
@@ -248,8 +248,8 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const dono = await criarUsuarioTeste("dono-autor-log");
     const alvo = await criarUsuarioTeste("alvo-autor-log");
     emailsCriados.push(dono.email, alvo.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
     await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
@@ -283,7 +283,7 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const dono = await criarUsuarioTeste("dono-fora-org");
     const estranho = await criarUsuarioTeste("estranho-fora-org");
     emailsCriados.push(dono.email, estranho.email);
-    const estranhoRegistro = await prisma.usuario.findUniqueOrThrow({
+    const estranhoRegistro = await prisma.usuario.findFirstOrThrow({
       where: { email: estranho.email },
     });
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
@@ -303,8 +303,8 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const dono = await criarUsuarioTeste("dono-remover");
     const alvo = await criarUsuarioTeste("alvo-remover");
     emailsCriados.push(dono.email, alvo.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: alvo.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
     await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
@@ -351,12 +351,12 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     // quem é removido é OUTRO usuário adicionado como o único dono dela.
     const admin = await criarUsuarioTeste("admin-remover-dono");
     emailsCriados.push(admin.email);
-    const adminRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: admin.email } });
+    const adminRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: admin.email } });
     const organizacao = await definirPapelNaPropriaOrganizacao(adminRegistro.id, "admin");
 
     const dono = await criarUsuarioTeste("dono-unico");
     emailsCriados.push(dono.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
     await adicionarComoMembro(organizacao, donoRegistro.id, "dono");
 
     const { cabecalhos } = await loginTeste(admin.email, admin.senha);
