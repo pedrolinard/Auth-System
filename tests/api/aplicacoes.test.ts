@@ -162,6 +162,58 @@ describe("Rate limit por aplicação", () => {
   });
 });
 
+describe("Passkeys entre aplicações", () => {
+  it("passkey registrada na aplicação A não é aceita na B", async () => {
+    const appA = await criarAplicacao("Cliente A passkey");
+    const appB = await criarAplicacao("Cliente B passkey");
+    const email = gerarEmailTeste("passkey-app-cruzada");
+    emailsCriados.push(email);
+    expect((await cadastrar(email, appA.clientId)).status).toBe(201);
+
+    const usuario = await prisma.usuario.findFirstOrThrow({
+      where: { email, aplicacaoId: appA.id },
+      select: { id: true },
+    });
+
+    // Credencial inserida direto: o que está sendo verificado aqui é a trava
+    // de aplicação, que roda ANTES da verificação criptográfica — chegar até
+    // ela por um authenticator de verdade exigiria um browser (é o que o E2E
+    // com virtual authenticator faz) e não mudaria o que este teste afirma.
+    const credentialId = `cred-teste-${Math.random().toString(36).slice(2, 14)}`;
+    await prisma.passkeyCredencial.create({
+      data: {
+        usuarioId: usuario.id,
+        credentialId,
+        publicKey: Buffer.from("chave-publica-de-teste").toString("base64"),
+        contador: 0,
+        transportes: ["internal"],
+      },
+    });
+
+    const opcoes = await fetch(`${BASE_URL}/api/auth/passkeys/login/opcoes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-aplicacao-id": appB.clientId },
+    });
+    expect(opcoes.status).toBe(200);
+    const { passkeyToken } = await opcoes.json();
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/passkeys/login/confirmar`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Forwarded-For": ipAleatorio(),
+        "x-aplicacao-id": appB.clientId,
+      },
+      body: JSON.stringify({ passkeyToken, resposta: { id: credentialId } }),
+    });
+
+    expect(resposta.status).toBe(401);
+    // Mesma mensagem de credencial desconhecida: dizer "essa passkey é de
+    // outro cliente" confirmaria a existência da conta lá.
+    expect((await resposta.json()).erro).toBe("Passkey não reconhecida.");
+  });
+});
+
 describe("JWKS", () => {
   it("publica as chaves de assinatura em /.well-known/jwks.json", async () => {
     const resposta = await fetch(`${BASE_URL}/.well-known/jwks.json`);
