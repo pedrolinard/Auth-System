@@ -30,7 +30,7 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-09-01";
+export const atualizadoEm = "2026-09-08";
 
 // Métricas ESTÁTICAS do código — atualize junto com a mudança que as move
 // (mesma disciplina do resto do arquivo). As métricas AO VIVO (contagens do
@@ -132,7 +132,7 @@ export const concluido: GrupoConcluido[] = [
       "Rate limit dedicado: criar organização (10/h por IP) e enviar convite (30/h por IP + 5/h por e-mail alvo)",
       "Cadastro cria a organização pessoal do usuário numa transação (Usuario + Organizacao + Membro dono) — sem organização órfã se algo falhar no meio",
       "Frontend: seletor de organização ativa no NavPainel, /dashboard/organizacoes (criar organização, convidar/revogar convite) e /aceitar-convite (autenticado e não-autenticado)",
-      "Backfill idempotente (scripts/backfill-organizacoes.mjs + django/scripts/backfill_organizacoes.py) cria a organização pessoal de cada conta pré-existente e reatribui Projeto/Tarefa antigos — implementado em 5 fases, cada uma revisada; ainda não rodado em produção",
+      "Backfill idempotente (scripts/backfill-organizacoes.mjs + django/scripts/backfill_organizacoes.py) cria a organização pessoal de cada conta pré-existente e reatribui Projeto/Tarefa antigos — implementado em 5 fases, cada uma revisada; rodado em produção em 2026-09-08 (3 organizações criadas no lado Next.js, 0 falhas nos dois lados)",
     ],
   },
   {
@@ -289,11 +289,21 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "multi-tenant-organizacoes",
     titulo: "Multi-tenant (organizações)",
     descricao:
-      "Sistema passa de single-tenant (papel global, dados isolados só por usuario_id) pra multi-tenant: uma conta pode ser membro de várias organizações, com papel próprio por organização (dono/admin/membro). Organização ativa vira claim no access token (organizacaoId/papelOrganizacao); trocar de organização reemite tokens sem reautenticar. Django isolado por organizacao_id. RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização. Convites por e-mail com token JWT próprio, aceite idempotente sob corrida. Rate limit dedicado pra criar organização e enviar convite. Frontend: seletor de organização, /dashboard/organizacoes, /aceitar-convite. Implementado em 5 fases (schema/backfill → sessão/token → Django → RBAC → convites/UI), cada uma revisada e corrigida antes da seguinte. Backfill pra contas/dados pré-existentes escrito e testado, mas ainda não rodado em produção — feature não implantada. Achado no processo de deploy: os endpoints de autoatendimento LGPD (export/exclusão da própria conta) tinham ficado pra trás — export não incluía organizações/convites, exclusão deixava a organização pessoal órfã e não bloqueava a única pessoa dona de uma organização com outros membros; corrigidos no mesmo dia.",
+      "Sistema passa de single-tenant (papel global, dados isolados só por usuario_id) pra multi-tenant: uma conta pode ser membro de várias organizações, com papel próprio por organização (dono/admin/membro). Organização ativa vira claim no access token (organizacaoId/papelOrganizacao); trocar de organização reemite tokens sem reautenticar. Django isolado por organizacao_id. RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização. Convites por e-mail com token JWT próprio, aceite idempotente sob corrida. Rate limit dedicado pra criar organização e enviar convite. Frontend: seletor de organização, /dashboard/organizacoes, /aceitar-convite. Implementado em 5 fases (schema/backfill → sessão/token → Django → RBAC → convites/UI), cada uma revisada e corrigida antes da seguinte. Backfill rodado em produção em 2026-09-08 (3 organizações criadas no lado Next.js; migrate + backfill do Django sem falhas) — feature no ar nos dois serviços. Achado no processo de deploy: os endpoints de autoatendimento LGPD (export/exclusão da própria conta) tinham ficado pra trás — export não incluía organizações/convites, exclusão deixava a organização pessoal órfã e não bloqueava a única pessoa dona de uma organização com outros membros; corrigidos no mesmo dia.",
     categoria: "Multi-tenant",
     prioridade: "alta",
     status: "feito",
     concluidoEm: "2026-09-01",
+  },
+  {
+    id: "deploy-travado-env-var",
+    titulo: "Deploy de produção quebrado 7 dias por env var faltando",
+    descricao:
+      "O multi-tenant foi pra main em 01/09 e ficou 7 dias fora do ar sem ninguém notar: os dois últimos deploys de produção estavam em ERROR. Causa: `src/lib/token.ts` faz `throw` na avaliação do módulo se faltar qualquer segredo, e a `JWT_CONVITE_ORGANIZACAO_SECRET` (nova) nunca foi criada no ambiente de produção — o `next build` morre em \"Collecting page data\". O CI do GitHub Actions passava verde porque lá a variável existe, então nada sinalizou. Segunda vez que esse modo de falha acontece (a primeira foi JWT_ALTERACAO_EMAIL_SECRET/JWT_PASSKEY_SECRET, ~11 dias). Agravante: `npm run build` roda `prisma migrate deploy` ANTES do `next build`, então os builds que falharam já tinham aplicado as migrations — produção ficou com schema novo e código velho, estado que só não quebrou nada porque o código antigo ignora as tabelas novas. Destravado na ordem schema → dados → código: backfill primeiro (com o código velho ainda no ar, o que eliminou a janela em que conta pré-existente ficaria sem conseguir logar), depois a env var, depois o redeploy — mesma sequência repetida no Django.",
+    categoria: "Infraestrutura",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-08",
   },
   {
     id: "suspensao-por-organizacao",
