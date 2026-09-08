@@ -12,7 +12,7 @@ import {
 const emailsCriados: string[] = [];
 
 async function obterOrganizacaoDoUsuario(email: string) {
-  const usuario = await prisma.usuario.findUniqueOrThrow({ where: { email } });
+  const usuario = await prisma.usuario.findFirstOrThrow({ where: { email } });
   const membro = await prisma.membro.findFirstOrThrow({
     where: { usuarioId: usuario.id },
     orderBy: { criadoEm: "asc" },
@@ -181,7 +181,7 @@ describe("Convites de organização", () => {
     const jaMembro = await criarUsuarioTeste("convite-ja-membro-alvo");
     emailsCriados.push(dono.email, jaMembro.email);
     const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
-    const alvoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: jaMembro.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: jaMembro.email } });
     await prisma.membro.create({
       data: { organizacaoId, usuarioId: alvoRegistro.id, papel: "membro" },
     });
@@ -199,7 +199,7 @@ describe("Convites de organização", () => {
     const dono = await criarUsuarioTeste("convite-aceitar-401");
     emailsCriados.push(dono.email);
     const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
     const convite = await prisma.conviteOrganizacao.create({
       data: { organizacaoId, email: "novo@teste.local", papel: "membro", criadoPorId: donoRegistro.id },
     });
@@ -223,7 +223,7 @@ describe("Convites de organização", () => {
     const outraConta = await criarUsuarioTeste("convite-email-errado-alvo");
     emailsCriados.push(dono.email, outraConta.email);
     const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
     const convite = await prisma.conviteOrganizacao.create({
       data: {
         organizacaoId,
@@ -253,7 +253,7 @@ describe("Convites de organização", () => {
     const convidado = await criarUsuarioTeste("convite-aceitar-ok-alvo");
     emailsCriados.push(dono.email, convidado.email);
     const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
     const convite = await prisma.conviteOrganizacao.create({
       data: { organizacaoId, email: convidado.email, papel: "admin", criadoPorId: donoRegistro.id },
     });
@@ -272,7 +272,7 @@ describe("Convites de organização", () => {
     });
     expect(respostaAceitar.status).toBe(200);
 
-    const convidadoRegistro = await prisma.usuario.findUniqueOrThrow({
+    const convidadoRegistro = await prisma.usuario.findFirstOrThrow({
       where: { email: convidado.email },
     });
     const membro = await prisma.membro.findUnique({
@@ -372,7 +372,7 @@ describe("Convites de organização", () => {
     const convidado = await criarUsuarioTeste("convite-corrida-alvo");
     emailsCriados.push(dono.email, convidado.email);
     const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
-    const donoRegistro = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
     const convite = await prisma.conviteOrganizacao.create({
       data: { organizacaoId, email: convidado.email, papel: "membro", criadoPorId: donoRegistro.id },
     });
@@ -400,7 +400,7 @@ describe("Convites de organização", () => {
     expect(respostaB.status).not.toBe(500);
     expect([respostaA.status, respostaB.status]).toContain(200);
 
-    const convidadoRegistro = await prisma.usuario.findUniqueOrThrow({
+    const convidadoRegistro = await prisma.usuario.findFirstOrThrow({
       where: { email: convidado.email },
     });
     const membro = await prisma.membro.findUnique({

@@ -1,5 +1,6 @@
 import hmac
 from dataclasses import dataclass
+from functools import lru_cache
 
 import jwt
 from django.conf import settings
@@ -26,8 +27,26 @@ class UsuarioRemoto:
     # organizações/membros do Next.js, só confia neste claim.
     organizacao_id: str | None = None
     papel_organizacao: str | None = None
+    # Aplicação cliente dona desta identidade (claim `aplicacaoId`, também
+    # carimbado como `aud`). Uma organização já pertence a exatamente uma
+    # aplicação, então o isolamento de projetos/tarefas por organizacao_id
+    # continua sendo suficiente — este campo existe para as checagens que
+    # querem afirmar o escopo explicitamente, sem inferir pela organização.
+    aplicacao_id: str | None = None
     is_authenticated: bool = True
     is_anonymous: bool = False
+
+
+@lru_cache(maxsize=1)
+def _cliente_jwks() -> jwt.PyJWKClient:
+    """Cliente JWKS com cache, criado uma vez por processo.
+
+    `cache_keys=True` guarda as chaves já buscadas em memória, então o custo
+    de rede é pago no primeiro token de cada `kid` — não a cada requisição.
+    `lifespan` limita por quanto tempo uma chave fica em cache: é o atraso
+    máximo entre o gateway aposentar uma chave e este serviço parar de aceitá-la.
+    """
+    return jwt.PyJWKClient(settings.JWT_JWKS_URL, cache_keys=True, lifespan=300)
 
 
 class AutenticacaoJWT(BaseAuthentication):
@@ -35,8 +54,23 @@ class AutenticacaoJWT(BaseAuthentication):
 
     O algoritmo é fixado explicitamente em `algorithms=["RS256"]` para evitar
     ataques de confusão de algoritmo (ex.: um token forjado com HS256 usando a
-    chave pública RS256 como segredo simétrico).
+    chave pública RS256 como segredo simétrico). Resolver a chave pelo `kid`
+    não afrouxa isso: o `kid` escolhe QUAL chave, nunca COMO ela é usada.
     """
+
+    def _chave_de_verificacao(self, token: str):
+        if not settings.JWT_JWKS_URL:
+            return settings.JWT_ACCESS_PUBLIC_KEY
+        try:
+            return _cliente_jwks().get_signing_key_from_jwt(token).key
+        except jwt.PyJWKClientError:
+            # JWKS fora do ar ou `kid` desconhecido. Cai na chave estática
+            # quando ela existe (janela de migração e rollback); sem ela, é
+            # token inválido mesmo — melhor recusar do que aceitar sem
+            # verificar.
+            if settings.JWT_ACCESS_PUBLIC_KEY:
+                return settings.JWT_ACCESS_PUBLIC_KEY
+            raise AuthenticationFailed("Não foi possível obter a chave de verificação.")
 
     def authenticate(self, request):
         cabecalho = request.headers.get("Authorization", "")
@@ -55,7 +89,7 @@ class AutenticacaoJWT(BaseAuthentication):
         try:
             payload = jwt.decode(
                 token,
-                settings.JWT_ACCESS_PUBLIC_KEY,
+                self._chave_de_verificacao(token),
                 algorithms=["RS256"],
                 issuer=settings.JWT_ACCESS_ISSUER,
                 # `sub` fica de fora do require de propósito — a checagem
@@ -66,7 +100,15 @@ class AutenticacaoJWT(BaseAuthentication):
                 # esse token continuar autenticando (só sem acesso a rotas de
                 # organização, ver tarefas/views.py) do que virar 401 geral
                 # até expirar sozinho.
-                options={"require": ["exp", "iss"]},
+                #
+                # `verify_aud` desligado de propósito: o `aud` do token é a
+                # APLICAÇÃO cliente, e este serviço atende todas elas — não
+                # existe uma audiência única para comparar. Um consumidor que
+                # serve uma aplicação só (o backend de um cliente) faz o
+                # oposto: passa `audience=<clientId dele>` e ganha de graça a
+                # recusa de token de outra aplicação. O claim é lido logo
+                # abaixo e vira `aplicacao_id` na identidade.
+                options={"require": ["exp", "iss"], "verify_aud": False},
             )
         except jwt.ExpiredSignatureError:
             raise AuthenticationFailed("Token expirado.")
@@ -85,6 +127,7 @@ class AutenticacaoJWT(BaseAuthentication):
                 papel=payload.get("papel", "usuario"),
                 organizacao_id=payload.get("organizacaoId"),
                 papel_organizacao=payload.get("papelOrganizacao"),
+                aplicacao_id=payload.get("aplicacaoId") or payload.get("aud"),
             ),
             token,
         )

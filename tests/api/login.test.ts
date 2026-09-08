@@ -89,7 +89,7 @@ describe("POST /api/auth/login", () => {
   it("retorna mfaObrigatorio quando o usuário tem MFA ativado", async () => {
     const usuarioMfa = await criarUsuarioTeste("login-mfa");
     emailsCriados.push(usuarioMfa.email);
-    await prisma.usuario.update({
+    await prisma.usuario.updateMany({
       where: { email: usuarioMfa.email },
       data: { mfaAtivado: true, mfaSecret: "JBSWY3DPEHPK3PXP" },
     });

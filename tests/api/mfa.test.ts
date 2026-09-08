@@ -141,7 +141,7 @@ describe("Fluxo de MFA (TOTP)", () => {
     // relação ao instante real da validação. Resetar direto no banco simula
     // a passagem real de tempo (o que aconteceria de verdade entre
     // desativar e reativar o MFA num uso normal) sem esperar 30s de verdade.
-    await prisma.usuario.update({
+    await prisma.usuario.updateMany({
       where: { email: usuario.email },
       data: { mfaUltimoTimestep: null },
     });
@@ -162,7 +162,7 @@ describe("Fluxo de MFA (TOTP)", () => {
     });
     expect(respostaBackupAntigo.status).toBe(401);
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const log = await prisma.logAuditoria.findFirst({
       where: { usuarioId: usuarioDb.id, evento: "codigos_backup_invalidados" },
     });
@@ -220,7 +220,7 @@ describe("Fluxo de MFA (TOTP)", () => {
     // código da segunda tentativa é, por si só, perfeitamente válido pelo
     // TOTP (não é replay de código) — quem tem que rejeitar é o jti do
     // mfaToken já ter sido consumido na conclusão anterior.
-    await prisma.usuario.update({
+    await prisma.usuario.updateMany({
       where: { email: usuario.email },
       data: { mfaUltimoTimestep: null },
     });
@@ -330,7 +330,7 @@ describe("Fluxo de MFA (TOTP)", () => {
     const { segredo } = await respostaIniciar.json();
     await chamar("/api/auth/mfa/confirmar", cabecalhos, { codigo: gerarCodigoTotp(segredo) });
 
-    await prisma.usuario.update({
+    await prisma.usuario.updateMany({
       where: { email: usuario.email },
       data: { mfaSecret: "v1:aWx1bWluYWRv:c2VncmVkbw==:ZGFkb3M=" },
     });

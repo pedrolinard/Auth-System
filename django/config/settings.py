@@ -52,9 +52,19 @@ JWT_ACCESS_PUBLIC_KEY = base64.b64decode(
 ).decode("utf-8")
 
 # Emissor esperado no access token — precisa bater com o que o Next.js
-# carimba (src/lib/token.ts: EMISSOR_TOKEN_ACESSO). Só `iss`, sem `aud`: ver
-# o comentário em token.ts sobre por que `aud` quebraria consumidores antigos.
+# carimba (src/lib/token.ts: EMISSOR_TOKEN_ACESSO).
 JWT_ACCESS_ISSUER = "auth-gateway"
+
+# URL do JWKS do gateway. Quando definida, a chave de verificação passa a ser
+# buscada por `kid` a partir daí, em vez de ser a constante acima — é o que
+# permite o gateway rotacionar a chave de assinatura sem que este serviço
+# precise de um deploy sincronizado (foi exatamente a coordenação manual entre
+# os dois que quebrou produção quando o claim `aud` mudou).
+#
+# Sem a variável, continua valendo JWT_ACCESS_PUBLIC_KEY: é o caminho de dev,
+# o dos testes e o de rollback, e é ele que torna esta mudança reversível sem
+# tocar em código.
+JWT_JWKS_URL = os.environ.get("JWT_JWKS_URL", "")
 
 
 # Hardening de produção (fora da Vercel / com DEBUG, fica tudo desligado pra

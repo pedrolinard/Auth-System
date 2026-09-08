@@ -21,6 +21,11 @@ type UsuarioParaSessao = {
   nome: string;
   email: string;
   papel: Papel;
+  // Vem da própria linha do usuário, nunca do header da requisição: o header
+  // diz onde procurar a conta, mas quem a conta é depois de encontrada é o
+  // banco que decide. Confiar no header aqui deixaria emitir um token com a
+  // aplicação de outro cliente.
+  aplicacaoId: string;
 };
 
 // Sem limite, um usuário podia acumular sessões ativas indefinidamente (cada
@@ -96,6 +101,7 @@ export async function criarSessao(
     sub: usuario.id,
     email: usuario.email,
     papel: usuario.papel,
+    aplicacaoId: usuario.aplicacaoId,
     organizacaoId,
     papelOrganizacao,
   });

@@ -10,13 +10,42 @@ import {
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 
-// RP_ID precisa ser o domínio exato (sem porta/protocolo) que aparece na
-// barra de endereço, e ORIGIN a origem completa — um authenticator recusa a
-// cerimônia se qualquer um dos dois não bater com o que o browser reportou
-// (ver .env.example). Sem as variáveis configuradas, cai pro dev local.
-const RP_ID = process.env.PASSKEY_RP_ID ?? "localhost";
+// RP ID precisa ser o domínio exato (sem porta/protocolo) que aparece na
+// barra de endereço, e a origem a URL completa — um authenticator recusa a
+// cerimônia se qualquer um dos dois não bater com o que o browser reportou.
+//
+// Os dois deixaram de ser constantes do processo e passaram a vir da
+// APLICAÇÃO: uma credencial WebAuthn é presa à origem em que nasceu, então um
+// provedor com clientes em domínios próprios não tem como ter um RP ID só.
+// Uma origem indevidamente cadastrada numa aplicação é uma passkey aceita
+// vinda de um site que não é do cliente — é a lista mais sensível do modelo.
+//
+// As env vars continuam existindo como fallback pro ambiente de dev e pra
+// aplicação padrão que ainda não tenha origens cadastradas.
+const RP_ID_PADRAO = process.env.PASSKEY_RP_ID ?? "localhost";
 const RP_NAME = process.env.PASSKEY_RP_NAME ?? "Auth Gateway";
-const ORIGIN = process.env.PASSKEY_ORIGIN ?? "http://localhost:3000";
+const ORIGEM_PADRAO = process.env.PASSKEY_ORIGIN ?? "http://localhost:3000";
+
+// O que o WebAuthn precisa saber sobre a aplicação. Vem de
+// resolverAplicacao(), mas fica um tipo local pra este módulo não depender do
+// formato completo de Aplicacao.
+export type AplicacaoWebAuthn = {
+  passkeyRpId: string | null;
+  origens: string[];
+};
+
+function rpIdDe(aplicacao: AplicacaoWebAuthn | null): string {
+  return aplicacao?.passkeyRpId ?? RP_ID_PADRAO;
+}
+
+// Todas as origens da aplicação são aceitas (o simplewebauthn aceita array):
+// um mesmo cliente pode legitimamente ter mais de uma — apex e www, ou o
+// domínio de staging. O que não pode é aceitar QUALQUER origem, que é o que
+// aconteceria se a lista vazia virasse "sem checagem".
+function origensDe(aplicacao: AplicacaoWebAuthn | null): string[] {
+  const origens = aplicacao?.origens ?? [];
+  return origens.length > 0 ? origens : [ORIGEM_PADRAO];
+}
 
 type CredencialResumo = {
   credentialId: string;
@@ -37,10 +66,11 @@ type CredencialResumo = {
 export async function gerarOpcoesRegistroPasskey(
   usuario: { id: string; email: string; nome: string },
   credenciaisExistentes: CredencialResumo[],
+  aplicacao: AplicacaoWebAuthn | null = null,
 ) {
   return generateRegistrationOptions({
     rpName: RP_NAME,
-    rpID: RP_ID,
+    rpID: rpIdDe(aplicacao),
     userName: usuario.email,
     userDisplayName: usuario.nome,
     userID: new TextEncoder().encode(usuario.id),
@@ -56,12 +86,13 @@ export async function gerarOpcoesRegistroPasskey(
 export async function verificarRegistroPasskey(
   response: RegistrationResponseJSON,
   challenge: string,
+  aplicacao: AplicacaoWebAuthn | null = null,
 ) {
   return verifyRegistrationResponse({
     response,
     expectedChallenge: challenge,
-    expectedOrigin: ORIGIN,
-    expectedRPID: RP_ID,
+    expectedOrigin: origensDe(aplicacao),
+    expectedRPID: rpIdDe(aplicacao),
     requireUserVerification: true,
   });
 }
@@ -69,9 +100,9 @@ export async function verificarRegistroPasskey(
 // Sem allowCredentials: login "descobrível" — o browser mostra as passkeys
 // já salvas pra este site sem a gente precisar dizer quais IDs existem, o
 // que é exatamente o que permite logar sem digitar e-mail antes.
-export async function gerarOpcoesLoginPasskey() {
+export async function gerarOpcoesLoginPasskey(aplicacao: AplicacaoWebAuthn | null = null) {
   return generateAuthenticationOptions({
-    rpID: RP_ID,
+    rpID: rpIdDe(aplicacao),
     userVerification: "required",
   });
 }
@@ -80,12 +111,13 @@ export async function verificarLoginPasskey(
   response: AuthenticationResponseJSON,
   challenge: string,
   credencial: { credentialId: string; publicKey: string; contador: number; transportes: string[] },
+  aplicacao: AplicacaoWebAuthn | null = null,
 ) {
   return verifyAuthenticationResponse({
     response,
     expectedChallenge: challenge,
-    expectedOrigin: ORIGIN,
-    expectedRPID: RP_ID,
+    expectedOrigin: origensDe(aplicacao),
+    expectedRPID: rpIdDe(aplicacao),
     requireUserVerification: true,
     credential: {
       id: credencial.credentialId,

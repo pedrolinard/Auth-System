@@ -7,6 +7,7 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { enviarEmailPasskeyAlterada } from "@/lib/email";
+import { obterAplicacaoPorId } from "@/lib/aplicacao";
 import { verificarRegistroPasskey } from "@/lib/passkey";
 import { verificarTokenDesafioPasskey } from "@/lib/token";
 import { esquemaPasskeyRegistroConfirmar } from "@/lib/validacao";
@@ -67,6 +68,7 @@ export async function POST(req: Request) {
     verificacao = await verificarRegistroPasskey(
       resposta as unknown as RegistrationResponseJSON,
       payloadDesafio.challenge,
+      await obterAplicacaoPorId(usuario.aplicacaoId),
     );
   } catch {
     return NextResponse.json({ erro: "Não foi possível verificar a passkey." }, { status: 400 });

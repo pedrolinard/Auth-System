@@ -5,7 +5,7 @@ import { apagarUsuariosTeste, BASE_URL, criarUsuarioTeste, loginTeste } from "..
 const emailsCriados: string[] = [];
 
 async function promoverAdmin(email: string) {
-  await prisma.usuario.update({ where: { email }, data: { papel: "admin" } });
+  await prisma.usuario.updateMany({ where: { email }, data: { papel: "admin" } });
 }
 
 describe("Painel de auditoria (admin)", () => {

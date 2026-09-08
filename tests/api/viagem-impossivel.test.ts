@@ -36,7 +36,7 @@ describe('Detecção de "viagem impossível"', () => {
     const segundoLogin = await loginComGeo(usuario.email, usuario.senha, "US");
     expect(segundoLogin.status).toBe(200);
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const log = await prisma.logAuditoria.findFirst({
       where: { usuarioId: usuarioDb.id, evento: "viagem_impossivel_detectada" },
     });
@@ -50,7 +50,7 @@ describe('Detecção de "viagem impossível"', () => {
     await loginComGeo(usuario.email, usuario.senha, "BR");
     await loginComGeo(usuario.email, usuario.senha, "BR");
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const log = await prisma.logAuditoria.findFirst({
       where: { usuarioId: usuarioDb.id, evento: "viagem_impossivel_detectada" },
     });
@@ -64,7 +64,7 @@ describe('Detecção de "viagem impossível"', () => {
     await loginComGeo(usuario.email, usuario.senha, undefined);
     await loginComGeo(usuario.email, usuario.senha, undefined);
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const log = await prisma.logAuditoria.findFirst({
       where: { usuarioId: usuarioDb.id, evento: "viagem_impossivel_detectada" },
     });

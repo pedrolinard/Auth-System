@@ -15,6 +15,81 @@ enum Papel {
   admin
 }
 
+// Aplicação cliente que consome este provedor de identidade — o nível de
+// isolamento ACIMA da organização. Organizacao/Membro (multi-tenant) resolvem
+// "times dentro de um app"; Aplicacao resolve "apps diferentes, de clientes
+// diferentes, que não se conhecem". Sem ela, o e-mail é único no sistema
+// inteiro e dois clientes com o mesmo usuário final colidem.
+model Aplicacao {
+  id       String @id @default(cuid())
+  nome     String
+  // Identificador PÚBLICO, enviado pelo SDK no header x-aplicacao-id. Ele
+  // seleciona o tenant e nada mais: entra no `where` de toda leitura e no
+  // `data` de toda escrita, mas NUNCA autoriza — autorização continua vindo
+  // do access token, como já vinha. Tratar isto como credencial seria repetir
+  // o erro clássico de confundir identificação com autenticação.
+  clientId String @unique
+  // Segredo para chamadas servidor-a-servidor. Só o hash é persistido, mesmo
+  // princípio de Usuario.senhaHash e TokenAtualizacao.tokenHash — quem tem o
+  // banco não consegue se passar pela aplicação.
+  clientSecretHash String?
+  // Origens completas (esquema://host[:porta]) de onde esta aplicação pode
+  // falar. Faz dois trabalhos que não dá pra separar: allowlist de origem das
+  // requisições do navegador e origem esperada do WebAuthn. Uma origem errada
+  // aceita aqui é uma passkey aceita de um site que não é do cliente.
+  origens  String[]
+  // RP ID do WebAuthn: o domínio exato (sem esquema nem porta) a que as
+  // passkeys desta aplicação ficam presas. Era env var global
+  // (PASSKEY_RP_ID); com clientes em domínios próprios, tem que ser por
+  // aplicação, porque uma credencial só vale na origem em que nasceu.
+  passkeyRpId String?
+  ativa    Boolean @default(true)
+  // A aplicação de primeira parte: o próprio painel deste projeto. Requisição
+  // que chega sem x-aplicacao-id (o dashboard, as páginas de login, tudo que
+  // já existia) cai nela — é o que mantém o app atual funcionando sem precisar
+  // reescrever o front. Só UMA linha pode ter padrao = true, garantido por
+  // índice único parcial criado à mão na migration (o Prisma não expressa
+  // índice parcial no schema).
+  padrao   Boolean @default(false)
+  criadoEm DateTime @default(now()) @db.Timestamptz(3)
+  atualizadoEm DateTime @updatedAt @db.Timestamptz(3)
+
+  usuarios     Usuario[]
+  organizacoes Organizacao[]
+
+  @@map("aplicacoes")
+}
+
+// Par de chaves RS256 que assina o access token. Antes era uma só, em
+// variável de ambiente, sem `kid` no header — o que tornava impossível
+// rotacionar sem quebrar todo consumidor ao mesmo tempo (foi exatamente o que
+// aconteceu quando o claim `aud` mudou). Como tabela, dá pra publicar a chave
+// nova no JWKS, esperar o cache dos consumidores virar, e só então passar a
+// assinar com ela.
+model ChaveAssinatura {
+  id  String @id @default(cuid())
+  // Vai no header do JWT e identifica a entrada correspondente no JWKS.
+  kid String @unique
+  // SPKI PEM — material público, servido cru em /.well-known/jwks.json.
+  publicaPem String
+  // PKCS#8 PEM cifrado em repouso (AES-256-GCM, src/lib/cripto.ts). A chave
+  // que cifra continua vindo de MFA_ENCRYPTION_KEY: o nome ficou estreito
+  // demais pro que a função virou, mas inventar um segredo novo só pra isso
+  // adicionaria mais uma env var pra esquecer de criar em produção — que é,
+  // literalmente, o modo de falha que já derrubou este projeto duas vezes.
+  privadaCifrada String
+  // Assina os tokens NOVOS. No máximo uma linha ativa por vez; as demais
+  // continuam publicadas no JWKS enquanto houver token vivo assinado por elas.
+  ativa Boolean @default(false)
+  // Quando deixou de assinar. Uma chave aposentada só pode sair do JWKS
+  // depois de expirar o último token que assinou (vida do access token, 15
+  // min) mais a janela de cache dos consumidores.
+  aposentadaEm DateTime? @db.Timestamptz(3)
+  criadoEm DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("chaves_assinatura")
+}
+
 // Papel de ORGANIZAÇÃO (dono/admin/membro de uma Organizacao) — separado do
 // Papel de SISTEMA acima (Usuario.papel), que continua existindo pra quem
 // opera a instalação inteira (painel de auditoria, /api/auth/usuarios).
@@ -39,8 +114,16 @@ enum PapelOrganizacao {
 // não importa o fuso de quem lê.
 model Usuario {
   id             String              @id @default(cuid())
+  // Aplicação cliente a que esta conta pertence. Identidade passa a ser POR
+  // APLICAÇÃO: o mesmo e-mail pode existir em duas aplicações diferentes sem
+  // colidir — é a diferença entre "o auth do meu app" e "auth como serviço".
+  aplicacaoId    String
+  // Restrict, não Cascade: apagar uma aplicação por acidente não pode levar
+  // junto todas as contas dos usuários finais dela. Excluir um cliente é
+  // operação deliberada, feita depois de esvaziar a aplicação.
+  aplicacao      Aplicacao           @relation(fields: [aplicacaoId], references: [id], onDelete: Restrict)
   nome           String
-  email          String              @unique
+  email          String
   senhaHash      String
   mfaAtivado     Boolean             @default(false)
   mfaSecret      String?
@@ -81,6 +164,14 @@ model Usuario {
   // conta necessariamente existir ainda).
   convitesCriados ConviteOrganizacao[]
 
+  // O índice único que define o produto: e-mail é único DENTRO da aplicação,
+  // não no sistema. joao@empresa.com pode ser usuário final de dois clientes
+  // diferentes sem que um saiba do outro. Antes era `email @unique` global,
+  // que é o certo pra um app de primeira parte e o impeditivo pra um provedor.
+  @@unique([aplicacaoId, email])
+  // Suporta "todas as contas desta aplicação" (listagem administrativa) sem
+  // depender do índice composto acima, que exige o e-mail.
+  @@index([aplicacaoId])
   @@map("usuarios")
 }
 
@@ -195,6 +286,14 @@ model PasskeyCredencial {
 
 model LogAuditoria {
   id        String   @id @default(cuid())
+  // Escopo da trilha. Sem estes dois campos, um dono de organização não
+  // consegue ver a própria auditoria (a rota checa só o papel de sistema) e
+  // quem opera a instalação vê a de todos os clientes de uma vez — aceitável
+  // num app de primeira parte, inaceitável num provedor. Ficam soltos (sem
+  // relation) pelo mesmo motivo que autorId/autorEmail: é trilha histórica,
+  // tem que sobreviver à exclusão do que ela descreve.
+  aplicacaoId   String?
+  organizacaoId String?
   usuarioId String?
   email     String?
   evento    String
@@ -217,6 +316,10 @@ model LogAuditoria {
   // Poda de retenção (LGPD): o job de limpeza apaga registros com mais de N
   // dias — sem este índice o DELETE varre a tabela inteira.
   @@index([criadoEm])
+  // Painel de auditoria escopado: "os eventos desta organização, mais
+  // recentes primeiro" e o mesmo por aplicação, sem varrer a tabela toda.
+  @@index([aplicacaoId, criadoEm])
+  @@index([organizacaoId, criadoEm])
   @@map("logs_auditoria")
 }
 
@@ -248,16 +351,25 @@ model LimiteTaxa {
 // diretamente).
 model Organizacao {
   id       String   @id @default(cuid())
+  // Uma organização vive dentro de UMA aplicação cliente — os dois níveis de
+  // isolamento do provedor: a aplicação (o cliente que paga) e, dentro dela,
+  // as organizações dos usuários finais desse cliente.
+  aplicacaoId String
+  aplicacao   Aplicacao @relation(fields: [aplicacaoId], references: [id], onDelete: Restrict)
   nome     String
-  // Usado em URLs/exibição — único pra não colidir duas organizações com o
-  // mesmo nome (ex.: dois "Acme" viram acme e acme-2).
-  slug     String   @unique
+  // Usado em URLs/exibição — único DENTRO da aplicação, não globalmente:
+  // senão o cliente A que registrasse "acme" impediria o cliente B de usar o
+  // mesmo slug, vazando a existência de uma organização de outro cliente pela
+  // colisão. Mesmo raciocínio do índice de e-mail em Usuario.
+  slug     String
   criadoEm DateTime @default(now()) @db.Timestamptz(3)
 
   membros  Membro[]
   convites ConviteOrganizacao[]
   sessoes  TokenAtualizacao[]
 
+  @@unique([aplicacaoId, slug])
+  @@index([aplicacaoId])
   @@map("organizacoes")
 }
 

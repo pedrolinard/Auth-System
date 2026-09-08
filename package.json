@@ -14,7 +14,9 @@
     "rotacionar:chave-mfa": "node -r dotenv/config scripts/rotacionar-chave-mfa.mjs dotenv_config_path=.env",
     "backfill:organizacoes": "node -r dotenv/config scripts/backfill-organizacoes.mjs dotenv_config_path=.env",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "backfill:aplicacoes": "node -r dotenv/config scripts/backfill-aplicacoes.mjs dotenv_config_path=.env",
+    "rotacionar:chave-assinatura": "node -r dotenv/config scripts/rotacionar-chave-assinatura.mjs dotenv_config_path=.env"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

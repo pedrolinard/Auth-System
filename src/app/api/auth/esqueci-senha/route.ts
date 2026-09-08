@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { origemPermitida, resolverAplicacao } from "@/lib/aplicacao";
 import { enviarEmailRedefinicaoSenha } from "@/lib/email";
 import {
   limiteExcedido,
@@ -23,6 +24,14 @@ const JANELA_RECUPERACAO_MS = 60 * 60 * 1000;
 const MAX_RECUPERACAO_POR_EMAIL = 3;
 
 export async function POST(req: Request) {
+  const aplicacao = await resolverAplicacao(req);
+  if (!aplicacao) {
+    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  }
+  if (!origemPermitida(aplicacao, req)) {
+    return NextResponse.json({ erro: "Origem não autorizada para esta aplicação." }, { status: 403 });
+  }
+
   const ip = obterIp(req);
   if (
     await limiteExcedido({
@@ -36,7 +45,7 @@ export async function POST(req: Request) {
       { status: 429 },
     );
   }
-  await registrarEvento({ req, evento: "recuperacao_tentativa" });
+  await registrarEvento({ req, evento: "recuperacao_tentativa", aplicacaoId: aplicacao.id });
   await registrarTentativaIp({
     ip,
     evento: "recuperacao_tentativa",
@@ -59,18 +68,22 @@ export async function POST(req: Request) {
   // coisa mas NÃO manda e-mail nenhum. Anti-enumeração: um atacante não
   // consegue diferenciar "limite de flood atingido" de "e-mail não existe".
   const floodDeEmail = await limiteExcedidoPorEmail({
+    aplicacaoId: aplicacao.id,
     email,
     evento: "recuperacao_email",
     maximo: MAX_RECUPERACAO_POR_EMAIL,
   });
-  await registrarEvento({ req, evento: "recuperacao_email", email });
+  await registrarEvento({ req, evento: "recuperacao_email", email, aplicacaoId: aplicacao.id });
   await registrarTentativaEmail({
+    aplicacaoId: aplicacao.id,
     email,
     evento: "recuperacao_email",
     janelaMs: JANELA_RECUPERACAO_MS,
   });
 
-  const usuario = await prisma.usuario.findUnique({ where: { email } });
+  const usuario = await prisma.usuario.findUnique({
+    where: { aplicacaoId_email: { aplicacaoId: aplicacao.id, email } },
+  });
 
   // Sempre responde com a mesma mensagem genérica, exista ou não o e-mail —
   // evita que a rota seja usada para descobrir quais e-mails têm conta

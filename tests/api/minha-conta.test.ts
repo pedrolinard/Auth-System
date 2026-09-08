@@ -73,7 +73,7 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
   it("o export inclui os metadados das passkeys, sem credentialId nem publicKey", async () => {
     const usuario = await criarUsuarioTeste("minha-conta-passkey-export");
     emailsCriados.push(usuario.email);
-    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     await prisma.passkeyCredencial.create({
       data: {
         usuarioId: registro.id,
@@ -109,7 +109,7 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     });
     expect(resposta.status).toBe(200);
 
-    const registroApagado = await prisma.usuario.findUnique({ where: { email: usuario.email } });
+    const registroApagado = await prisma.usuario.findFirst({ where: { email: usuario.email } });
     expect(registroApagado).toBeNull();
 
     const loginApagado = await fetch(`${BASE_URL}/api/auth/login`, {
@@ -132,7 +132,7 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     });
     expect(resposta.status).toBe(401);
 
-    const registroAinda = await prisma.usuario.findUnique({ where: { email: usuario.email } });
+    const registroAinda = await prisma.usuario.findFirst({ where: { email: usuario.email } });
     expect(registroAinda).not.toBeNull();
   });
 
@@ -173,7 +173,7 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     emailsCriados.push(usuario.email);
     const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
 
-    const registro = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     const membro = await prisma.membro.findFirstOrThrow({ where: { usuarioId: registro.id } });
     const organizacaoId = membro.organizacaoId;
 
@@ -197,8 +197,8 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     emailsCriados.push(outroMembro.email);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
 
-    const registroDono = await prisma.usuario.findUniqueOrThrow({ where: { email: dono.email } });
-    const registroOutro = await prisma.usuario.findUniqueOrThrow({
+    const registroDono = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const registroOutro = await prisma.usuario.findFirstOrThrow({
       where: { email: outroMembro.email },
     });
     const membroDono = await prisma.membro.findFirstOrThrow({
@@ -215,7 +215,7 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     });
     expect(resposta.status).toBe(409);
 
-    const registroAinda = await prisma.usuario.findUnique({ where: { email: dono.email } });
+    const registroAinda = await prisma.usuario.findFirst({ where: { email: dono.email } });
     expect(registroAinda).not.toBeNull();
   });
 

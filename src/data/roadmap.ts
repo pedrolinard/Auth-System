@@ -36,11 +36,11 @@ export const atualizadoEm = "2026-09-08";
 // (mesma disciplina do resto do arquivo). As métricas AO VIVO (contagens do
 // banco, commit/deploy) são calculadas em tempo de requisição na página.
 export const metricas = {
-  rotasApi: 39,
-  migracoesPrisma: 19,
-  modulosLib: 32,
-  tabelas: 11,
-  testesVitest: 179,
+  rotasApi: 40,
+  migracoesPrisma: 21,
+  modulosLib: 34,
+  tabelas: 13,
+  testesVitest: 193,
   testesE2e: 6,
   testesDjango: 36,
 };
@@ -301,6 +301,16 @@ export const proximosPassos: ItemProximoPasso[] = [
     descricao:
       "O multi-tenant foi pra main em 01/09 e ficou 7 dias fora do ar sem ninguém notar: os dois últimos deploys de produção estavam em ERROR. Causa: `src/lib/token.ts` faz `throw` na avaliação do módulo se faltar qualquer segredo, e a `JWT_CONVITE_ORGANIZACAO_SECRET` (nova) nunca foi criada no ambiente de produção — o `next build` morre em \"Collecting page data\". O CI do GitHub Actions passava verde porque lá a variável existe, então nada sinalizou. Segunda vez que esse modo de falha acontece (a primeira foi JWT_ALTERACAO_EMAIL_SECRET/JWT_PASSKEY_SECRET, ~11 dias). Agravante: `npm run build` roda `prisma migrate deploy` ANTES do `next build`, então os builds que falharam já tinham aplicado as migrations — produção ficou com schema novo e código velho, estado que só não quebrou nada porque o código antigo ignora as tabelas novas. Destravado na ordem schema → dados → código: backfill primeiro (com o código velho ainda no ar, o que eliminou a janela em que conta pré-existente ficaria sem conseguir logar), depois a env var, depois o redeploy — mesma sequência repetida no Django.",
     categoria: "Infraestrutura",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-08",
+  },
+  {
+    id: "identidade-por-aplicacao",
+    titulo: "Fase 00 do provedor: identidade por aplicação + JWKS",
+    descricao:
+      "Primeira fase de transformar o sistema num provedor de auth vendável. Modelos Aplicacao (o cliente que integra: clientId, segredo hasheado, origens permitidas, RP ID de passkey) e ChaveAssinatura (conjunto RS256 com kid, chave privada cifrada em repouso). Usuario e Organizacao ganham aplicacaoId; o índice único de e-mail deixa de ser global e vira (aplicacaoId, email), e o slug de organização também passa a ser único por aplicação — dois clientes podem ter o mesmo usuário final e o mesmo nome de organização sem colidir. Access token passa a carregar kid no header e aplicacaoId (também como aud), e a verificação resolve a chave pelo kid via /.well-known/jwks.json; o Django troca a chave estática por um cliente JWKS com cache, então rotacionar chave deixa de exigir deploy coordenado (scripts/rotacionar-chave-assinatura.mjs faz gerar → ativar → remover na ordem segura). Duas travas de isolamento que só apareceram lendo o código: a chave do rate limit por e-mail não levava aplicação (um cliente trancava o usuário do outro só martelando o mesmo endereço) e o RP ID das passkeys era env var global (credencial WebAuthn é presa à origem em que nasceu, então precisa ser por aplicação). Requisição sem header cai numa aplicação padrão, o que manteve todo o front atual funcionando sem reescrita. A migration destrutiva faz o próprio backfill em SQL, de forma idempotente, porque o build da Vercel aplica todas as migrations pendentes de uma vez — depender de um script externo ter rodado no meio quebraria o deploy. +14 testes: isolamento entre aplicações, rate limit cruzado, JWKS e o ciclo completo de rotação de chave.",
+    categoria: "Multi-tenant",
     prioridade: "alta",
     status: "feito",
     concluidoEm: "2026-09-08",

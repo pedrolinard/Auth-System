@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { origemPermitida, resolverAplicacao } from "@/lib/aplicacao";
 import { obterCookieDispositivoConfiavel } from "@/lib/cookies";
 import { dispositivoEhConfiavel } from "@/lib/dispositivoConfiavel";
 import { enviarEmailDispositivoNovo, enviarEmailViagemImpossivel } from "@/lib/email";
@@ -61,6 +62,14 @@ const HASH_FALSO_PARA_EQUALIZAR_TEMPO =
 const JANELA_VIAGEM_IMPOSSIVEL_MS = 2 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
+  const aplicacao = await resolverAplicacao(req);
+  if (!aplicacao) {
+    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  }
+  if (!origemPermitida(aplicacao, req)) {
+    return NextResponse.json({ erro: "Origem não autorizada para esta aplicação." }, { status: 403 });
+  }
+
   const ip = obterIp(req);
   const falhasIp = await contarEventosPorIp({ ip, evento: "login_falha" });
   if (falhasIp >= MAX_TENTATIVAS_LOGIN) {
@@ -84,6 +93,7 @@ export async function POST(req: Request) {
 
   if (
     await limiteExcedidoPorEmail({
+      aplicacaoId: aplicacao.id,
       email,
       evento: "login_falha",
       maximo: MAX_TENTATIVAS_LOGIN_POR_CONTA,
@@ -105,7 +115,9 @@ export async function POST(req: Request) {
     }
   }
 
-  const usuario = await prisma.usuario.findUnique({ where: { email } });
+  const usuario = await prisma.usuario.findUnique({
+    where: { aplicacaoId_email: { aplicacaoId: aplicacao.id, email } },
+  });
   // Sempre roda o bcrypt.compare, mesmo sem usuário — contra o hash falso
   // acima quando não há usuário, para equalizar o tempo dos dois caminhos.
   const senhaConfere = await verificarSenha(
@@ -115,9 +127,10 @@ export async function POST(req: Request) {
   const credenciaisValidas = usuario && senhaConfere;
 
   if (!credenciaisValidas) {
-    await registrarEvento({ req, evento: "login_falha", email });
+    await registrarEvento({ req, evento: "login_falha", email, aplicacaoId: aplicacao.id });
     await registrarTentativaIp({ ip, evento: "login_falha", janelaMs: JANELA_LOGIN_MS });
     await registrarTentativaEmail({
+      aplicacaoId: aplicacao.id,
       email,
       evento: "login_falha",
       janelaMs: JANELA_LOGIN_POR_CONTA_MS,

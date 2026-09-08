@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { origemPermitida, resolverAplicacao } from "@/lib/aplicacao";
 import { enviarEmailVerificacao } from "@/lib/email";
 import { contarEventosPorIp, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { criarOrganizacaoPessoal } from "@/lib/organizacao";
@@ -19,6 +20,14 @@ const JANELA_CADASTRO_MS = 60 * 60 * 1000;
 const LIMITE_TENTATIVAS_ANTES_DE_CAPTCHA = 3;
 
 export async function POST(req: Request) {
+  const aplicacao = await resolverAplicacao(req);
+  if (!aplicacao) {
+    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  }
+  if (!origemPermitida(aplicacao, req)) {
+    return NextResponse.json({ erro: "Origem não autorizada para esta aplicação." }, { status: 403 });
+  }
+
   const ip = obterIp(req);
   const tentativasIp = await contarEventosPorIp({ ip, evento: "cadastro_tentativa" });
   if (tentativasIp >= MAX_TENTATIVAS_CADASTRO) {
@@ -27,7 +36,7 @@ export async function POST(req: Request) {
       { status: 429 },
     );
   }
-  await registrarEvento({ req, evento: "cadastro_tentativa" });
+  await registrarEvento({ req, evento: "cadastro_tentativa", aplicacaoId: aplicacao.id });
   await registrarTentativaIp({ ip, evento: "cadastro_tentativa", janelaMs: JANELA_CADASTRO_MS });
 
   const corpo = await req.json().catch(() => null);
@@ -70,8 +79,8 @@ export async function POST(req: Request) {
     // órfã se o passo do usuário falhar antes.
     const usuario = await prisma.$transaction(async (tx) => {
       const usuarioCriado = await tx.usuario.create({
-        data: { nome, email, senhaHash },
-        select: { id: true, nome: true, email: true, criadoEm: true },
+        data: { nome, email, senhaHash, aplicacaoId: aplicacao.id },
+        select: { id: true, nome: true, email: true, criadoEm: true, aplicacaoId: true },
       });
       await criarOrganizacaoPessoal(tx, usuarioCriado);
       return usuarioCriado;
@@ -89,6 +98,9 @@ export async function POST(req: Request) {
       erro instanceof Prisma.PrismaClientKnownRequestError &&
       erro.code === "P2002"
     ) {
+      // P2002 agora dispara pelo índice composto (aplicacaoId, email): o
+      // mesmo endereço em OUTRA aplicação não colide mais, que é exatamente
+      // a mudança que esta fase entrega.
       return NextResponse.json(
         { erro: "Este e-mail já está cadastrado." },
         { status: 409 },

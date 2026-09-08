@@ -112,7 +112,7 @@ describe('"Lembrar este dispositivo" (pular MFA)', () => {
       ip,
     );
 
-    const usuarioDb = await prisma.usuario.findUniqueOrThrow({ where: { email: usuario.email } });
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
     expect(await prisma.dispositivoConfiavel.count({ where: { usuarioId: usuarioDb.id } })).toBe(1);
 
     // Um terceiro código TOTP validado nesta corrida cairia fora da janela de
