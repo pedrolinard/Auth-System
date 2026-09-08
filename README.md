@@ -1030,12 +1030,38 @@ projeto Vercel). Variáveis configuradas em cada projeto:
   vars em toda página de erro).
 
 **Atenção**: só o projeto `auth-gateway` (Next.js) tem deploy automático via
-GitHub — cada push na `main` dispara build/deploy sozinho, e o próprio
-`npm run build` roda `prisma migrate deploy` antes do `next build` (script
-`build` do `package.json`), então toda migração pendente é aplicada na
-`DATABASE_URL` de produção automaticamente a cada deploy — **isso já
-faltou** uma vez (3 migrações acumuladas sem rodar, quebrando rotas que
-dependiam das colunas/tabela novas) antes desse ajuste. O projeto
+GitHub — cada push na `main` dispara build/deploy sozinho.
+
+**Migration não é mais efeito colateral do build.** O script `build` já rodou
+`prisma migrate deploy`, e isso causou um incidente em 2026-09-08: como os
+ambientes Preview e Production da Vercel compartilham a mesma instância
+Supabase, o build de *preview* de um pull request aplicou as migrations no
+banco de **produção**. O preview falhou depois (por uma env var que só existe
+em Production), mas o estrago já estava feito — `migrate deploy` roda antes do
+`next build` —, e produção ficou com schema novo e código velho até o merge
+sair, com o cadastro respondendo 500.
+
+Hoje o `build` roda `scripts/checar-migrations.mjs`, que **verifica e nunca
+aplica**:
+
+| situação | Production | Preview / local |
+| --- | --- | --- |
+| banco em dia | segue | segue |
+| migration pendente | **build falha** com instruções | avisa e segue |
+| `DATABASE_URL` ausente ou banco inacessível | **build falha** | avisa e segue |
+
+Ou seja: falha fechado onde importa. Aplicar migration virou passo deliberado,
+igual ao lado Django, que sempre foi assim:
+
+```bash
+npx prisma migrate deploy   # com o DATABASE_URL do ambiente, ANTES do deploy
+```
+
+Numa mudança de schema a ordem é sempre **migration → backfill (se houver) →
+código**. Rodar o backfill enquanto o código antigo ainda está no ar é o que
+elimina a janela em que uma conta existente não consegue logar.
+
+O projeto
 `auth-gateway-django` **não** está conectado ao Git; mudanças em `django/`
 exigem `cd django && npx vercel deploy --prod` manualmente depois do push, e
 mudanças de schema exigem aplicar a migration na `DATABASE_URL` de produção

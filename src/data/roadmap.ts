@@ -306,6 +306,25 @@ export const proximosPassos: ItemProximoPasso[] = [
     concluidoEm: "2026-09-08",
   },
   {
+    id: "migrations-fora-do-build",
+    titulo: "Migration deixa de ser efeito colateral do build",
+    descricao:
+      "O script `build` rodava `prisma migrate deploy`, e como os ambientes Preview e Production da Vercel compartilham a mesma instância Supabase, o build de preview de um pull request aplicou as migrations da Fase 00 no banco de PRODUÇÃO. O preview falhou logo depois (DJANGO_SERVICE_URL só existe em Production, então o rewrite de /api/dominio ficou inválido), mas `migrate deploy` roda ANTES do `next build` — o estrago já estava feito. Produção ficou com schema novo e código velho: `POST /api/auth/cadastro` passou a responder 500 (P2011, violação de NOT NULL em aplicacaoId) até o merge do PR sair. Fix: `scripts/checar-migrations.mjs` no lugar do `migrate deploy` no build — ele verifica e nunca aplica. Em Production, migration pendente (ou DATABASE_URL ausente, ou banco inacessível) INTERROMPE o build com instruções; em Preview e local, avisa e segue. Falha fechado onde importa: a primeira versão do próprio script falhava aberto (pulava a checagem quando não achava DATABASE_URL, porque um `npm run build` local não carrega .env sozinho), que é exatamente o padrão que produziu o incidente — corrigido carregando .env.local/.env como o Next faz e tratando ausência de banco como erro em produção. Aplicar migration virou passo deliberado (`npx prisma migrate deploy` com o DATABASE_URL do ambiente), igual ao lado Django, que sempre foi assim. Fica em aberto o passo seguinte: dar um banco próprio ao ambiente Preview, pra que preview volte a ser um ambiente de verdade em vez de um leitor do banco de produção.",
+    categoria: "Infraestrutura",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-08",
+  },
+  {
+    id: "preview-com-banco-proprio",
+    titulo: "Banco próprio para o ambiente Preview",
+    descricao:
+      "Preview e Production compartilham a mesma instância Supabase e o mesmo DATABASE_URL. Depois do portão de migrations, um preview não escreve mais no banco de produção — mas ainda LÊ dele, e roda contra um schema que pode não ser o do próprio branch. Um banco próprio (ou um branch de banco por PR) devolveria ao preview a função de ambiente de verdade. Não foi feito junto porque envolve provisionar e semear um segundo banco, e o sangramento já parou com o portão.",
+    categoria: "Infraestrutura",
+    prioridade: "media",
+    status: "pendente",
+  },
+  {
     id: "identidade-por-aplicacao",
     titulo: "Fase 00 do provedor: identidade por aplicação + JWKS",
     descricao:
