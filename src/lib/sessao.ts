@@ -9,6 +9,7 @@ import {
 import { gerarTokenCsrf } from "@/lib/csrf";
 import { obterGeo } from "@/lib/geo";
 import { criarOrganizacaoPessoal } from "@/lib/organizacao";
+import { ehAplicacaoPadrao } from "@/lib/gestaoAplicacoes";
 import { obterIp } from "@/lib/rateLimit";
 import { revogacao } from "@/lib/revogacao";
 import {
@@ -145,7 +146,10 @@ export async function criarSessao(
     definirCookies?: boolean;
   } = {},
 ) {
-  const definirCookies = opcoes.definirCookies ?? true;
+  // Cookie de sessão do painel, por padrão, só pra conta da aplicação padrão:
+  // uma conta de aplicação cliente (login ou MFA concluído pelo SDK) recebe os
+  // tokens no JSON e não vira sessão no domínio do provedor.
+  const definirCookies = opcoes.definirCookies ?? (await ehAplicacaoPadrao(usuario.aplicacaoId));
   const { organizacaoId, papelOrganizacao } = organizacaoIdDesejada
     ? await obterOrganizacaoOuFalhar(usuario.id, organizacaoIdDesejada)
     : await resolverOrganizacaoAtiva(usuario.id);

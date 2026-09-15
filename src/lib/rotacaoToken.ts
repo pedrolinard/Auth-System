@@ -90,7 +90,13 @@ export async function rotacionarTokenAtualizacao(
 
   const registroToken = await prisma.tokenAtualizacao.findUnique({
     where: { tokenHash: hashToken(tokenRecebido) },
-    include: { usuario: true },
+    // Só os campos que a rotação usa e devolve — nunca senhaHash/mfaSecret num
+    // objeto que sai desta função.
+    include: {
+      usuario: {
+        select: { id: true, nome: true, email: true, emailVerificado: true, papel: true, aplicacaoId: true },
+      },
+    },
   });
 
   if (!registroToken) {

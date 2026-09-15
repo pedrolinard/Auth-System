@@ -5,11 +5,9 @@ import {
   apagarAplicacoesTeste,
   apagarUsuariosTeste,
   BASE_URL,
-  cabecalhoCookie,
   cabecalhosAplicacao,
   criarAplicacaoTeste,
   criarUsuarioTeste,
-  extrairTodosCookies,
   gerarEmailTeste,
   ipAleatorio,
   loginTeste,
@@ -475,7 +473,8 @@ describe("Convites de organização", () => {
         body: JSON.stringify({ email, senha: "SenhaForte123!" }),
       });
       expect(login.status).toBe(200);
-      const cookies = extrairTodosCookies(login);
+      // Conta de aplicação cliente: tokens no corpo (como o SDK usa), sem cookie.
+      const { tokenAcesso } = await login.json();
 
       const convite = await prisma.conviteOrganizacao.create({
         data: { organizacaoId, email, papel: "membro", criadoPorId: donoRegistro.id },
@@ -484,11 +483,7 @@ describe("Convites de organização", () => {
 
       const resposta = await fetch(`${BASE_URL}/api/auth/organizacoes/aceitar-convite`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: cabecalhoCookie(cookies),
-          "X-CSRF-Token": cookies.csrfToken,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenAcesso}` },
         body: JSON.stringify({ token }),
       });
       expect(resposta.status).toBe(403);

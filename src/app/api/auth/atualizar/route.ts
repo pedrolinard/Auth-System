@@ -8,6 +8,7 @@ import {
   obterCookieCsrf,
 } from "@/lib/cookies";
 import { csrfValido, gerarTokenCsrf } from "@/lib/csrf";
+import { ehAplicacaoPadrao } from "@/lib/gestaoAplicacoes";
 import { rotacionarTokenAtualizacao } from "@/lib/rotacaoToken";
 import { esquemaAtualizacao } from "@/lib/validacao";
 
@@ -36,9 +37,14 @@ export async function POST(req: Request) {
     return NextResponse.json(resultado.corpo, { status: resultado.status });
   }
 
-  await definirCookieAtualizacao(resultado.tokenAtualizacao);
-  await definirCookieAcesso(resultado.tokenAcesso);
-  await definirCookieCsrf(gerarTokenCsrf());
+  // Cookie de sessão do painel só pra conta da aplicação padrão. Uma conta de
+  // aplicação cliente (token vindo do SDK no corpo) renova e recebe os tokens
+  // no JSON, mas não vira sessão no domínio do provedor.
+  if (await ehAplicacaoPadrao(resultado.usuario.aplicacaoId)) {
+    await definirCookieAtualizacao(resultado.tokenAtualizacao);
+    await definirCookieAcesso(resultado.tokenAcesso);
+    await definirCookieCsrf(gerarTokenCsrf());
+  }
 
   return NextResponse.json({
     tokenAcesso: resultado.tokenAcesso,

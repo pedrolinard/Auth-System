@@ -478,8 +478,9 @@ describe("JWKS", () => {
     expect((await cadastrar(email, app.clientId)).status).toBe(201);
 
     const login = await logar(email, app.clientId);
-    const cookies = login.headers.getSetCookie().join("; ");
-    const tokenAcesso = /tokenAcesso=([^;]+)/.exec(cookies)?.[1];
+    // Conta de aplicação cliente recebe os tokens no corpo, nunca cookie do painel.
+    expect(login.headers.getSetCookie().join("; ")).not.toContain("tokenAcesso=");
+    const { tokenAcesso } = await login.json();
     const payload = JSON.parse(
       Buffer.from(tokenAcesso!.split(".")[1], "base64url").toString("utf8"),
     );

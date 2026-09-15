@@ -82,17 +82,11 @@ describe("Gestão de aplicações — autorização", () => {
       body: JSON.stringify({ email, senha: SENHA_TESTE }),
     });
     expect(login.status).toBe(200);
-    const cookies = Object.fromEntries(
-      login.headers.getSetCookie().map((linha) => {
-        const [par] = linha.split(";");
-        const [nome, valor] = par.split("=");
-        return [nome, decodeURIComponent(valor)];
-      }),
-    );
-    const cabecalhosAdminCliente = {
-      Cookie: Object.entries(cookies).map(([n, v]) => `${n}=${v}`).join("; "),
-      "X-CSRF-Token": cookies.csrfToken,
-    };
+    // Conta de aplicação cliente não ganha cookie do painel: autentica com o
+    // token do corpo, como o backend do cliente faria.
+    expect(login.headers.getSetCookie().join("; ")).not.toContain("tokenAcesso=");
+    const { tokenAcesso } = await login.json();
+    const cabecalhosAdminCliente = { Authorization: `Bearer ${tokenAcesso}` };
 
     expect((await chamar("/api/auth/aplicacoes", cabecalhosAdminCliente)).status).toBe(403);
     const me = await (await chamar("/api/auth/me", cabecalhosAdminCliente)).json();
