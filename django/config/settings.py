@@ -106,6 +106,15 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
         'comum.autenticacao.ProtegidoContraCsrf',
     ],
+    # Limite por usuário autenticado — ver comum/limites.py (inclusive por que
+    # não é o UserRateThrottle do DRF e o que significa contar por instância).
+    'DEFAULT_THROTTLE_CLASSES': [
+        'comum.limites.LimitePorUsuario',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'usuario': os.environ.get('DJANGO_LIMITE_POR_USUARIO', '300/min'),
+    },
+    'EXCEPTION_HANDLER': 'comum.excecoes.tratar_excecao',
 }
 
 MIDDLEWARE = [
@@ -188,6 +197,16 @@ if _schema and DATABASES['default'].get('ENGINE') == 'django.db.backends.postgre
     # (primeiro da lista, então é onde `migrate` cria), e funções de extensão
     # que moram em `public` continuam resolvíveis.
     DATABASES['default']['OPTIONS']['options'] = f'-c search_path={_schema},public'
+
+# DATABASE_CA_CERT (o certificado CA do Supabase): TLS com verificação do
+# certificado do servidor. Sem ela, vale o sslmode da DATABASE_URL — cifrado,
+# mas sem conferir com quem se está falando. Ver comum/banco.py.
+if DATABASES['default'].get('ENGINE') == 'django.db.backends.postgresql':
+    from comum.banco import opcoes_tls
+
+    _tls = opcoes_tls(os.environ.get('DATABASE_CA_CERT'))
+    if _tls:
+        DATABASES['default'].setdefault('OPTIONS', {}).update(_tls)
 
 
 # Password validation
