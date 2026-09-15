@@ -33,8 +33,8 @@ Outros documentos:
   - **Token de atualização**: longa duração (30 dias), assinado com HS256
     (nunca sai do Next.js), com rotação a cada uso e revogação persistida no
     banco (`TokenAtualizacao`). Reapresentar um token **já revogado** pela
-    rotação é tratado como reuso (sinal de roubo): revoga toda a família de
-    sessões do usuário na hora, não só o token reusado.
+    rotação há mais de 30 s é tratado como reuso (sinal de roubo): revoga toda
+    a família de sessões do usuário na hora, não só o token reusado.
 - **CSRF explícito**: cookie `csrfToken` (double-submit, não-httpOnly de
   propósito) exigido via header `X-CSRF-Token` em toda mutação autenticada
   por cookie — tanto nas rotas de auth do Next.js quanto nas mutações do
@@ -751,6 +751,14 @@ uma falha da funcionalidade. A ação fica registrada na auditoria
 Cada refresh token vale uma vez: `/api/auth/atualizar` revoga o usado e emite
 outro. Reapresentar um token **revogado pela rotação** é o sinal clássico de
 roubo e derruba todas as sessões da pessoa, com e-mail de alerta.
+
+Exceção: nos primeiros **30 segundos** depois da rotação, a reapresentação só é
+recusada. O servidor pode rotacionar e a resposta não chegar (rede móvel
+caindo, aba fechada no meio, timeout); o cliente tenta de novo com o token
+antigo, porque o novo nunca foi gravado. Sem a janela, essa falha de rede comum
+derrubava todas as sessões e mandava alerta de invasão. O custo é não detectar
+um ladrão que use o token nesses mesmos segundos, o mesmo trade-off do "reuse
+interval" do Auth0.
 
 Toda revogação grava o motivo (`TokenAtualizacao.revogadoMotivo`, ver
 `src/lib/revogacao.ts`): rotação, logout, troca ou redefinição de senha,

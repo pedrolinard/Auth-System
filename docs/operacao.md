@@ -60,10 +60,15 @@ Backup que nunca foi restaurado não é backup.
 ## 5. Monitoramento com alerta
 
 **Hoje:** Rollbar captura erros nos dois serviços, mas ninguém recebe alerta.
+Depois da publicação, o workflow `.github/workflows/monitor-saude.yml` consulta
+os dois endereços abaixo a cada 15 minutos e o GitHub avisa por e-mail quando
+falha. É um começo, não o monitor final: o agendamento do GitHub atrasa alguns
+minutos em horário de pico e é pausado depois de 60 dias sem atividade no
+repositório.
 
 **Fazer:**
 1. Rollbar → Notifications: e-mail ou Slack para itens novos de nível `error`.
-2. Monitor de disponibilidade externo (UptimeRobot, Better Stack) apontando
+2. Monitor de disponibilidade externo dedicado (UptimeRobot, Better Stack) apontando
    para dois endereços:
    - `GET /api/saude` (gateway): verifica o banco e a chave de assinatura
    - `GET /api/dominio/saude` (Django): verifica o banco e se há migration pendente.
@@ -94,7 +99,84 @@ aplicação padrão e sem chave de assinatura.
 **Pronto quando:** um deploy de Preview sobe (Ready), cadastra e loga, e nenhuma
 linha nova aparece no banco de produção.
 
-## 7. Pentest externo
+## 7. Conexão com o banco verificando o certificado
+
+**Hoje:** a `DATABASE_URL` dos dois projetos usa `sslmode=no-verify`. A conexão
+é cifrada, mas não confere o certificado do servidor: alguém no caminho da rede
+entre a Vercel e o Supabase conseguiria se passar pelo banco.
+
+**O código já suporta** a variável `DATABASE_CA_CERT` (Next.js e Django): com
+ela, a conexão exige certificado válido e nome de host batendo. Sem ela, nada
+muda.
+
+**Cuidado:** se o certificado ou o host não baterem, **toda** conexão com o
+banco falha e o login sai do ar. Por isso, nesta ordem:
+
+1. Supabase → Project Settings → Database → SSL Configuration → baixar o
+   certificado (`prod-ca-2021.crt` ou equivalente).
+2. Testar da sua máquina, **com o mesmo host da `DATABASE_URL` de produção**
+   (o pooler):
+   ```
+   psql "host=<host do pooler> port=5432 dbname=postgres user=<usuário> sslmode=verify-full sslrootcert=prod-ca-2021.crt" -c "select 1"
+   ```
+   Se falhar com erro de certificado ou de hostname, **pare aqui**: o CA não
+   vale para o pooler, e ligar a variável derrubaria produção.
+3. Se passou: criar `DATABASE_CA_CERT` primeiro no **Preview** (conteúdo do
+   arquivo, ou o arquivo em base64), fazer um deploy de Preview e confirmar
+   `GET /api/saude` 200.
+4. Só então criar em Production, nos dois projetos (`auth-gateway` e
+   `auth-gateway-django`), e fazer redeploy dos dois.
+5. Conferir `GET /api/saude` e `GET /api/dominio/saude` com 200.
+
+**Rollback:** apagar `DATABASE_CA_CERT` do projeto e fazer redeploy. A conexão
+volta ao comportamento anterior (o `sslmode` da URL).
+
+**Pronto quando:** o log de boot do Next.js não mostra mais o aviso
+`DATABASE_CA_CERT não definida` e os dois endereços de saúde respondem 200.
+
+## 8. Usuário do banco separado para o Django
+
+**Hoje (a confirmar no painel da Vercel):** se a `DATABASE_URL` do Django usa o
+mesmo usuário do Next.js (`postgres`), quem comprometer o Django lê os hashes de
+senha, os segredos de MFA e os tokens do schema `public`. A separação atual é só
+por schema.
+
+**Fazer** (SQL Editor do Supabase; troque a senha):
+```sql
+CREATE ROLE django_dominio LOGIN PASSWORD '<senha-forte>';
+GRANT USAGE, CREATE ON SCHEMA dominio TO django_dominio;
+GRANT ALL ON ALL TABLES IN SCHEMA dominio TO django_dominio;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA dominio TO django_dominio;
+ALTER DEFAULT PRIVILEGES IN SCHEMA dominio GRANT ALL ON TABLES TO django_dominio;
+ALTER DEFAULT PRIVILEGES IN SCHEMA dominio GRANT ALL ON SEQUENCES TO django_dominio;
+-- migrations futuras alteram tabelas existentes: o dono precisa ser o novo usuário
+DO $$ DECLARE t record; BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'dominio' LOOP
+    EXECUTE format('ALTER TABLE dominio.%I OWNER TO django_dominio', t.tablename);
+  END LOOP;
+END $$;
+```
+Antes de trocar a `DATABASE_URL`, teste a conexão com o usuário novo (`psql`)
+e rode `select * from dominio.tarefas_projeto limit 1`. Depois, na Vercel
+(`auth-gateway-django`), troque o usuário e a senha da `DATABASE_URL` (no
+pooler do Supabase o usuário fica `django_dominio.<ref do projeto>`) e faça
+redeploy. **Rollback:** voltar a `DATABASE_URL` anterior e fazer redeploy.
+
+**Pronto quando:** `GET /api/dominio/saude` responde 200 e, conectado como
+`django_dominio`, `select * from public.usuarios limit 1` dá erro de permissão.
+
+## 9. Limpeza agendada
+
+Depois da publicação, o `vercel.json` agenda `GET /api/cron/limpar-tokens` uma
+vez por dia (06:00 UTC), com o `CRON_SECRET` que já existe em produção. Ele
+remove tokens expirados, auditoria com mais de 365 dias, desafios de MFA
+vencidos e contadores de limite de tentativas antigos. Antes disso, nada
+agendava a rota e essas tabelas só cresciam.
+
+**Pronto quando:** Vercel → projeto `auth-gateway` → Settings → Cron Jobs mostra
+a rota, e a execução do dia aparece nos logs com status 200.
+
+## 10. Pentest externo
 
 Um sistema de autenticação é exatamente o que o comprador vai perguntar na
 due diligence. Contrate um teste de intrusão externo antes do primeiro cliente

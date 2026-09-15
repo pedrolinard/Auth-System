@@ -70,7 +70,7 @@
 - `next.config.ts` encaminha `/api/dominio/*` para o Django via rewrite (mesma origem, sem CORS) — cookies (acesso e CSRF) são repassados transparentemente
 - **Postgres compartilhado** — mesma instância local do Next.js, database própria (`autenticacao_dominio`)
 - `ProtegidoContraCsrf` (`comum/autenticacao.py`) — mesma proteção CSRF double-submit-cookie do lado Next.js, aplicada nas mutações de `ProjetoViewSet`/`TarefaViewSet`
-- **Testes automatizados** (`pytest-django`): `comum/tests/test_autenticacao.py` (token válido/expirado/adulterado/confusão de algoritmo/via cookie/claims `papel`/`organizacao_id` + `ProtegidoContraCsrf` em tempo constante) e `tarefas/tests/test_views.py` (CRUD + isolamento por organização + CSRF ponta a ponta) e `comum/tests/test_saude.py` (migration pendente responde 503) — 40 testes
+- **Testes automatizados** (`pytest-django`): `comum/tests/test_autenticacao.py` (token válido/expirado/adulterado/confusão de algoritmo/via cookie/claims `papel`/`organizacao_id` + `ProtegidoContraCsrf` em tempo constante) e `tarefas/tests/test_views.py` (CRUD + isolamento por organização + CSRF ponta a ponta) e `comum/tests/test_saude.py` (migration pendente responde 503) e `comum/tests/test_limites.py` (limite por usuário, TLS do banco) — 46 testes
 
 ### Multi-tenant (organizações)
 > Implementado em 5 fases (schema/backfill → sessão/token → Django → RBAC → convites/UI), cada fase revisada e corrigida antes da seguinte. **Em produção desde 2026-09-08** — ver a nota do cabeçalho sobre os 7 dias de deploy quebrado.
@@ -120,7 +120,7 @@
 
 ### Testes automatizados (Next.js)
 - **Vitest contra servidor `next dev` real** (não mocka `next/headers`), database dedicada `autenticacao_test` na mesma instância Postgres, `tests/globalSetup.ts` sobe/derruba o servidor e aplica as migrations
-- 237 testes em `tests/api/*.test.ts`, `tests/lib/*.test.ts` e `tests/sdk/*.test.ts` (SDK contra o servidor real): autenticação da aplicação cliente e CORS, motivo de revogação e renovação concorrente, cadastro (incluindo anti-enumeração), gestão de aplicações, suspensão por organização, CSP com nonce, login, sessões, MFA (códigos TOTP reais e backup), RBAC (sistema e por organização), recuperação/troca/alteração de e-mail e senha, verificação de e-mail, CSRF, rate limiting, viagem impossível, passkeys, organizações/convites, cron de limpeza, criptografia em repouso e comparação em tempo constante
+- 248 testes em `tests/api/*.test.ts`, `tests/lib/*.test.ts` e `tests/sdk/*.test.ts` (SDK contra o servidor real): autenticação da aplicação cliente e CORS, motivo de revogação e renovação concorrente, cadastro (incluindo anti-enumeração), gestão de aplicações, suspensão por organização, CSP com nonce, login, sessões, MFA (códigos TOTP reais e backup), RBAC (sistema e por organização), recuperação/troca/alteração de e-mail e senha, verificação de e-mail, CSRF, rate limiting, viagem impossível, passkeys, organizações/convites, cron de limpeza, criptografia em repouso e comparação em tempo constante
 - 8 testes E2E de navegador (Playwright): cadastro/login, dashboard protegido, passkeys via virtual authenticator, login com código de backup e renovação de sessão com várias abas
 
 ### Segurança já presente
@@ -185,6 +185,19 @@ Leitura do projeto inteiro (lib, rotas, telas críticas, Django, scripts, CI, co
 - **`GET /api/saude`** para monitoramento
 - **Documentos para venda:** `docs/operacao.md` (infraestrutura), `docs/seguranca/escopo-pentest.md`, `docs/juridico/` (rascunhos para advogado)
 
+### Revisão de segurança, front end e infraestrutura (2026-09-15)
+- **Resposta perdida virava "roubo":** reapresentar um refresh token rotacionado há menos de 30 s (retentativa de rede) só é recusado, sem derrubar as sessões nem mandar alerta
+- **SDK deslogava as abas** com armazenamento persistente: Web Locks entre instâncias, releitura do armazenamento e limpeza só se o token guardado ainda for o enviado
+- **Client secret errado passava** junto de uma Origin cadastrada: o segredo decide sempre que vier; o guia deixou claro que a origem não barra script
+- **IP do usuário final** (`x-usuario-ip`) aceito só com o client secret conferido — antes todos os usuários de uma integração pelo servidor dividiam limite e captcha
+- **MFA com limite por conta** (10 falhas em 15 min), além do por IP — fecha a força bruta distribuída dos códigos
+- **Sitekey do Turnstile** na resposta de captcha e passo de liberar o domínio do cliente na Cloudflare
+- **Limpeza agendada de verdade** (`vercel.json`, Vercel Cron diário) — antes nada chamava a rota em produção
+- **Monitor de saúde** (`.github/workflows/monitor-saude.yml`) a cada 15 min
+- **Limite de requisições no Django** (300/min por usuário, por instância)
+- **`DATABASE_CA_CERT`** (Next.js e Django) para TLS com verificação do certificado do banco; `DATABASE_POOL_MAX` opcional
+- **Esqueleto de carregamento** na navegação do painel
+
 ## 🔧 O que falta / pode fazer
 
 Os itens em aberto da varredura de segurança de 2026-08-31 (CSP com `'unsafe-inline'`, enumeração no cadastro) e o trade-off do multi-tenant (suspensão por conta inteira) foram resolvidos em 2026-09-14 — ver as seções acima.
@@ -193,6 +206,7 @@ Em aberto:
 
 - **Infraestrutura para cliente pagante** — domínio próprio, e-mail verificado, planos pagos, backup testado, alertas. Não é código: `docs/operacao.md`.
 - **Pentest externo e revisão jurídica** — escopo em `docs/seguranca/escopo-pentest.md`, rascunhos em `docs/juridico/`.
+- **Ligar TLS verificado no banco e separar o usuário do Django** — o código aceita `DATABASE_CA_CERT`, mas ligar exige testar o certificado contra o pooler antes; SQL do usuário separado em `docs/operacao.md`, itens 7 e 8.
 - **Banco próprio pro ambiente Preview** — banco criado e migrado; falta semear, apontar o `DATABASE_URL` do Preview e criar as env vars (`docs/operacao.md`, item 6).
 - **Excluir projetos e tarefas no Django junto com a organização** — hoje ficam órfãos quando a conta é excluída.
 - **Remover as colunas de suspensão legadas de `Usuario`** — ficaram sem uso, de propósito, pra não quebrar o login na janela entre a migration e o deploy; saem num deploy posterior.
