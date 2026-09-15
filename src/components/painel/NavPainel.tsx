@@ -144,7 +144,6 @@ export function NavPainel() {
           className="order-last basis-full sm:order-none sm:flex-1 sm:basis-auto"
           setas
           semBarra
-          rodaVertical
           chaveAtivo={`${pathname}:${itensVisiveis.length}`}
         >
           <nav aria-label="Seções do painel" className="flex w-max items-center gap-0.5 px-1 py-1">

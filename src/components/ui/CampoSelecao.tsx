@@ -1,6 +1,4 @@
-"use client";
-
-import { useState, type SelectHTMLAttributes } from "react";
+import type { SelectHTMLAttributes } from "react";
 import { ChevronDown } from "lucide-react";
 
 type Props = SelectHTMLAttributes<HTMLSelectElement> & {
@@ -16,51 +14,25 @@ type Props = SelectHTMLAttributes<HTMLSelectElement> & {
  * <select> nativo com a seta do painel no lugar da do navegador. Continua
  * sendo um select de verdade (teclado, leitor de tela, menu nativo no
  * celular); só a parte visual muda: a seta desce um pouco no hover, fica na
- * cor de destaque com foco, vira pra cima enquanto a lista está aberta e
- * pulsa enquanto a escolha é salva. Estilos em globals.css (.campo-selecao).
+ * cor de destaque com foco e pulsa enquanto a escolha é salva. Estilos em
+ * globals.css (.campo-selecao).
+ *
+ * Sem estado de "lista aberta" de propósito: o navegador não avisa quando a
+ * lista nativa abre ou fecha. Escolher a mesma opção não dispara change nem
+ * blur, e abrir pelo teclado não passa por clique — uma seta virada pra cima
+ * ficava presa com a lista já fechada.
  */
 export function CampoSelecao({
   classeContainer = "",
   tamanho = "md",
   ocupado = false,
   className = "",
-  onChange,
-  onBlur,
-  onMouseDown,
-  onKeyDown,
   children,
   ...props
 }: Props) {
-  // O navegador não avisa quando a lista nativa abre ou fecha: abre no clique,
-  // e fecha no próximo clique, na escolha, no Esc ou ao perder o foco.
-  const [aberto, setAberto] = useState(false);
-
   return (
-    <span
-      className={`campo-selecao relative inline-flex ${classeContainer}`}
-      data-aberto={aberto}
-      data-ocupado={ocupado}
-    >
-      <select
-        {...props}
-        className={`${tamanho === "sm" ? "pr-6" : "pr-8"} ${className}`}
-        onMouseDown={(e) => {
-          if (!props.disabled) setAberto((atual) => !atual);
-          onMouseDown?.(e);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" || e.key === "Enter" || e.key === "Tab") setAberto(false);
-          onKeyDown?.(e);
-        }}
-        onChange={(e) => {
-          setAberto(false);
-          onChange?.(e);
-        }}
-        onBlur={(e) => {
-          setAberto(false);
-          onBlur?.(e);
-        }}
-      >
+    <span className={`campo-selecao relative inline-flex ${classeContainer}`} data-ocupado={ocupado}>
+      <select {...props} className={`${tamanho === "sm" ? "pr-6" : "pr-8"} ${className}`}>
         {children}
       </select>
       <ChevronDown

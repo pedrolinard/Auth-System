@@ -28,8 +28,6 @@ type Props = {
    * Não roda a cada renderização: quem rolou o menu na mão não é puxado de volta.
    */
   chaveAtivo?: string;
-  /** A roda vertical do mouse rola na horizontal enquanto houver pra onde ir. */
-  rodaVertical?: boolean;
 };
 
 /**
@@ -45,7 +43,6 @@ export function RolagemHorizontal({
   setas = false,
   semBarra = false,
   chaveAtivo,
-  rodaVertical = false,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [maisInicio, setMaisInicio] = useState(false);
@@ -81,24 +78,6 @@ export function RolagemHorizontal({
       observador.disconnect();
     };
   }, [medir]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || !rodaVertical) return;
-    const aoRolar = (evento: WheelEvent) => {
-      if (Math.abs(evento.deltaX) >= Math.abs(evento.deltaY)) return;
-      const podeIr =
-        evento.deltaY > 0
-          ? el.scrollLeft + el.clientWidth < el.scrollWidth - FOLGA
-          : el.scrollLeft > FOLGA;
-      // Na ponta, devolve a roda pra página em vez de prender o usuário.
-      if (!podeIr) return;
-      evento.preventDefault();
-      el.scrollLeft += evento.deltaY;
-    };
-    el.addEventListener("wheel", aoRolar, { passive: false });
-    return () => el.removeEventListener("wheel", aoRolar);
-  }, [rodaVertical]);
 
   useLayoutEffect(() => {
     const el = ref.current;
