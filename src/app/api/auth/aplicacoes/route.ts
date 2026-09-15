@@ -7,11 +7,13 @@ import { csrfValido } from "@/lib/csrf";
 import {
   alvoAplicacao,
   autenticarGestorAplicacoes,
+  conflitoComDominioDoProvedor,
+  contarAplicacoesDaConta,
   escopoDoGestor,
   formatarAplicacao,
   gerarClientId,
   gerarClientSecret,
-  MAX_APLICACOES_POR_ORGANIZACAO,
+  MAX_APLICACOES_POR_CONTA,
   origensIncompativeisComRpId,
   SELECAO_APLICACAO_PUBLICA,
 } from "@/lib/gestaoAplicacoes";
@@ -68,14 +70,17 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    const existentes = await prisma.aplicacao.count({ where: escopoDoGestor(gestor) });
-    if (existentes >= MAX_APLICACOES_POR_ORGANIZACAO) {
+    const existentes = await contarAplicacoesDaConta(gestor.payload.sub);
+    if (existentes >= MAX_APLICACOES_POR_CONTA) {
       return NextResponse.json(
-        { erro: `Sua organização já tem ${existentes} aplicações, o limite do plano atual.` },
+        { erro: `Você já gerencia ${existentes} aplicações, o limite do plano atual.` },
         { status: 403 },
       );
     }
   }
+
+  const conflito = conflitoComDominioDoProvedor(req, { origens, passkeyRpId });
+  if (conflito) return NextResponse.json({ erro: conflito }, { status: 400 });
 
   if (passkeyRpId) {
     const incompativeis = origensIncompativeisComRpId(origens, passkeyRpId);
@@ -104,6 +109,9 @@ export async function POST(req: Request) {
       // operador). `padrao` também não: a aplicação padrão é única (índice
       // parcial) e nasce do backfill, não do painel.
       organizacaoDonaId: gestor.organizacaoDonaId,
+      // Criada pelo operador já vale; self-service espera aprovação (ver
+      // Aplicacao.aprovada no schema).
+      aprovada: gestor.operador,
     },
     select: SELECAO_APLICACAO_PUBLICA,
   });

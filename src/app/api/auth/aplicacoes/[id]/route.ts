@@ -7,6 +7,7 @@ import { csrfValido } from "@/lib/csrf";
 import {
   alvoAplicacao,
   autenticarGestorAplicacoes,
+  conflitoComDominioDoProvedor,
   escopoDoGestor,
   formatarAplicacao,
   origensIncompativeisComRpId,
@@ -36,7 +37,15 @@ export async function PATCH(
   // Aplicação de outra organização é 404, não 403: nem a existência vaza.
   const atual = await prisma.aplicacao.findFirst({
     where: { id, ...escopoDoGestor(gestor) },
-    select: { id: true, padrao: true, ativa: true, origens: true, passkeyRpId: true, emailRemetente: true },
+    select: {
+      id: true,
+      padrao: true,
+      ativa: true,
+      origens: true,
+      passkeyRpId: true,
+      emailRemetente: true,
+      desativadaPeloOperador: true,
+    },
   });
   if (!atual) {
     return NextResponse.json({ erro: "Aplicação não encontrada." }, { status: 404 });
@@ -52,16 +61,28 @@ export async function PATCH(
   }
   const mudancas = dados.data;
 
-  // Mesmo motivo da criação (aplicacoes/route.ts): remetente é do operador.
-  if (
-    !gestor.operador &&
-    mudancas.emailRemetente !== undefined &&
-    mudancas.emailRemetente !== atual.emailRemetente
-  ) {
-    return NextResponse.json(
-      { erro: "Remetente próprio é configurado por quem opera o provedor." },
-      { status: 400 },
-    );
+  if (!gestor.operador) {
+    // Mesmo motivo da criação (aplicacoes/route.ts): remetente é do operador.
+    if (mudancas.emailRemetente !== undefined && mudancas.emailRemetente !== atual.emailRemetente) {
+      return NextResponse.json(
+        { erro: "Remetente próprio é configurado por quem opera o provedor." },
+        { status: 400 },
+      );
+    }
+    if (mudancas.aprovada !== undefined) {
+      return NextResponse.json(
+        { erro: "Só quem opera o provedor aprova aplicações." },
+        { status: 403 },
+      );
+    }
+    // Desativada por abuso ou falta de pagamento: o próprio cliente não
+    // religa.
+    if (mudancas.ativa === true && atual.desativadaPeloOperador) {
+      return NextResponse.json(
+        { erro: "Esta aplicação foi desativada por quem opera o provedor. Fale com o suporte." },
+        { status: 403 },
+      );
+    }
   }
 
   // A aplicação padrão é onde vive a conta de quem opera o provedor — e o
@@ -76,6 +97,10 @@ export async function PATCH(
 
   const origensFinais = mudancas.origens ?? atual.origens;
   const rpIdFinal = mudancas.passkeyRpId !== undefined ? mudancas.passkeyRpId : atual.passkeyRpId;
+  if (!atual.padrao) {
+    const conflito = conflitoComDominioDoProvedor(req, { origens: origensFinais, passkeyRpId: rpIdFinal });
+    if (conflito) return NextResponse.json({ erro: conflito }, { status: 400 });
+  }
   if (rpIdFinal) {
     const incompativeis = origensIncompativeisComRpId(origensFinais, rpIdFinal);
     if (incompativeis.length > 0) {
@@ -107,7 +132,14 @@ export async function PATCH(
 
   const aplicacao = await prisma.aplicacao.update({
     where: { id },
-    data: mudancas,
+    data: {
+      ...mudancas,
+      // Quem desativou decide quem pode religar: o operador marca, e só ele
+      // desmarca (ao reativar). Desativar pelo self-service não marca.
+      ...(gestor.operador && mudancas.ativa !== undefined
+        ? { desativadaPeloOperador: !mudancas.ativa }
+        : {}),
+    },
     select: SELECAO_APLICACAO_PUBLICA,
   });
 
@@ -134,7 +166,9 @@ export async function PATCH(
         ? "aplicacao_desativada"
         : mudancas.ativa === true && !atual.ativa
           ? "aplicacao_reativada"
-          : "aplicacao_atualizada",
+          : mudancas.aprovada === true
+            ? "aplicacao_aprovada"
+            : "aplicacao_atualizada",
     autorId: gestor.payload.sub,
     autorEmail: gestor.payload.email,
     aplicacaoId: gestor.payload.aplicacaoId,

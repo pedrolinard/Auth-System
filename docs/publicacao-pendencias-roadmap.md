@@ -240,13 +240,19 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- 20260916120000_aplicacao_aprovacao
+ALTER TABLE "aplicacoes" ADD COLUMN IF NOT EXISTS "aprovada" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "aplicacoes" ADD COLUMN IF NOT EXISTS "desativadaPeloOperador" BOOLEAN NOT NULL DEFAULT false;
+UPDATE "aplicacoes" SET "aprovada" = true WHERE "organizacaoDonaId" IS NULL AND "aprovada" = false;
+
 -- Registro pro Prisma considerar aplicadas
 INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
 SELECT gen_random_uuid()::text, v.checksum, now(), v.nome, NULL, NULL, now(), 1
 FROM (VALUES
   ('20260916090000_alvo_auditoria',     'e7cc2f97b097871ffa908b8acf0bfd9bec674757579005ecea93bb8b37e1872a'),
   ('20260916100000_exclusoes_dominio',  'aac1120683a87572a935615be581339da95f3f99ddd8a6e1885a97e561ab5b7d'),
-  ('20260916110000_aplicacao_organizacao_dona', '2d30af7b84cd53d201b2d8df64bc2eaa51d46086a3a07b7a3d2b27edd68894c8')
+  ('20260916110000_aplicacao_organizacao_dona', '2d30af7b84cd53d201b2d8df64bc2eaa51d46086a3a07b7a3d2b27edd68894c8'),
+  ('20260916120000_aplicacao_aprovacao',        'f2e80679c6ad7bb9274f6e052da952f4f611bf023d75c53aee2f5dc2a3a95cc0')
 ) AS v(nome, checksum)
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = v.nome);
 ```
@@ -261,6 +267,13 @@ conta excluída nesse intervalo só deixa o pedido na fila
 (`exclusoes_dominio_pendentes`), e o job diário de limpeza reenvia depois do
 deploy do Django. Nada se perde; mesmo assim, faça os dois em seguida.
 
+**Antes do merge, confira a aplicação padrão:** a regra de origem dela mudou.
+Antes, lista de origens vazia aceitava qualquer origem; agora aceita a própria
+origem do provedor (mesmo host da requisição), chamadas sem `Origin` e as
+origens declaradas. O painel no próprio domínio segue funcionando; um front em
+OUTRO domínio falando com a aplicação padrão passa a precisar estar nas origens.
+
 **Verificar:**
 - [ ] `SELECT count(*), max(tentativas) FROM exclusoes_dominio_pendentes;` no dia
       seguinte: fila vazia (ou só itens de hoje).
+- [ ] login no painel funciona (a regra de origem da aplicação padrão mudou).

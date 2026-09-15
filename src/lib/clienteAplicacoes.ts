@@ -13,6 +13,8 @@ export type Aplicacao = {
   logoUrl: string | null;
   ativa: boolean;
   padrao: boolean;
+  aprovada: boolean;
+  desativadaPeloOperador: boolean;
   criadoEm: string;
   atualizadoEm: string;
   temSegredo: boolean;
@@ -78,7 +80,7 @@ export async function criarAplicacao(
 
 export async function atualizarAplicacao(
   id: string,
-  dados: Partial<DadosAplicacao> & { ativa?: boolean },
+  dados: Partial<DadosAplicacao> & { ativa?: boolean; aprovada?: boolean },
 ): Promise<Aplicacao> {
   const resposta = await requisicaoAutenticada(`/api/auth/aplicacoes/${id}`, {
     method: "PATCH",

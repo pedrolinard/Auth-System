@@ -196,7 +196,7 @@ describe("Gestão de aplicações — self-service", () => {
     expect(editar.status).toBe(400);
   });
 
-  it("limite de aplicações por organização", async () => {
+  it("limite de aplicações por conta: abrir outra organização não dá mais cota", async () => {
     const cliente = await sessaoCliente("self-service-limite");
     for (let i = 1; i <= 3; i++) {
       expect((await criarPeloPainel(cliente.cabecalhos, { nome: `App ${i}` })).resposta.status).toBe(201);
@@ -204,6 +204,79 @@ describe("Gestão de aplicações — self-service", () => {
     const { resposta, corpo } = await criarPeloPainel(cliente.cabecalhos, { nome: "App 4" });
     expect(resposta.status).toBe(403);
     expect(corpo.erro).toContain("limite");
+
+    // Nova organização, entrando nela: o teto é da conta, não da organização.
+    const novaOrg = await chamar("/api/auth/organizacoes", cliente.cabecalhos, "POST", { nome: "Outra empresa" });
+    expect(novaOrg.status).toBe(201);
+    const { organizacao } = await novaOrg.json();
+    const entrar = await chamar(`/api/auth/organizacoes/${organizacao.id}/entrar`, cliente.cabecalhos, "POST");
+    expect(entrar.status).toBe(200);
+    const cookies = Object.fromEntries(
+      entrar.headers.getSetCookie().map((linha) => {
+        const [par] = linha.split(";");
+        const [nome, valor] = par.split("=");
+        return [nome, decodeURIComponent(valor)];
+      }),
+    );
+    const naOutraOrg = {
+      Cookie: `tokenAcesso=${cookies.tokenAcesso}; tokenAtualizacao=${cookies.tokenAtualizacao}; csrfToken=${cookies.csrfToken}`,
+      "X-CSRF-Token": cookies.csrfToken,
+    };
+    expect((await criarPeloPainel(naOutraOrg, { nome: "App na outra" })).resposta.status).toBe(403);
+  });
+
+  it("self-service nasce aguardando aprovação; só o operador aprova", async () => {
+    const cliente = await sessaoCliente("self-service-aprovacao");
+    const { corpo } = await criarPeloPainel(cliente.cabecalhos, { nome: "Precisa aprovar" });
+    expect(corpo.aplicacao.aprovada).toBe(false);
+
+    const autoAprovar = await chamar(`/api/auth/aplicacoes/${corpo.aplicacao.id}`, cliente.cabecalhos, "PATCH", { aprovada: true });
+    expect(autoAprovar.status).toBe(403);
+
+    const { cabecalhos: operador } = await sessaoOperador();
+    const aprovar = await chamar(`/api/auth/aplicacoes/${corpo.aplicacao.id}`, operador, "PATCH", { aprovada: true });
+    expect(aprovar.status).toBe(200);
+    expect((await aprovar.json()).aplicacao.aprovada).toBe(true);
+
+    // Criada pelo operador já nasce aprovada.
+    const { corpo: doOperador } = await criarPeloPainel(operador, { nome: "Do operador" });
+    expect(doOperador.aplicacao.aprovada).toBe(true);
+  });
+
+  it("desativada pelo operador, o cliente não reativa; desativada por ele mesmo, reativa", async () => {
+    const cliente = await sessaoCliente("self-service-reativar");
+    const { corpo } = await criarPeloPainel(cliente.cabecalhos, { nome: "Vai ser desativada" });
+    const id = corpo.aplicacao.id;
+
+    expect((await chamar(`/api/auth/aplicacoes/${id}`, cliente.cabecalhos, "PATCH", { ativa: false })).status).toBe(200);
+    expect((await chamar(`/api/auth/aplicacoes/${id}`, cliente.cabecalhos, "PATCH", { ativa: true })).status).toBe(200);
+
+    const { cabecalhos: operador } = await sessaoOperador();
+    expect((await chamar(`/api/auth/aplicacoes/${id}`, operador, "PATCH", { ativa: false })).status).toBe(200);
+    const religar = await chamar(`/api/auth/aplicacoes/${id}`, cliente.cabecalhos, "PATCH", { ativa: true });
+    expect(religar.status).toBe(403);
+
+    expect((await chamar(`/api/auth/aplicacoes/${id}`, operador, "PATCH", { ativa: true })).status).toBe(200);
+    const linha = await prisma.aplicacao.findUniqueOrThrow({ where: { id } });
+    expect(linha.desativadaPeloOperador).toBe(false);
+  });
+
+  it("aplicação cliente não usa o domínio do provedor como origem nem RP ID", async () => {
+    const cliente = await sessaoCliente("self-service-dominio-provedor");
+    const comOrigemDoProvedor = await criarPeloPainel(cliente.cabecalhos, {
+      nome: "Finge ser o painel",
+      origens: [BASE_URL],
+    });
+    expect(comOrigemDoProvedor.resposta.status).toBe(400);
+    expect(comOrigemDoProvedor.corpo.erro).toContain("domínio do próprio provedor");
+
+    const comRpIdDoProvedor = await criarPeloPainel(cliente.cabecalhos, {
+      nome: "RP ID do provedor",
+      origens: ["https://app.cliente-rpid.com"],
+      passkeyRpId: new URL(BASE_URL).hostname,
+    });
+    expect(comRpIdDoProvedor.resposta.status).toBe(400);
+    expect(comRpIdDoProvedor.corpo.erro).toContain("domínio do próprio provedor");
   });
 });
 

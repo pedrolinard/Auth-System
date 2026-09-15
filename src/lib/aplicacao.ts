@@ -32,6 +32,7 @@ export type AplicacaoResolvida = {
   origens: string[];
   passkeyRpId: string | null;
   padrao: boolean;
+  aprovada: boolean;
   clientSecretHash: string | null;
 };
 
@@ -80,6 +81,7 @@ function selecionar() {
     origens: true,
     passkeyRpId: true,
     padrao: true,
+    aprovada: true,
     clientSecretHash: true,
   } as const;
 }
@@ -156,12 +158,30 @@ export async function contextoEmail(
   const baseProvedor = process.env.BASE_URL ?? "http://localhost:3000";
   const aplicacao = await prisma.aplicacao.findUnique({
     where: { id: aplicacaoId },
-    select: { nome: true, padrao: true, emailRemetente: true, urlLinks: true, logoUrl: true },
+    select: {
+      id: true,
+      nome: true,
+      padrao: true,
+      aprovada: true,
+      emailRemetente: true,
+      urlLinks: true,
+      logoUrl: true,
+    },
   });
   if (!aplicacao || aplicacao.padrao) return { marca: null, baseLinks: baseProvedor };
+  // Sem aprovação do operador, nada que o cliente escolheu vai no e-mail além
+  // do nome (e mesmo o nome sai marcado como "em nome de"): nem logo, nem
+  // remetente, nem links pro site dele — é exatamente o kit de um phishing
+  // saindo do domínio verificado do provedor.
   return {
-    marca: { nome: aplicacao.nome, remetente: aplicacao.emailRemetente, logoUrl: aplicacao.logoUrl },
-    baseLinks: aplicacao.urlLinks ?? baseProvedor,
+    marca: {
+      aplicacaoId: aplicacao.id,
+      nome: aplicacao.nome,
+      verificada: aplicacao.aprovada,
+      remetente: aplicacao.aprovada ? aplicacao.emailRemetente : null,
+      logoUrl: aplicacao.aprovada ? aplicacao.logoUrl : null,
+    },
+    baseLinks: aplicacao.aprovada ? (aplicacao.urlLinks ?? baseProvedor) : baseProvedor,
   };
 }
 
@@ -221,7 +241,7 @@ export async function autenticarAplicacao(req: Request): Promise<ResultadoAutent
     if (!segredoConfere(aplicacao, req)) {
       return { ok: false, status: 401, erro: "Credencial da aplicação ausente ou inválida." };
     }
-    declararIpDoUsuarioFinal(req);
+    declararIpDoUsuarioFinal(aplicacao, req);
     return { ok: true, aplicacao };
   }
 
@@ -247,7 +267,11 @@ function segredoConfere(aplicacao: AplicacaoResolvida, req: Request): boolean {
   );
 }
 
-function declararIpDoUsuarioFinal(req: Request) {
+// Só aplicação APROVADA pelo operador escolhe o IP que conta no rate limit:
+// uma conta recém-criada no self-service trocaria de IP a cada chamada e
+// furaria todos os limites por IP (cadastro em massa, e-mails a terceiros).
+function declararIpDoUsuarioFinal(aplicacao: AplicacaoResolvida, req: Request) {
+  if (!aplicacao.aprovada) return;
   const ip = req.headers.get(HEADER_IP_USUARIO)?.trim();
   if (ip && isIP(ip)) registrarIpDeclarado(req, ip);
 }
@@ -266,7 +290,7 @@ export async function aceitarIpDoUsuarioFinal(req: Request): Promise<void> {
   if (!req.headers.has(HEADER_SEGREDO_APLICACAO) || !req.headers.has(HEADER_IP_USUARIO)) return;
   const aplicacao = await resolverAplicacao(req);
   if (!aplicacao || aplicacao.padrao || !segredoConfere(aplicacao, req)) return;
-  declararIpDoUsuarioFinal(req);
+  declararIpDoUsuarioFinal(aplicacao, req);
 }
 
 /**
@@ -289,16 +313,35 @@ export async function origemDeAlgumaAplicacao(origem: string): Promise<boolean> 
 }
 
 /**
- * Confere se a requisição veio de uma origem que a aplicação declarou.
+ * Regra de origem da aplicação PADRÃO (o próprio painel): sem Origin (sem
+ * navegador: testes, curl, o serviço Django) ou a MESMA origem do provedor
+ * passam; fora isso, só uma origem que ela declarou.
  *
- * Uma aplicação sem nenhuma origem cadastrada aceita qualquer uma — é o caso
- * de integração servidor-a-servidor, onde não existe navegador e o header
- * `origin` simplesmente não vem. A checagem só morde quando a lista existe E o
- * navegador mandou origem, que é precisamente o cenário que ela protege.
+ * Antes, lista de origens vazia aceitava qualquer origem. Com o self-service,
+ * qualquer conta cadastra a origem que quiser numa aplicação dela, e o
+ * preflight CORS (que olha as origens de TODAS as aplicações ativas) deixa de
+ * barrar sites arbitrários — então a padrão não pode depender dele.
  */
 export function origemPermitida(aplicacao: AplicacaoResolvida, req: Request): boolean {
-  if (aplicacao.origens.length === 0) return true;
   const origem = req.headers.get("origin");
   if (!origem) return true;
+  if (ehMesmaOrigem(origem, req)) return true;
   return aplicacao.origens.includes(origem);
+}
+
+// Host que o navegador usou pra chegar aqui. Só o `Host` (que o navegador não
+// deixa uma página escolher), nunca x-forwarded-host: fora da Vercel, esse
+// viria do próprio cliente.
+export function hostDaRequisicao(req: Request): string | null {
+  return req.headers.get("host")?.trim() || null;
+}
+
+function ehMesmaOrigem(origem: string, req: Request): boolean {
+  const host = hostDaRequisicao(req);
+  if (!host) return false;
+  try {
+    return new URL(origem).host === host;
+  } catch {
+    return false;
+  }
 }

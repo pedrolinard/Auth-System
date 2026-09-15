@@ -3,14 +3,67 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { autenticarRequisicao } from "@/lib/autenticar";
+import { hostDaRequisicao } from "@/lib/aplicacao";
 import { hashToken, type PayloadTokenAcesso } from "@/lib/token";
 
 // Gestão de aplicações (Fase 01 do provedor): criar, editar, desativar e
 // rotacionar o segredo dos clientes que integram com este provedor.
 
-// Teto de aplicações por organização no self-service, pra uma conta nova não
-// criar centenas de clientes. Quem opera o provedor não tem teto.
-export const MAX_APLICACOES_POR_ORGANIZACAO = 3;
+// Teto de aplicações no self-service, pra uma conta nova não criar centenas de
+// clientes. Contado por CONTA (somando as organizações de que ela é dona ou
+// admin), não só por organização: criar organizações é livre, e um teto só
+// por organização se multiplicava por quantas a pessoa abrisse. Quem opera o
+// provedor não tem teto.
+export const MAX_APLICACOES_POR_CONTA = 3;
+
+export function contarAplicacoesDaConta(usuarioId: string) {
+  return prisma.aplicacao.count({
+    where: {
+      organizacaoDona: { membros: { some: { usuarioId, papel: { in: ["dono", "admin"] } } } },
+    },
+  });
+}
+
+/**
+ * Aplicação cliente não pode declarar o domínio do PRÓPRIO provedor como
+ * origem nem como RP ID: seria uma página de terceiro "falando" como o painel
+ * (origem aceita nas rotas e no WebAuthn) ou passkeys de cliente presas a um
+ * domínio que cobre o do provedor.
+ */
+export function conflitoComDominioDoProvedor(
+  req: Request,
+  dados: { origens: string[]; passkeyRpId: string | null },
+): string | null {
+  // Origem compara host COM porta (http://localhost:5173 de um cliente em dev
+  // não é o provedor em localhost:3000); RP ID compara só o nome, que é como
+  // o WebAuthn o aplica.
+  const hostsProvedor = new Set<string>();
+  const hostReq = hostDaRequisicao(req);
+  if (hostReq) hostsProvedor.add(hostReq.toLowerCase());
+  if (process.env.BASE_URL) {
+    try {
+      hostsProvedor.add(new URL(process.env.BASE_URL).host.toLowerCase());
+    } catch {
+      // BASE_URL inválida já é erro de boot em produção (configProducao.ts).
+    }
+  }
+
+  for (const origem of dados.origens) {
+    if (hostsProvedor.has(new URL(origem).host.toLowerCase())) {
+      return `A origem ${origem} é o domínio do próprio provedor e não pode ser usada por uma aplicação cliente.`;
+    }
+  }
+  const rpId = dados.passkeyRpId?.toLowerCase();
+  if (rpId) {
+    for (const hostComPorta of hostsProvedor) {
+      const host = hostComPorta.split(":")[0];
+      if (host === rpId || host.endsWith(`.${rpId}`)) {
+        return `O RP ID "${dados.passkeyRpId}" cobre o domínio do próprio provedor e não pode ser usado por uma aplicação cliente.`;
+      }
+    }
+  }
+  return null;
+}
 
 export type GestorAplicacoes = {
   payload: PayloadTokenAcesso;
@@ -115,6 +168,8 @@ export const SELECAO_APLICACAO_PUBLICA = {
   logoUrl: true,
   ativa: true,
   padrao: true,
+  aprovada: true,
+  desativadaPeloOperador: true,
   criadoEm: true,
   atualizadoEm: true,
   clientSecretHash: true,

@@ -69,6 +69,16 @@ model Aplicacao {
   // pros usuários finais dela e passa a ser gerida só pelo operador.
   organizacaoDonaId String?
   organizacaoDona   Organizacao? @relation("AplicacoesDaOrganizacao", fields: [organizacaoDonaId], references: [id], onDelete: SetNull)
+  // Aprovada por quem opera o provedor. Aplicação self-service nasce SEM
+  // aprovação e, até lá, fala em nome do provedor com rédea curta: e-mails
+  // sem logo nem links próprios e com cota baixa por hora, e o IP de usuário
+  // final declarado pelo backend é ignorado. Sem isso, uma conta recém-criada
+  // mandava phishing ("Banco X — conta bloqueada", links pro site dela) pelo
+  // domínio verificado do provedor. Criada pelo operador: já nasce aprovada.
+  aprovada Boolean @default(false)
+  // Desativada POR QUEM OPERA o provedor (abuso, falta de pagamento): o
+  // cliente não consegue reativar pelo self-service.
+  desativadaPeloOperador Boolean @default(false)
   criadoEm DateTime @default(now()) @db.Timestamptz(3)
   atualizadoEm DateTime @updatedAt @db.Timestamptz(3)
 

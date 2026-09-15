@@ -285,6 +285,18 @@ export default function PaginaAplicacoes() {
     }
   }
 
+  async function aoAprovar(aplicacao: Aplicacao) {
+    setProcessandoId(aplicacao.id);
+    try {
+      substituir(await atualizarAplicacao(aplicacao.id, { aprovada: true }));
+      notificar.sucesso(`${aplicacao.nome} aprovada.`);
+    } catch (erroCapturado) {
+      notificar.erro(mensagem(erroCapturado, "Não deu pra aprovar."));
+    } finally {
+      setProcessandoId(null);
+    }
+  }
+
   async function aoRotacionar(aplicacao: Aplicacao) {
     setProcessandoId(aplicacao.id);
     try {
@@ -377,6 +389,11 @@ export default function PaginaAplicacoes() {
                           padrão
                         </span>
                       )}
+                      {!aplicacao.padrao && !aplicacao.aprovada && (
+                        <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium uppercase text-amber-700 dark:text-amber-400">
+                          aguardando aprovação
+                        </span>
+                      )}
                       <span
                         className={
                           aplicacao.ativa
@@ -418,6 +435,18 @@ export default function PaginaAplicacoes() {
                       </dd>
                     </dl>
 
+                    {!aplicacao.padrao && !aplicacao.aprovada && !operador && (
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        Até a aprovação, os e-mails aos seus usuários saem sem logo nem links
+                        próprios e com limite de envios por hora.
+                      </p>
+                    )}
+                    {!aplicacao.ativa && aplicacao.desativadaPeloOperador && !operador && (
+                      <p className="text-xs text-red-600 dark:text-red-400">
+                        Desativada por quem opera o provedor. Fale com o suporte pra reativar.
+                      </p>
+                    )}
+
                     {confirmandoRotacaoId === aplicacao.id ? (
                       <div className="flex flex-col gap-2">
                         <p className="text-xs text-red-600 dark:text-red-400">
@@ -455,7 +484,16 @@ export default function PaginaAplicacoes() {
                           <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
                           {aplicacao.temSegredo ? "Rotacionar segredo" : "Gerar segredo"}
                         </button>
-                        {!aplicacao.padrao && (
+                        {operador && !aplicacao.padrao && !aplicacao.aprovada && (
+                          <button
+                            onClick={() => aoAprovar(aplicacao)}
+                            disabled={processandoId === aplicacao.id}
+                            className="btn-primary-sm"
+                          >
+                            Aprovar
+                          </button>
+                        )}
+                        {!aplicacao.padrao && (operador || aplicacao.ativa || !aplicacao.desativadaPeloOperador) && (
                           <button
                             onClick={() => aoAlternarAtiva(aplicacao)}
                             disabled={processandoId === aplicacao.id}

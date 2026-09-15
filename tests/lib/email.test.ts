@@ -106,6 +106,8 @@ describe("Notificações de segurança por e-mail (src/lib/email.ts)", () => {
     const { enviarEmailRedefinicaoSenha, enviarEmailMfaAtivado } = await carregarEmailComResendConfigurado();
 
     await enviarEmailRedefinicaoSenha("usuario@teste.local", "https://app.cliente.com/redefinir-senha?token=x", {
+      aplicacaoId: `app-email-${Date.now()}`,
+      verificada: true,
       nome: "Acme <script>",
       remetente: "seguranca@acme.com",
       logoUrl: "https://acme.com/logo.png",
@@ -120,9 +122,47 @@ describe("Notificações de segurança por e-mail (src/lib/email.ts)", () => {
     expect(html).toContain("https://app.cliente.com/redefinir-senha?token=x");
 
     // Sem remetente próprio: nome no assunto, mas sai do remetente do provedor.
-    await enviarEmailMfaAtivado("usuario@teste.local", { nome: "Acme", remetente: null, logoUrl: null });
+    await enviarEmailMfaAtivado("usuario@teste.local", {
+      aplicacaoId: `app-email-${Date.now()}`,
+      verificada: true,
+      nome: "Acme",
+      remetente: null,
+      logoUrl: null,
+    });
     expect(enviarMock.mock.calls[1][0].from).toBe("remetente@teste.local");
     expect(enviarMock.mock.calls[1][0].html).toContain("sua conta em Acme");
+    // Todo e-mail de aplicação cliente diz quem envia de verdade.
+    expect(enviarMock.mock.calls[1][0].html).toContain("em nome de Acme");
+  });
+
+  it("aplicação não aprovada: sem nome no assunto, 'via' o provedor e aviso de não verificada", async () => {
+    const { enviarEmailVerificacao } = await carregarEmailComResendConfigurado();
+    await enviarEmailVerificacao("usuario@teste.local", "https://provedor/verificar-email?token=x", {
+      aplicacaoId: `app-email-nao-aprovada-${Date.now()}`,
+      verificada: false,
+      nome: "Banco X - conta bloqueada",
+      remetente: null,
+      logoUrl: null,
+    });
+    const { subject, html } = enviarMock.mock.calls[0][0];
+    expect(subject).toBe("Confirme seu e-mail");
+    expect(html).toContain("via ");
+    expect(html).toContain("ainda não verificou este aplicativo");
+  });
+
+  it("cota de e-mails por hora da aplicação não aprovada: o que passa dela não sai", async () => {
+    const { enviarEmailMfaAtivado, COTA_EMAIL_POR_HORA } = await carregarEmailComResendConfigurado();
+    const marca = {
+      aplicacaoId: `app-email-cota-${Date.now()}`,
+      verificada: false,
+      nome: "Cliente novo",
+      remetente: null,
+      logoUrl: null,
+    };
+    for (let i = 0; i < COTA_EMAIL_POR_HORA.naoVerificada + 5; i++) {
+      await enviarEmailMfaAtivado(`usuario${i}@teste.local`, marca);
+    }
+    expect(enviarMock).toHaveBeenCalledTimes(COTA_EMAIL_POR_HORA.naoVerificada);
   });
 
   it("sem marca (aplicação padrão): assunto e remetente de sempre", async () => {

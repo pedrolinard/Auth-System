@@ -2,6 +2,8 @@ import "server-only";
 
 import { Resend } from "resend";
 
+import { consumirCota } from "@/lib/rateLimit";
+
 // Sem RESEND_API_KEY (dev local sem provedor configurado): cai de volta pro
 // link no console, mesmo comportamento de antes. Em produção, com a chave
 // configurada, envia de verdade.
@@ -20,10 +22,24 @@ const REMETENTE = process.env.EMAIL_FROM ?? "onboarding@resend.dev";
 // tiver um remetente verificado no Resend, sai dele. `null` = aplicação
 // padrão (o próprio painel), comportamento de sempre.
 export type MarcaEmail = {
+  aplicacaoId: string;
   nome: string;
+  // Aprovada por quem opera o provedor (Aplicacao.aprovada). Sem aprovação o
+  // nome não vai no assunto e o e-mail diz com todas as letras que é o
+  // provedor escrevendo em nome de um aplicativo não verificado.
+  verificada: boolean;
   remetente: string | null;
   logoUrl: string | null;
 } | null;
+
+const NOME_PROVEDOR = process.env.PASSKEY_RP_NAME ?? "Auth Gateway";
+
+// Cota de e-mails por aplicação cliente, por hora, independente de IP: o
+// limite por IP das rotas não pega um backend que muda de IP (ou uma conta
+// que chama o cadastro com milhares de endereços de terceiros). Aplicação
+// ainda não aprovada tem cota curta.
+const JANELA_COTA_EMAIL_MS = 60 * 60 * 1000;
+export const COTA_EMAIL_POR_HORA = { verificada: 1000, naoVerificada: 30 };
 
 // IP, User-Agent, nomes digitados por usuários e a própria marca vão
 // interpolados no HTML do e-mail — sem escapar, um User-Agent forjado com
@@ -49,7 +65,28 @@ function cabecalhoMarca(marca: MarcaEmail) {
   const logo = marca.logoUrl
     ? `<img src="${escaparHtml(marca.logoUrl)}" alt="" height="32" style="display:block;margin-bottom:8px">`
     : "";
-  return `${logo}<p style="font-weight:600;margin:0 0 12px">${escaparHtml(marca.nome)}</p>`;
+  const via = marca.verificada
+    ? ""
+    : ` <span style="font-weight:400;color:#71717a">via ${escaparHtml(NOME_PROVEDOR)}</span>`;
+  return `${logo}<p style="font-weight:600;margin:0 0 12px">${escaparHtml(marca.nome)}${via}</p>`;
+}
+
+// Quem manda de verdade, em todo e-mail de aplicação cliente — o usuário
+// final precisa conseguir distinguir o aplicativo do provedor que envia.
+function notaEmNomeDe(marca: MarcaEmail) {
+  if (!marca) return "";
+  const aviso = marca.verificada
+    ? ""
+    : ` ${escaparHtml(NOME_PROVEDOR)} ainda não verificou este aplicativo: desconfie de pedidos de senha ou pagamento.`;
+  return `<p ${ESTILO_NOTA}>Enviado por ${escaparHtml(NOME_PROVEDOR)} em nome de ${escaparHtml(marca.nome)}.${aviso}</p>`;
+}
+
+async function dentroDaCota(marca: NonNullable<MarcaEmail>): Promise<boolean> {
+  return consumirCota({
+    chave: `cota_email:${marca.aplicacaoId}`,
+    maximo: marca.verificada ? COTA_EMAIL_POR_HORA.verificada : COTA_EMAIL_POR_HORA.naoVerificada,
+    janelaMs: JANELA_COTA_EMAIL_MS,
+  });
 }
 
 // Todo envio passa por aqui: aplica a marca, e é best-effort — uma falha no
@@ -66,6 +103,19 @@ async function enviar(dados: {
   logDev?: string;
 }) {
   const { destinatario, assunto, corpoHtml, marca, descricao } = dados;
+
+  try {
+    if (marca && !(await dentroDaCota(marca))) {
+      console.warn(`Cota de e-mails da aplicação ${marca.aplicacaoId} esgotada: ${descricao} não enviado.`);
+      return;
+    }
+  } catch (erro) {
+    // Sem conseguir contar, não envia: a cota existe justamente pra conter
+    // abuso, e falhar aberto aqui a desligaria.
+    console.error("Falha ao conferir a cota de e-mails:", erro);
+    return;
+  }
+
   if (!resend) {
     console.log(`[dev] ${dados.logDev ?? descricao} para ${destinatario}`);
     return;
@@ -79,8 +129,10 @@ async function enviar(dados: {
         ? `${marca.nome.replace(/[<>"\r\n]/g, "")} <${marca.remetente}>`
         : REMETENTE,
       to: destinatario,
-      subject: marca ? `${marca.nome}: ${assunto}` : assunto,
-      html: `${cabecalhoMarca(marca)}${corpoHtml}`,
+      // Nome do aplicativo no assunto só com aprovação: no assunto não cabe o
+      // "em nome de", e é ali que um phishing se apresenta.
+      subject: marca?.verificada ? `${marca.nome}: ${assunto}` : assunto,
+      html: `${cabecalhoMarca(marca)}${corpoHtml}${notaEmNomeDe(marca)}`,
     });
     if (error) console.error(`Falha ao enviar e-mail (${descricao}):`, error);
   } catch (erro) {

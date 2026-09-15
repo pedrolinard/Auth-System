@@ -152,6 +152,24 @@ export async function registrarTentativaIp({
   await incrementar(chaveIp(evento, ip), janelaMs);
 }
 
+/**
+ * Consome uma unidade de uma cota genérica (ex.: e-mails por aplicação por
+ * hora) e diz se ainda estava dentro dela. Incrementa ANTES de conferir: duas
+ * chamadas simultâneas na última vaga não passam as duas.
+ */
+export async function consumirCota({
+  chave,
+  maximo,
+  janelaMs,
+}: {
+  chave: string;
+  maximo: number;
+  janelaMs: number;
+}): Promise<boolean> {
+  await incrementar(chave, janelaMs);
+  return (await contar(chave)) <= maximo;
+}
+
 export async function registrarTentativaEmail({
   aplicacaoId,
   email,

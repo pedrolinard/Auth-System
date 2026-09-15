@@ -8,7 +8,9 @@ export type AplicacaoTeste = { id: string; clientId: string; clientSecret: strin
 // autenticarAplicacao em src/lib/aplicacao.ts.
 export async function criarAplicacaoTeste(
   nome: string,
-  opcoes: { origens?: string[] } = {},
+  // `aprovada` padrão true: é o que o operador cria. false simula uma
+  // aplicação self-service ainda não aprovada.
+  opcoes: { origens?: string[]; aprovada?: boolean } = {},
 ): Promise<AplicacaoTeste> {
   const clientSecret = `sec_teste_${randomBytes(16).toString("hex")}`;
   const aplicacao = await prisma.aplicacao.create({
@@ -17,6 +19,7 @@ export async function criarAplicacaoTeste(
       clientId: `app_teste_${randomBytes(6).toString("hex")}`,
       clientSecretHash: createHash("sha256").update(clientSecret).digest("hex"),
       origens: opcoes.origens ?? [],
+      aprovada: opcoes.aprovada ?? true,
     },
     select: { id: true, clientId: true },
   });

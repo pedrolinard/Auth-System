@@ -148,6 +148,44 @@ describe("Autenticação da aplicação cliente", () => {
     expect(ips).not.toContain("203.0.113.99");
   });
 
+  it("aplicação ainda não aprovada: o IP declarado pelo backend é ignorado", async () => {
+    const aplicacao = await criarAplicacaoTeste("Self-service não aprovada", { aprovada: false });
+    aplicacoesCriadas.push(aplicacao.id);
+    segredos.set(aplicacao.clientId, aplicacao.clientSecret);
+    const email = gerarEmailTeste("ip-nao-aprovada");
+    emailsCriados.push(email);
+    expect((await cadastrar(email, aplicacao.clientId)).status).toBe(201);
+
+    const ipReal = ipAleatorio();
+    const login = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { ...cabecalhosDaAplicacao(aplicacao.clientId, ipReal), "x-usuario-ip": "203.0.113.55" },
+      body: JSON.stringify({ email, senha: SENHA_TESTE }),
+    });
+    expect(login.status).toBe(200);
+    const conta = await prisma.usuario.findFirstOrThrow({ where: { email, aplicacaoId: aplicacao.id } });
+    const sessao = await prisma.tokenAtualizacao.findFirstOrThrow({ where: { usuarioId: conta.id } });
+    expect(sessao.ip).toBe(ipReal);
+  });
+
+  it("aplicação padrão: aceita a própria origem e recusa origem de outro site", async () => {
+    const email = gerarEmailTeste("padrao-origem");
+    const deOutroSite = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio(), Origin: "https://site-qualquer.example" },
+      body: JSON.stringify({ email, senha: SENHA_TESTE }),
+    });
+    expect(deOutroSite.status).toBe(403);
+
+    const daPropriaOrigem = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio(), Origin: BASE_URL },
+      body: JSON.stringify({ email, senha: SENHA_TESTE }),
+    });
+    // Passa pela checagem de origem e cai na credencial (conta inexistente).
+    expect(daPropriaOrigem.status).toBe(401);
+  });
+
   it("chamada de navegador precisa vir de uma origem cadastrada — lista vazia recusa", async () => {
     const semOrigens = await criarAplicacao("Cliente sem origens");
     const comOrigem = await criarAplicacao("Cliente com origem", { origens: ["https://app.cliente-teste.com"] });

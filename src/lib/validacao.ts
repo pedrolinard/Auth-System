@@ -261,6 +261,8 @@ export const esquemaAtualizarAplicacao = z
     urlLinks: camposAplicacao.urlLinks.optional(),
     logoUrl: camposAplicacao.logoUrl.optional(),
     ativa: z.boolean().optional(),
+    // Só quem opera o provedor (a rota recusa no self-service).
+    aprovada: z.boolean().optional(),
   })
   .refine((dados) => Object.values(dados).some((valor) => valor !== undefined), {
     error: "Nada para atualizar.",
