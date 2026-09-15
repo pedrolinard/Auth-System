@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { nome, origens, passkeyRpId, emailRemetente, urlLinks, logoUrl } = dados.data;
+  const { nome, origens, passkeyRpId, redirectUris, emailRemetente, urlLinks, logoUrl } = dados.data;
 
   if (!gestor.operador) {
     // O remetente sai do domínio verificado do PROVEDOR no Resend: deixar um
@@ -79,7 +79,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const conflito = conflitoComDominioDoProvedor(req, { origens, passkeyRpId });
+  const conflito = conflitoComDominioDoProvedor(req, { origens, passkeyRpId, redirectUris });
   if (conflito) return NextResponse.json({ erro: conflito }, { status: 400 });
 
   if (passkeyRpId) {
@@ -102,6 +102,7 @@ export async function POST(req: Request) {
       clientSecretHash: hash,
       origens,
       passkeyRpId,
+      redirectUris,
       emailRemetente,
       urlLinks,
       logoUrl,

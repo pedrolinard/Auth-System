@@ -245,6 +245,32 @@ ALTER TABLE "aplicacoes" ADD COLUMN IF NOT EXISTS "aprovada" BOOLEAN NOT NULL DE
 ALTER TABLE "aplicacoes" ADD COLUMN IF NOT EXISTS "desativadaPeloOperador" BOOLEAN NOT NULL DEFAULT false;
 UPDATE "aplicacoes" SET "aprovada" = true WHERE "organizacaoDonaId" IS NULL AND "aprovada" = false;
 
+-- 20260916130000_oidc
+ALTER TABLE "aplicacoes" ADD COLUMN IF NOT EXISTS "redirectUris" TEXT[] DEFAULT ARRAY[]::TEXT[];
+CREATE TABLE IF NOT EXISTS "codigos_autorizacao" (
+    "id" TEXT NOT NULL,
+    "codigoHash" TEXT NOT NULL,
+    "aplicacaoId" TEXT NOT NULL,
+    "usuarioId" TEXT NOT NULL,
+    "redirectUri" TEXT NOT NULL,
+    "escopo" TEXT NOT NULL,
+    "nonce" TEXT,
+    "codeChallenge" TEXT NOT NULL,
+    "autenticadoEm" TIMESTAMPTZ(3) NOT NULL,
+    "expiraEm" TIMESTAMPTZ(3) NOT NULL,
+    "usadoEm" TIMESTAMPTZ(3),
+    "sessaoId" TEXT,
+    "criadoEm" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "codigos_autorizacao_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "codigos_autorizacao_codigoHash_key" ON "codigos_autorizacao"("codigoHash");
+CREATE INDEX IF NOT EXISTS "codigos_autorizacao_expiraEm_idx" ON "codigos_autorizacao"("expiraEm");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'codigos_autorizacao_usuarioId_fkey') THEN
+    ALTER TABLE "codigos_autorizacao" ADD CONSTRAINT "codigos_autorizacao_usuarioId_fkey" FOREIGN KEY ("usuarioId") REFERENCES "usuarios"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
+
 -- Registro pro Prisma considerar aplicadas
 INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
 SELECT gen_random_uuid()::text, v.checksum, now(), v.nome, NULL, NULL, now(), 1
@@ -252,7 +278,8 @@ FROM (VALUES
   ('20260916090000_alvo_auditoria',     'e7cc2f97b097871ffa908b8acf0bfd9bec674757579005ecea93bb8b37e1872a'),
   ('20260916100000_exclusoes_dominio',  'aac1120683a87572a935615be581339da95f3f99ddd8a6e1885a97e561ab5b7d'),
   ('20260916110000_aplicacao_organizacao_dona', '2d30af7b84cd53d201b2d8df64bc2eaa51d46086a3a07b7a3d2b27edd68894c8'),
-  ('20260916120000_aplicacao_aprovacao',        'f2e80679c6ad7bb9274f6e052da952f4f611bf023d75c53aee2f5dc2a3a95cc0')
+  ('20260916120000_aplicacao_aprovacao',        'f2e80679c6ad7bb9274f6e052da952f4f611bf023d75c53aee2f5dc2a3a95cc0'),
+  ('20260916130000_oidc',                       '85adfabfdd5006add5bbb741f8a1e9d019598c753285d0817234cbe01a69a28b')
 ) AS v(nome, checksum)
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = v.nome);
 ```

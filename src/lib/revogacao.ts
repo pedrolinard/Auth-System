@@ -20,7 +20,10 @@ export type MotivoRevogacao =
   | "email_alterado"
   | "suspensao"
   | "remocao_organizacao"
-  | "aplicacao_desativada";
+  | "aplicacao_desativada"
+  // Código de autorização OIDC reapresentado depois de trocado: a sessão
+  // emitida com ele cai (quem tem o código duas vezes pode tê-lo interceptado).
+  | "codigo_oidc_reapresentado";
 
 export function revogacao(motivo: MotivoRevogacao) {
   return { revogadoEm: new Date(), revogadoMotivo: motivo };

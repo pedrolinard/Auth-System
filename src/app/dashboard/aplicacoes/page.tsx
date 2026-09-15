@@ -17,8 +17,8 @@ import { EstadoVazio } from "@/components/ui/EstadoVazio";
 import { SkeletonLista } from "@/components/ui/Skeleton";
 import { notificar } from "@/components/ui/Toaster";
 
-// Uma origem por linha no formulário; o servidor valida o formato de cada uma.
-function origensDoTexto(texto: string): string[] {
+// Um valor por linha no formulário (origens, URLs de retorno); o servidor valida o formato de cada um.
+function linhasDoTexto(texto: string): string[] {
   return texto
     .split(/\r?\n/)
     .map((linha) => linha.trim())
@@ -46,6 +46,7 @@ function FormularioAplicacao({
   const [nome, setNome] = useState(inicial?.nome ?? "");
   const [origens, setOrigens] = useState(inicial?.origens.join("\n") ?? "");
   const [rpId, setRpId] = useState(inicial?.passkeyRpId ?? "");
+  const [redirectUris, setRedirectUris] = useState(inicial?.redirectUris.join("\n") ?? "");
   const [emailRemetente, setEmailRemetente] = useState(inicial?.emailRemetente ?? "");
   const [urlLinks, setUrlLinks] = useState(inicial?.urlLinks ?? "");
   const [logoUrl, setLogoUrl] = useState(inicial?.logoUrl ?? "");
@@ -60,8 +61,9 @@ function FormularioAplicacao({
     try {
       await aoEnviar({
         nome,
-        origens: origensDoTexto(origens),
+        origens: linhasDoTexto(origens),
         passkeyRpId: rpId.trim() || null,
+        redirectUris: linhasDoTexto(redirectUris),
         ...(permitirRemetente ? { emailRemetente: emailRemetente.trim() || null } : {}),
         urlLinks: urlLinks.trim() || null,
         logoUrl: logoUrl.trim() || null,
@@ -117,6 +119,23 @@ function FormularioAplicacao({
         />
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           Domínio a que as passkeys ficam presas. Precisa cobrir todas as origens acima.
+        </p>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor={`${prefixo}-redirect`} className="text-sm text-zinc-600 dark:text-zinc-400">
+          URLs de retorno (login hospedado)
+        </label>
+        <textarea
+          id={`${prefixo}-redirect`}
+          rows={2}
+          value={redirectUris}
+          onChange={(e) => setRedirectUris(e.target.value)}
+          placeholder="https://app.cliente.com/auth/retorno"
+          className="input-field font-mono text-xs"
+        />
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Uma por linha, exatamente como o aplicativo manda no redirect_uri do OpenID Connect.
+          Só funciona em aplicação aprovada.
         </p>
       </div>
 

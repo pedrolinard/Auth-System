@@ -99,6 +99,10 @@ const ROTAS_PARA_AQUECER = [
   "/api/auth/organizacoes/id-de-aquecimento/entrar",
   "/api/auth/organizacoes/aceitar-convite",
   "/api/auth/mfa/backup",
+  "/api/oidc/token",
+  "/api/oidc/userinfo",
+  "/api/oidc/entrar",
+  "/api/oidc/mfa",
   "/roadmap",
 ];
 

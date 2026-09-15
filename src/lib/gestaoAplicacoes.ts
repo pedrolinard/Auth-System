@@ -32,7 +32,7 @@ export function contarAplicacoesDaConta(usuarioId: string) {
  */
 export function conflitoComDominioDoProvedor(
   req: Request,
-  dados: { origens: string[]; passkeyRpId: string | null },
+  dados: { origens: string[]; passkeyRpId: string | null; redirectUris?: string[] },
 ): string | null {
   // Origem compara host COM porta (http://localhost:5173 de um cliente em dev
   // não é o provedor em localhost:3000); RP ID compara só o nome, que é como
@@ -51,6 +51,13 @@ export function conflitoComDominioDoProvedor(
   for (const origem of dados.origens) {
     if (hostsProvedor.has(new URL(origem).host.toLowerCase())) {
       return `A origem ${origem} é o domínio do próprio provedor e não pode ser usada por uma aplicação cliente.`;
+    }
+  }
+  // O código de autorização iria parar numa página do provedor, fora do
+  // controle do cliente (e dentro do histórico e dos logs de quem abrir).
+  for (const uri of dados.redirectUris ?? []) {
+    if (hostsProvedor.has(new URL(uri).host.toLowerCase())) {
+      return `A URL de retorno ${uri} é do domínio do próprio provedor e não pode ser usada por uma aplicação cliente.`;
     }
   }
   const rpId = dados.passkeyRpId?.toLowerCase();
@@ -163,6 +170,7 @@ export const SELECAO_APLICACAO_PUBLICA = {
   clientId: true,
   origens: true,
   passkeyRpId: true,
+  redirectUris: true,
   emailRemetente: true,
   urlLinks: true,
   logoUrl: true,

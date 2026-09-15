@@ -43,6 +43,11 @@ model Aplicacao {
   // (PASSKEY_RP_ID); com clientes em domínios próprios, tem que ser por
   // aplicação, porque uma credencial só vale na origem em que nasceu.
   passkeyRpId String?
+  // URLs de retorno do login hospedado (OpenID Connect): pra onde /autorizar
+  // pode mandar o código. Comparação EXATA de string, sem prefixo nem curinga
+  // — um redirect_uri aceito por prefixo é um código entregue a quem controlar
+  // qualquer caminho sob aquele domínio.
+  redirectUris String[] @default([])
   // Marca nos e-mails enviados aos usuários finais desta aplicação (ver
   // MarcaEmail em src/lib/email.ts). Todos opcionais: sem eles, os e-mails
   // saem com o nome da aplicação no assunto e o remetente do provedor.
@@ -189,6 +194,7 @@ model Usuario {
   codigosBackup  CodigoBackupMfa[]
   dispositivosConfiaveis DispositivoConfiavel[]
   passkeys       PasskeyCredencial[]
+  codigosAutorizacao CodigoAutorizacao[]
   // Organizações de que este usuário participa (dono, admin ou membro) —
   // ver Membro abaixo. Multi-tenant: um usuário pode pertencer a várias.
   membros        Membro[]
@@ -379,6 +385,32 @@ model LimiteTaxa {
 
   @@index([expiraEm])
   @@map("limites_taxa")
+}
+
+// Código de autorização do login hospedado (OpenID Connect, src/lib/oidc.ts).
+// Vida de 60 s e uso único; só o hash fica no banco. Preso à aplicação, ao
+// redirect_uri e ao code_challenge do pedido que o gerou — o /token confere os
+// três. `sessaoId` liga o código à sessão emitida na troca: reapresentar um
+// código já usado revoga essa sessão (RFC 6749 §4.1.2), porque quem tem o
+// código duas vezes pode ser quem o interceptou.
+model CodigoAutorizacao {
+  id            String    @id @default(cuid())
+  codigoHash    String    @unique
+  aplicacaoId   String
+  usuarioId     String
+  usuario       Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  redirectUri   String
+  escopo        String
+  nonce         String?
+  codeChallenge String
+  autenticadoEm DateTime  @db.Timestamptz(3)
+  expiraEm      DateTime  @db.Timestamptz(3)
+  usadoEm       DateTime? @db.Timestamptz(3)
+  sessaoId      String?
+  criadoEm      DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([expiraEm])
+  @@map("codigos_autorizacao")
 }
 
 // Organização excluída aqui cujos projetos e tarefas ainda precisam sair do

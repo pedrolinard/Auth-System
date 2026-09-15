@@ -98,7 +98,11 @@ export async function PATCH(
   const origensFinais = mudancas.origens ?? atual.origens;
   const rpIdFinal = mudancas.passkeyRpId !== undefined ? mudancas.passkeyRpId : atual.passkeyRpId;
   if (!atual.padrao) {
-    const conflito = conflitoComDominioDoProvedor(req, { origens: origensFinais, passkeyRpId: rpIdFinal });
+    const conflito = conflitoComDominioDoProvedor(req, {
+      origens: origensFinais,
+      passkeyRpId: rpIdFinal,
+      redirectUris: mudancas.redirectUris,
+    });
     if (conflito) return NextResponse.json({ erro: conflito }, { status: 400 });
   }
   if (rpIdFinal) {

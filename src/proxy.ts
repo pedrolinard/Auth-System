@@ -90,6 +90,11 @@ export const config = {
   matcher: [
     // Rotas de auth: só CORS (o CSP delas é o fixo de next.config.ts).
     "/api/auth/:path*",
+    // OpenID Connect chamado por SPA cliente (cliente público com PKCE). As
+    // rotas da página hospedada (/api/oidc/entrar e /mfa) ficam de FORA de
+    // propósito: sem CORS, nenhum outro site consegue usá-las.
+    "/api/oidc/token",
+    "/api/oidc/userinfo",
     // Toda página. Fora: o resto das rotas de API e os assets do
     // build/estáticos, que não são documento e não precisam de nonce.
     "/((?!api/|_next/static|_next/image|favicon.ico).*)",

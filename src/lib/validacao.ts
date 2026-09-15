@@ -187,6 +187,32 @@ const esquemaOrigem = z
     },
   );
 
+// URL de retorno do login hospedado (OpenID Connect). Guardada e comparada
+// como a string exata (src/lib/oidc.ts), então não é normalizada aqui além do
+// trim. https (http só em localhost, pra desenvolvimento), sem fragmento (o
+// código vai na query, e um # na URL cadastrada engoliria o parâmetro) e sem
+// credenciais embutidas.
+const esquemaRedirectUri = z
+  .string()
+  .trim()
+  .max(2000, { error: "URL de retorno longa demais." })
+  .refine(
+    (valor) => {
+      try {
+        const url = new URL(valor);
+        if (url.hash || valor.includes("#") || url.username || url.password) return false;
+        if (url.protocol === "https:") return true;
+        return url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname);
+      } catch {
+        return false;
+      }
+    },
+    {
+      error:
+        "URL de retorno inválida: use https (http só em localhost), sem # nem usuário/senha na URL.",
+    },
+  );
+
 // Domínio puro, minúsculo, sem esquema nem porta (ex.: "exemplo.com").
 const esquemaRpId = z
   .string()
@@ -235,6 +261,10 @@ const camposAplicacao = {
     .transform((lista) => [...new Set(lista)]),
   // null = sem passkeys próprias (cai no RP ID do ambiente).
   passkeyRpId: esquemaRpId.nullable(),
+  redirectUris: z
+    .array(esquemaRedirectUri)
+    .max(20, { error: "No máximo 20 URLs de retorno por aplicação." })
+    .transform((lista) => [...new Set(lista)]),
   emailRemetente: z.preprocess(
     (valor) => (typeof valor === "string" && valor.trim() === "" ? null : valor),
     z.email({ error: "Remetente inválido: informe só o endereço (ex.: seguranca@cliente.com)." }).trim().toLowerCase().nullable(),
@@ -247,6 +277,7 @@ export const esquemaCriarAplicacao = z.object({
   nome: camposAplicacao.nome,
   origens: camposAplicacao.origens.default([]),
   passkeyRpId: camposAplicacao.passkeyRpId.optional().default(null),
+  redirectUris: camposAplicacao.redirectUris.default([]),
   emailRemetente: camposAplicacao.emailRemetente.optional().default(null),
   urlLinks: camposAplicacao.urlLinks.optional().default(null),
   logoUrl: camposAplicacao.logoUrl.optional().default(null),
@@ -257,6 +288,7 @@ export const esquemaAtualizarAplicacao = z
     nome: camposAplicacao.nome.optional(),
     origens: camposAplicacao.origens.optional(),
     passkeyRpId: camposAplicacao.passkeyRpId.optional(),
+    redirectUris: camposAplicacao.redirectUris.optional(),
     emailRemetente: camposAplicacao.emailRemetente.optional(),
     urlLinks: camposAplicacao.urlLinks.optional(),
     logoUrl: camposAplicacao.logoUrl.optional(),

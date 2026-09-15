@@ -27,6 +27,11 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
       },
       {
+        // Discovery do OpenID Connect: público pelo mesmo motivo do JWKS.
+        source: "/.well-known/openid-configuration",
+        headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+      },
+      {
         source: "/:path*",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },

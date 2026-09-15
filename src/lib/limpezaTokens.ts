@@ -57,6 +57,13 @@ export async function limparTokensExpirados(): Promise<ResultadoLimpeza> {
     where: { expiraEm: { lt: agora } },
   });
 
+  // Códigos de autorização OIDC vivem 60 s. Guardados por um dia depois de
+  // vencer: um código reapresentado nesse intervalo ainda é reconhecido como
+  // "já usado" e derruba a sessão emitida com ele (ver src/lib/oidc.ts).
+  await prisma.codigoAutorizacao.deleteMany({
+    where: { expiraEm: { lt: new Date(agora.getTime() - 24 * 60 * 60 * 1000) } },
+  });
+
   return {
     tokens: tokens.count,
     auditoria: auditoria.count,

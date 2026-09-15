@@ -106,7 +106,40 @@ CORS: o provedor responde ao preflight só para origens cadastradas em
 aplicações ativas. Cookies do provedor não são usados entre domínios; os tokens
 vêm no corpo das respostas.
 
-## 3. No navegador (SDK)
+## 3. Login hospedado (OpenID Connect) — o caminho recomendado
+
+Em vez de montar formulários de login no seu site, mande o usuário para a tela
+do provedor. Ele entra lá (com MFA, captcha e todas as proteções) e volta para
+o seu site com um código, que o seu backend troca por tokens. Seu site nunca
+vê a senha. Funciona com qualquer biblioteca OpenID Connect (next-auth /
+Auth.js, openid-client, Spring Security, ASP.NET, Passport).
+
+**Pré-requisitos no painel:** aplicação **aprovada** por quem opera o provedor
+e a URL de retorno cadastrada em "URLs de retorno (login hospedado)".
+
+| Configuração da biblioteca | Valor |
+|---|---|
+| Issuer / Discovery | `https://auth.suaempresa.com.br` (`/.well-known/openid-configuration`) |
+| Client ID | o `app_...` do painel |
+| Client secret | o `sec_...` (backend). SPA sem backend: não use o secret (cliente público) |
+| Redirect URI | exatamente uma das URLs cadastradas |
+| Scopes | `openid email profile` (+ `offline_access` para receber refresh token) |
+| PKCE | obrigatório, `S256` |
+
+Regras que o provedor aplica e você não precisa reimplementar:
+
+- `redirect_uri` comparado por igualdade exata com o cadastro (sem prefixo).
+- Código de autorização de uso único, válido por 60 segundos. Reapresentado
+  depois de trocado, derruba a sessão emitida com ele.
+- `id_token` RS256 com `iss` = issuer, `aud` = client ID e `nonce` ecoado.
+  Valide com o JWKS do discovery.
+- A resposta de retorno traz `iss` (RFC 9207): confira se é o issuer esperado.
+- Sem sessão única (SSO) por enquanto: cada login passa pela tela.
+
+Endpoints: `GET /autorizar`, `POST /api/oidc/token` (`authorization_code` e
+`refresh_token`), `GET /api/oidc/userinfo`.
+
+## 3.1. Formulários próprios (SDK)
 
 ```ts
 import { ClienteAuthGateway } from "auth-gateway-sdk";
