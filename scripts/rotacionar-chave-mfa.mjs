@@ -99,7 +99,7 @@ async function principal() {
     try {
       segredoPlano = decifrarCom(chaveAtual, iv, authTag, ciphertext);
       jaNaChaveAtual = versionado;
-    } catch (erroComChaveAtual) {
+    } catch {
       if (!chaveAnterior) {
         falhas++;
         console.error(

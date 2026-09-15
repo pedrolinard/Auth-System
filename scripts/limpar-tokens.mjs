@@ -18,10 +18,12 @@ const resposta = await fetch(`${baseUrl}/api/cron/limpar-tokens`, {
   headers: { Authorization: `Bearer ${cronSecret}` },
 });
 
-const corpo = await resposta.json();
+// Um 500 sem corpo (ou uma página de erro HTML de proxy) não pode derrubar o
+// script com um erro de JSON que esconde o status real.
+const corpo = await resposta.json().catch(() => null);
 
-if (!resposta.ok) {
-  console.error(`Falha na limpeza (status ${resposta.status}):`, corpo);
+if (!resposta.ok || !corpo) {
+  console.error(`Falha na limpeza (status ${resposta.status}):`, corpo ?? "(resposta sem JSON)");
   process.exit(1);
 }
 
@@ -29,6 +31,6 @@ const d = corpo.detalhe ?? {};
 console.log(
   `Limpeza concluída: ${corpo.removidos} registro(s) removido(s)` +
     (corpo.detalhe
-      ? ` (tokens: ${d.tokens}, auditoria: ${d.auditoria}, desafios MFA: ${d.desafiosMfa}).`
+      ? ` (tokens: ${d.tokens}, auditoria: ${d.auditoria}, desafios MFA: ${d.desafiosMfa}, rate limit: ${d.limitesTaxa}).`
       : "."),
 );

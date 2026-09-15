@@ -2,9 +2,15 @@ import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { gerarTokenConviteOrganizacao } from "@/lib/token";
 import {
+  apagarAplicacoesTeste,
   apagarUsuariosTeste,
   BASE_URL,
+  cabecalhoCookie,
+  cabecalhosAplicacao,
+  criarAplicacaoTeste,
   criarUsuarioTeste,
+  extrairTodosCookies,
+  gerarEmailTeste,
   ipAleatorio,
   loginTeste,
 } from "../helpers";
@@ -23,6 +29,32 @@ async function obterOrganizacaoDoUsuario(email: string) {
 describe("Organizações — criar, listar, trocar", () => {
   afterAll(async () => {
     await apagarUsuariosTeste(emailsCriados);
+  });
+
+  it("conta sem NENHUMA organização entra e ganha a organização pessoal (não 500)", async () => {
+    // Reproduz o caso real de produção (2026-09-15): conta criada pelo código
+    // anterior ao multi-tenant depois do backfill ficava sem Membro, e o login
+    // respondia 500 sem corpo ("Unexpected end of JSON input" na tela).
+    const orfa = await criarUsuarioTeste("org-conta-orfa");
+    emailsCriados.push(orfa.email);
+    const { usuario } = await obterOrganizacaoDoUsuario(orfa.email);
+    await prisma.organizacao.deleteMany({ where: { membros: { some: { usuarioId: usuario.id } } } });
+    expect(await prisma.membro.count({ where: { usuarioId: usuario.id } })).toBe(0);
+
+    const { resposta } = await loginTeste(orfa.email, orfa.senha);
+    expect(resposta.status).toBe(200);
+
+    const membros = await prisma.membro.findMany({
+      where: { usuarioId: usuario.id },
+      include: { organizacao: true },
+    });
+    expect(membros).toHaveLength(1);
+    expect(membros[0].papel).toBe("dono");
+    expect(membros[0].organizacao.aplicacaoId).toBe(usuario.aplicacaoId);
+
+    // Segundo login não cria outra.
+    await loginTeste(orfa.email, orfa.senha);
+    expect(await prisma.membro.count({ where: { usuarioId: usuario.id } })).toBe(1);
   });
 
   it("cria organização nova e já entra nela (sessão reemitida)", async () => {
@@ -142,7 +174,10 @@ describe("Convites de organização", () => {
     const dono = await criarUsuarioTeste("convite-criar");
     emailsCriados.push(dono.email);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
-    const emailConvidado = "convidado@teste.local";
+    // Único por execução: o limite de convites por e-mail-alvo (5/h) sobrevive
+    // entre rodadas no banco de teste, e com endereço fixo o segundo convite
+    // abaixo voltava 429 em silêncio.
+    const emailConvidado = gerarEmailTeste("convidado");
 
     const respostaCriar = await fetch(`${BASE_URL}/api/auth/organizacoes/convites`, {
       method: "POST",
@@ -160,11 +195,12 @@ describe("Convites de organização", () => {
     );
 
     // Convidar de novo pro MESMO e-mail reaproveita a linha, não duplica.
-    await fetch(`${BASE_URL}/api/auth/organizacoes/convites`, {
+    const respostaReconvidar = await fetch(`${BASE_URL}/api/auth/organizacoes/convites`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...cabecalhos },
       body: JSON.stringify({ email: emailConvidado, papel: "admin" }),
     });
+    expect(respostaReconvidar.status).toBe(201);
     const respostaLista2 = await fetch(`${BASE_URL}/api/auth/organizacoes/convites`, {
       headers: cabecalhos,
     });
@@ -295,7 +331,8 @@ describe("Convites de organização", () => {
     emailsCriados.push(dono.email);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
     const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
-    const emailConvidado = "sera-cancelado@teste.local";
+    // Único por execução — mesmo motivo do teste de criar convite acima.
+    const emailConvidado = gerarEmailTeste("sera-cancelado");
 
     const respostaCriar = await fetch(`${BASE_URL}/api/auth/organizacoes/convites`, {
       method: "POST",
@@ -349,7 +386,10 @@ describe("Convites de organização", () => {
     const dono = await criarUsuarioTeste("convite-rate-limit-email");
     emailsCriados.push(dono.email);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
-    const emailAlvo = "alvo-de-spam@teste.local";
+    // Único por execução: o contador por e-mail-alvo dura 1h no banco de
+    // teste, e um endereço fixo fazia a segunda rodada da suíte dentro dessa
+    // hora receber 429 já no primeiro convite.
+    const emailAlvo = gerarEmailTeste("alvo-de-spam");
 
     async function convidar() {
       return fetch(`${BASE_URL}/api/auth/organizacoes/convites`, {
@@ -409,5 +449,81 @@ describe("Convites de organização", () => {
       },
     });
     expect(membro).not.toBeNull();
+  });
+
+  it("convite de organização de OUTRA aplicação é recusado, mesmo com o e-mail certo", async () => {
+    // O e-mail só é único dentro da aplicação: a mesma pessoa com conta em
+    // dois clientes não pode, logada no cliente B, entrar numa organização do
+    // cliente A aceitando o convite dela.
+    const dono = await criarUsuarioTeste("convite-outra-app-dono");
+    emailsCriados.push(dono.email);
+    const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+
+    const outraAplicacao = await criarAplicacaoTeste("Outro cliente");
+    try {
+      const email = gerarEmailTeste("convite-outra-app-alvo");
+      const comApp = cabecalhosAplicacao(outraAplicacao);
+      await fetch(`${BASE_URL}/api/auth/cadastro`, {
+        method: "POST",
+        headers: comApp,
+        body: JSON.stringify({ nome: "Pessoa do cliente B", email, senha: "SenhaForte123!" }),
+      });
+      const login = await fetch(`${BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: comApp,
+        body: JSON.stringify({ email, senha: "SenhaForte123!" }),
+      });
+      expect(login.status).toBe(200);
+      const cookies = extrairTodosCookies(login);
+
+      const convite = await prisma.conviteOrganizacao.create({
+        data: { organizacaoId, email, papel: "membro", criadoPorId: donoRegistro.id },
+      });
+      const token = await gerarTokenConviteOrganizacao({ conviteId: convite.id, organizacaoId, email, papel: "membro" });
+
+      const resposta = await fetch(`${BASE_URL}/api/auth/organizacoes/aceitar-convite`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: cabecalhoCookie(cookies),
+          "X-CSRF-Token": cookies.csrfToken,
+        },
+        body: JSON.stringify({ token }),
+      });
+      expect(resposta.status).toBe(403);
+      expect(await prisma.membro.count({ where: { organizacaoId, usuario: { email } } })).toBe(0);
+    } finally {
+      await apagarAplicacoesTeste([outraAplicacao.id]);
+    }
+  });
+
+  it("aceitar convite de organização em que a pessoa está suspensa responde 403, não 500", async () => {
+    const dono = await criarUsuarioTeste("convite-suspenso-dono");
+    const convidado = await criarUsuarioTeste("convite-suspenso-alvo");
+    emailsCriados.push(dono.email, convidado.email);
+    const { organizacaoId } = await obterOrganizacaoDoUsuario(dono.email);
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const convidadoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: convidado.email } });
+    await prisma.membro.create({
+      data: { organizacaoId, usuarioId: convidadoRegistro.id, papel: "membro", suspenso: true },
+    });
+    const convite = await prisma.conviteOrganizacao.create({
+      data: { organizacaoId, email: convidado.email, papel: "membro", criadoPorId: donoRegistro.id },
+    });
+    const token = await gerarTokenConviteOrganizacao({
+      conviteId: convite.id,
+      organizacaoId,
+      email: convidado.email,
+      papel: "membro",
+    });
+    const { cabecalhos } = await loginTeste(convidado.email, convidado.senha);
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/organizacoes/aceitar-convite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...cabecalhos },
+      body: JSON.stringify({ token }),
+    });
+    expect(resposta.status).toBe(403);
   });
 });

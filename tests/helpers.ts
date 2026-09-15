@@ -1,4 +1,48 @@
+import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db";
+
+export type AplicacaoTeste = { id: string; clientId: string; clientSecret: string };
+
+// Aplicação cliente com client secret, criada direto no banco. Chamada de
+// servidor (sem Origin) de uma aplicação cliente exige o segredo — ver
+// autenticarAplicacao em src/lib/aplicacao.ts.
+export async function criarAplicacaoTeste(
+  nome: string,
+  opcoes: { origens?: string[] } = {},
+): Promise<AplicacaoTeste> {
+  const clientSecret = `sec_teste_${randomBytes(16).toString("hex")}`;
+  const aplicacao = await prisma.aplicacao.create({
+    data: {
+      nome,
+      clientId: `app_teste_${randomBytes(6).toString("hex")}`,
+      clientSecretHash: createHash("sha256").update(clientSecret).digest("hex"),
+      origens: opcoes.origens ?? [],
+    },
+    select: { id: true, clientId: true },
+  });
+  return { ...aplicacao, clientSecret };
+}
+
+// Headers de uma chamada de SERVIDOR em nome da aplicação.
+export function cabecalhosAplicacao(
+  aplicacao: { clientId: string; clientSecret: string },
+  ip: string = ipAleatorio(),
+): Record<string, string> {
+  return {
+    "Content-Type": "application/json",
+    "X-Forwarded-For": ip,
+    "x-aplicacao-id": aplicacao.clientId,
+    "x-aplicacao-segredo": aplicacao.clientSecret,
+  };
+}
+
+// Apaga as aplicações e tudo que ficou preso a elas (o Restrict de Usuario e
+// Organizacao impede apagar a aplicação antes).
+export async function apagarAplicacoesTeste(ids: string[]) {
+  await prisma.usuario.deleteMany({ where: { aplicacaoId: { in: ids } } });
+  await prisma.organizacao.deleteMany({ where: { aplicacaoId: { in: ids } } });
+  await prisma.aplicacao.deleteMany({ where: { id: { in: ids } } });
+}
 
 export const BASE_URL = "http://localhost:3100";
 export const SENHA_TESTE = "SenhaForte123!";
@@ -78,18 +122,36 @@ export async function loginTeste(
     resposta,
     cookies,
     // Headers prontos pra reusar em requisições autenticadas + protegidas
-    // por CSRF (a maioria das mutações).
+    // por CSRF (a maioria das mutações). Levam o mesmo IP simulado do login:
+    // sem ele, toda chamada autenticada da suíte caía no IP local e dividia os
+    // contadores de rate limit por IP (criar organização é 10/h) — algumas
+    // rodadas seguidas bastavam pra testes começarem a receber 429.
     cabecalhos: {
       Cookie: cabecalhoCookie(cookies),
       "X-CSRF-Token": cookies.csrfToken,
+      "X-Forwarded-For": ip,
     } as Record<string, string>,
   };
 }
 
 export async function apagarUsuarioTeste(email: string) {
-  await prisma.usuario.deleteMany({ where: { email } });
+  await apagarUsuariosTeste([email]);
 }
 
+// Apaga as contas E as organizações que ficariam sem nenhum membro depois
+// disso. Membro cai em cascata com a conta, mas Organizacao não — sem esta
+// segunda etapa, cada rodada da suíte deixava dezenas de organizações órfãs
+// no banco de teste.
 export async function apagarUsuariosTeste(emails: string[]) {
+  const organizacoes = await prisma.membro.findMany({
+    where: { usuario: { email: { in: emails } } },
+    select: { organizacaoId: true },
+  });
   await prisma.usuario.deleteMany({ where: { email: { in: emails } } });
+  await prisma.organizacao.deleteMany({
+    where: {
+      id: { in: organizacoes.map((o) => o.organizacaoId) },
+      membros: { none: {} },
+    },
+  });
 }

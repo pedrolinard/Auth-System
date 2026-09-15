@@ -68,6 +68,14 @@ export function checarConfigProducao(env: Env): ResultadoConfig {
     avisos.push(
       "RESEND_API_KEY não definida — nenhum e-mail é enviado de verdade (o conteúdo só vai para o log do servidor).",
     );
+  } else if (!definida(env, "EMAIL_FROM") || env.EMAIL_FROM!.includes("@resend.dev")) {
+    // Com a chave mas no remetente de teste do Resend, o envio "funciona" sem
+    // erro nenhum — só que o sandbox entrega apenas pro e-mail dono da conta
+    // Resend. Todo o resto (verificação, recuperação de senha, alertas de
+    // segurança) some em silêncio.
+    avisos.push(
+      "EMAIL_FROM ausente ou no domínio de teste do Resend (@resend.dev) — o sandbox só entrega para o dono da conta Resend; os e-mails para usuários não chegam. Verifique um domínio próprio no Resend.",
+    );
   }
 
   // Rollbar: os nomes têm o sufixo numérico gerado pela integração da Vercel
@@ -84,6 +92,14 @@ export function checarConfigProducao(env: Env): ResultadoConfig {
     ].filter(Boolean);
     avisos.push(
       `Rollbar sem token de ${faltando.join(" e ")} — erros inesperados desse lado não são reportados.`,
+    );
+  }
+
+  // DJANGO_SERVICE_URL: sem ela o rewrite de /api/dominio/* não é registrado
+  // (next.config.ts) — o painel sobe, mas projetos/tarefas respondem 404.
+  if (!definida(env, "DJANGO_SERVICE_URL")) {
+    avisos.push(
+      "DJANGO_SERVICE_URL não definida — /api/dominio/* não é encaminhado ao serviço Django (projetos e tarefas ficam indisponíveis).",
     );
   }
 

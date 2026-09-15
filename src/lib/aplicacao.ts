@@ -1,6 +1,10 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
+import { compararEmTempoConstante } from "@/lib/cripto";
 import { prisma } from "@/lib/db";
+import type { MarcaEmail } from "@/lib/email";
 
 // Header que o SDK manda com o clientId da aplicação. Ele SELECIONA o tenant
 // e nada mais: entra no `where` de toda leitura e no `data` de toda escrita,
@@ -9,12 +13,18 @@ import { prisma } from "@/lib/db";
 // ele é público por definição (vive no JavaScript do cliente).
 export const HEADER_APLICACAO = "x-aplicacao-id";
 
+// Header com o client secret — o que AUTENTICA a aplicação numa chamada de
+// servidor (ver autenticarAplicacao). Nunca vai no navegador.
+export const HEADER_SEGREDO_APLICACAO = "x-aplicacao-segredo";
+
 export type AplicacaoResolvida = {
   id: string;
   clientId: string;
   nome: string;
   origens: string[];
   passkeyRpId: string | null;
+  padrao: boolean;
+  clientSecretHash: string | null;
 };
 
 // Cache em memória do processo. A resolução acontece em TODA requisição de
@@ -61,6 +71,8 @@ function selecionar() {
     nome: true,
     origens: true,
     passkeyRpId: true,
+    padrao: true,
+    clientSecretHash: true,
   } as const;
 }
 
@@ -121,6 +133,116 @@ export async function obterAplicacaoPorId(id: string): Promise<AplicacaoResolvid
   });
   guardar(id, aplicacao);
   return aplicacao;
+}
+
+/**
+ * Marca e endereço base dos links dos e-mails de uma conta — os dois vêm da
+ * APLICAÇÃO DONA DA CONTA, nunca do header da requisição (um e-mail de
+ * redefinição de senha pedido "em nome" de outra aplicação não pode sair com
+ * a marca nem com os links dela). Aplicação padrão: sem marca e com os links
+ * nas páginas do próprio provedor, como sempre foi.
+ */
+export async function contextoEmail(
+  aplicacaoId: string,
+): Promise<{ marca: MarcaEmail; baseLinks: string }> {
+  const baseProvedor = process.env.BASE_URL ?? "http://localhost:3000";
+  const aplicacao = await prisma.aplicacao.findUnique({
+    where: { id: aplicacaoId },
+    select: { nome: true, padrao: true, emailRemetente: true, urlLinks: true, logoUrl: true },
+  });
+  if (!aplicacao || aplicacao.padrao) return { marca: null, baseLinks: baseProvedor };
+  return {
+    marca: { nome: aplicacao.nome, remetente: aplicacao.emailRemetente, logoUrl: aplicacao.logoUrl },
+    baseLinks: aplicacao.urlLinks ?? baseProvedor,
+  };
+}
+
+/**
+ * Se a aplicação dona de uma conta continua ativa. Sem cache de propósito:
+ * é usada nos passos que concluem um login iniciado ANTES (MFA, código de
+ * backup) — o desafio vive até 5 min, e desativar a aplicação nesse meio-tempo
+ * precisa barrar a conclusão na hora, não 30s depois.
+ */
+export async function aplicacaoEstaAtiva(aplicacaoId: string): Promise<boolean> {
+  const aplicacao = await prisma.aplicacao.findUnique({
+    where: { id: aplicacaoId },
+    select: { ativa: true },
+  });
+  return aplicacao?.ativa === true;
+}
+
+export type ResultadoAutenticacaoAplicacao =
+  | { ok: true; aplicacao: AplicacaoResolvida }
+  | { ok: false; status: 400 | 401 | 403; erro: string };
+
+/**
+ * Resolve a aplicação da requisição E confere que quem fala por ela tem
+ * direito — é o ponto de entrada das rotas públicas de auth (cadastro, login,
+ * esqueci-senha, login por passkey).
+ *
+ * O clientId sozinho não prova nada: é público. Então, pra uma aplicação
+ * cliente:
+ *
+ * - chamada de NAVEGADOR (tem header Origin): a origem precisa estar
+ *   cadastrada. Lista vazia recusa — antes, uma aplicação sem origens aceitava
+ *   qualquer site, e qualquer página na internet podia montar um formulário
+ *   de login falando em nome dela.
+ * - chamada de SERVIDOR (sem Origin): exige o client secret. Sem origem não
+ *   há navegador pra conferir, e era exatamente o caso que a allowlist de
+ *   origens deixava passar sem checagem nenhuma.
+ *
+ * A aplicação padrão (o próprio painel) segue a regra anterior: é quem serve
+ * as páginas deste projeto e o serviço Django, na mesma origem.
+ */
+export async function autenticarAplicacao(req: Request): Promise<ResultadoAutenticacaoAplicacao> {
+  const aplicacao = await resolverAplicacao(req);
+  if (!aplicacao) {
+    return { ok: false, status: 400, erro: "Aplicação inválida ou desativada." };
+  }
+
+  if (aplicacao.padrao) {
+    return origemPermitida(aplicacao, req)
+      ? { ok: true, aplicacao }
+      : { ok: false, status: 403, erro: "Origem não autorizada para esta aplicação." };
+  }
+
+  const origem = req.headers.get("origin");
+  if (origem) {
+    return aplicacao.origens.includes(origem)
+      ? { ok: true, aplicacao }
+      : { ok: false, status: 403, erro: "Origem não autorizada para esta aplicação." };
+  }
+
+  const segredo = req.headers.get(HEADER_SEGREDO_APLICACAO);
+  const segredoConfere =
+    !!segredo &&
+    !!aplicacao.clientSecretHash &&
+    compararEmTempoConstante(
+      createHash("sha256").update(segredo).digest("hex"),
+      aplicacao.clientSecretHash,
+    );
+  return segredoConfere
+    ? { ok: true, aplicacao }
+    : { ok: false, status: 401, erro: "Credencial da aplicação ausente ou inválida." };
+}
+
+/**
+ * Se alguma aplicação ativa declarou esta origem — é a pergunta do preflight
+ * CORS, que chega sem o header x-aplicacao-id (o navegador só informa QUAIS
+ * headers vai mandar, não os valores). A checagem de que a origem é da
+ * aplicação CERTA acontece depois, na própria rota, por autenticarAplicacao.
+ */
+export async function origemDeAlgumaAplicacao(origem: string): Promise<boolean> {
+  const chave = `\0origem:${origem}`;
+  const emCache = doCache(chave);
+  if (emCache) return emCache.valor !== null;
+
+  const aplicacao = await prisma.aplicacao.findFirst({
+    where: { ativa: true, origens: { has: origem } },
+    select: selecionar(),
+  });
+  guardar(chave, aplicacao);
+  return aplicacao !== null;
 }
 
 /**

@@ -19,7 +19,7 @@ function gerarUmCodigo(): string {
     // randomInt faz rejection sampling internamente (crypto.randomInt do
     // node:crypto) — evita o viés de módulo que rolaria com
     // Math.random() % alfabeto.length ou um simples `% length` sobre bytes
-    // aleatórios, já que 29 não é potência de 2.
+    // aleatórios, já que 31 não é potência de 2.
     bruto += ALFABETO[randomInt(ALFABETO.length)];
   }
   return `${bruto.slice(0, 5)}-${bruto.slice(5)}`;

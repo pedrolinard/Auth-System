@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { contextoEmail } from "@/lib/aplicacao";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
@@ -51,8 +52,8 @@ export async function POST(req: Request) {
   }
 
   const token = await gerarTokenVerificacaoEmail(usuario.id);
-  const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
-  await enviarEmailVerificacao(usuario.email, `${baseUrl}/verificar-email?token=${token}`);
+  const { marca, baseLinks } = await contextoEmail(usuario.aplicacaoId);
+  await enviarEmailVerificacao(usuario.email, `${baseLinks}/verificar-email?token=${token}`, marca);
 
   return NextResponse.json({ sucesso: true });
 }

@@ -12,7 +12,10 @@ import {
 import { csrfValido, gerarTokenCsrf } from "@/lib/csrf";
 import { obterGeo } from "@/lib/geo";
 import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
-import { resolverOrganizacaoAtiva } from "@/lib/sessao";
+import { aplicacaoEstaAtiva, contextoEmail } from "@/lib/aplicacao";
+import { revogacao, revogacaoIndicaRoubo } from "@/lib/revogacao";
+import { bloqueioPorSuspensao, resolverOrganizacaoAtiva } from "@/lib/sessao";
+import { estaSuspenso } from "@/lib/suspensao";
 import {
   gerarTokenAcesso,
   gerarTokenAtualizacao,
@@ -90,23 +93,41 @@ export async function POST(req: Request) {
     return recusarTokenInvalido();
   }
 
-  // Um token de atualização já revogado sendo reapresentado é o sinal
-  // clássico de roubo: a rotação já emitiu um substituto, então só existem
-  // duas explicações — o dono legítimo reusou uma cópia antiga por engano,
-  // ou um atacante está com o token vazado. Não dá pra distinguir os dois,
-  // então a resposta segura é derrubar a família inteira (todas as sessões
-  // do usuário), invalidando tanto o atacante quanto a sessão legítima.
+  // Aplicação desativada não renova sessão — inclusive uma que tenha escapado
+  // da revogação em massa (criada por outra instância durante os até 30s de
+  // cache da aplicação, ver aplicacao.ts).
+  if (!(await aplicacaoEstaAtiva(registroToken.usuario.aplicacaoId))) {
+    return recusarTokenInvalido();
+  }
+
   if (registroToken.revogadoEm) {
+    // Revogado por outro motivo que não a rotação (logout, troca de senha,
+    // suspensão, limite de sessões...): o navegador da pessoa reapresentar
+    // esse token é o esperado — ele não tem como saber que a sessão caiu.
+    // Só recusa. Ver src/lib/revogacao.ts.
+    if (!revogacaoIndicaRoubo(registroToken.revogadoMotivo)) {
+      return recusarTokenInvalido();
+    }
+    // Revogado pela ROTAÇÃO e reapresentado: o sinal clássico de roubo. A
+    // rotação já emitiu um substituto, então só existem duas explicações — o
+    // dono legítimo reusou uma cópia antiga por engano, ou um atacante está
+    // com o token vazado. Não dá pra distinguir, então a resposta segura é
+    // derrubar a família inteira (todas as sessões do usuário). O motivo
+    // gravado é outro ("reuso_detectado"), senão cada reapresentação de um
+    // desses tokens dispararia o alerta de novo.
     await prisma.tokenAtualizacao.updateMany({
       where: { usuarioId: registroToken.usuarioId, revogadoEm: null },
-      data: { revogadoEm: new Date() },
+      data: revogacao("reuso_detectado"),
     });
     await registrarEvento({
       req,
       evento: "reuso_token_detectado",
       usuarioId: registroToken.usuarioId,
     });
-    await enviarEmailReusoTokenDetectado(registroToken.usuario.email);
+    await enviarEmailReusoTokenDetectado(
+      registroToken.usuario.email,
+      (await contextoEmail(registroToken.usuario.aplicacaoId)).marca,
+    );
     return recusarTokenInvalido();
   }
 
@@ -122,16 +143,22 @@ export async function POST(req: Request) {
   // último login, o token renovado já reflete o valor atual.
   let organizacaoId = registroToken.organizacaoId;
   if (!organizacaoId) {
+    // Sem organização acessível (suspenso em todas) é recusa, não 500.
+    if (await bloqueioPorSuspensao(registroToken.usuarioId)) {
+      return recusarTokenInvalido();
+    }
     organizacaoId = (await resolverOrganizacaoAtiva(registroToken.usuarioId)).organizacaoId;
   }
   const membro = await prisma.membro.findUnique({
     where: { organizacaoId_usuarioId: { organizacaoId, usuarioId: registroToken.usuarioId } },
-    select: { papel: true },
+    select: { papel: true, suspenso: true, suspensoAte: true },
   });
-  if (!membro) {
-    // Foi removido da organização (ou ela foi excluída) desde o login —
-    // sessão não faz mais sentido pra essa organização, trata como token
-    // inválido em vez de reemitir acesso a algo que não existe mais.
+  if (!membro || estaSuspenso(membro)) {
+    // Foi removido da organização (ou ela foi excluída), ou suspenso nela,
+    // desde o login — sessão não faz mais sentido pra essa organização, trata
+    // como token inválido em vez de reemitir acesso. Suspender já revoga as
+    // sessões da organização; isto cobre a sessão que escapou disso (ex.:
+    // sessão antiga sem organizacaoId, resolvida pelo fallback acima).
     return recusarTokenInvalido();
   }
 
@@ -144,12 +171,19 @@ export async function POST(req: Request) {
   const geo = obterGeo(req);
 
   try {
-    await prisma.$transaction([
-      prisma.tokenAtualizacao.update({
-        where: { id: registroToken.id },
-        data: { revogadoEm: new Date() },
-      }),
-      prisma.tokenAtualizacao.create({
+    const rotacionou = await prisma.$transaction(async (tx) => {
+      // Só revoga se o token AINDA estiver ativo, e o motivo vai no mesmo
+      // update (não existe instante com o token revogado sem motivo). Sem o
+      // `revogadoEm: null`, duas renovações simultâneas do mesmo token (duas
+      // abas, ou o dono e um ladrão ao mesmo tempo) passavam as duas pela
+      // checagem lá em cima e abriam duas sessões — e uma suspensão que
+      // caísse nesse intervalo tinha o motivo sobrescrito e a sessão renovada.
+      const { count } = await tx.tokenAtualizacao.updateMany({
+        where: { id: registroToken.id, revogadoEm: null },
+        data: revogacao("rotacao"),
+      });
+      if (count !== 1) return false;
+      await tx.tokenAtualizacao.create({
         data: {
           tokenHash: hashToken(novoTokenAtualizacao),
           usuarioId: registroToken.usuarioId,
@@ -161,8 +195,17 @@ export async function POST(req: Request) {
           geoRegiao: geo.regiao,
           geoPais: geo.pais,
         },
-      }),
-    ]);
+      });
+      return true;
+    });
+    if (!rotacionou) {
+      // Perdeu a corrida pra outra renovação (ou uma revogação) do mesmo
+      // token. Só recusa — NÃO é reuso: duas abas renovando juntas é o caso
+      // comum, e o navegador serializa as renovações entre abas
+      // (tentarAtualizarToken em clienteAuth.ts), então a próxima tentativa
+      // já sai com o cookie novo.
+      return NextResponse.json(RESPOSTA_TOKEN_INVALIDO, { status: 401 });
+    }
   } catch (erro) {
     console.error("Falha ao rotacionar token de atualização:", erro);
     return NextResponse.json(

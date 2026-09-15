@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolverAplicacao } from "@/lib/aplicacao";
+import { autenticarAplicacao } from "@/lib/aplicacao";
 import { gerarOpcoesLoginPasskey } from "@/lib/passkey";
 import { gerarTokenDesafioPasskey } from "@/lib/token";
 
@@ -14,10 +14,13 @@ import { gerarTokenDesafioPasskey } from "@/lib/token";
 export async function POST(req: Request) {
   // Aqui a aplicação vem do header mesmo: ninguém está autenticado ainda, e o
   // que precisamos saber é a QUAL domínio pedir a credencial.
-  const aplicacao = await resolverAplicacao(req);
-  if (!aplicacao) {
-    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  // Origem cadastrada (navegador) ou client secret (servidor) — ver
+  // autenticarAplicacao em src/lib/aplicacao.ts.
+  const acessoAplicacao = await autenticarAplicacao(req);
+  if (!acessoAplicacao.ok) {
+    return NextResponse.json({ erro: acessoAplicacao.erro }, { status: acessoAplicacao.status });
   }
+  const { aplicacao } = acessoAplicacao;
   const options = await gerarOpcoesLoginPasskey(aplicacao);
   const { token: passkeyToken } = await gerarTokenDesafioPasskey(options.challenge);
 

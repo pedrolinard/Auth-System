@@ -1,12 +1,13 @@
 "use client";
 
-import { cabecalhoCsrf, mensagemErro, tentarAtualizarToken } from "./clienteAuth";
+import { cabecalhoCsrf, lerCorpo, mensagemErro, tentarAtualizarToken } from "./clienteAuth";
 
 export type Organizacao = {
   id: string;
   nome: string;
   slug: string;
   papel: "dono" | "admin" | "membro";
+  suspenso: boolean;
 };
 
 export type ConviteOrganizacao = {
@@ -46,7 +47,7 @@ async function requisicaoAutenticada(
 
 export async function listarOrganizacoes(): Promise<Organizacao[]> {
   const resposta = await requisicaoAutenticada("/api/auth/organizacoes");
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao carregar organizações."));
   return corpo.organizacoes;
 }
@@ -57,7 +58,7 @@ export async function criarOrganizacao(nome: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ nome }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao criar organização."));
   return corpo;
 }
@@ -70,14 +71,14 @@ export async function entrarNaOrganizacao(id: string) {
   const resposta = await requisicaoAutenticada(`/api/auth/organizacoes/${id}/entrar`, {
     method: "POST",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao trocar de organização."));
   return corpo;
 }
 
 export async function listarConvites(): Promise<ConviteOrganizacao[]> {
   const resposta = await requisicaoAutenticada("/api/auth/organizacoes/convites");
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao carregar convites."));
   return corpo.convites;
 }
@@ -88,7 +89,7 @@ export async function criarConvite(dados: { email: string; papel: "admin" | "mem
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao enviar convite."));
   return corpo;
 }
@@ -97,7 +98,7 @@ export async function revogarConvite(id: string) {
   const resposta = await requisicaoAutenticada(`/api/auth/organizacoes/convites/${id}`, {
     method: "DELETE",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao cancelar convite."));
 }
 
@@ -107,7 +108,7 @@ export async function aceitarConvite(token: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao aceitar convite."));
   return corpo;
 }

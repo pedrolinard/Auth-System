@@ -5,6 +5,7 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { obterMembroDaOrganizacao, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
+import { revogacao } from "@/lib/revogacao";
 
 // Remove o alvo da organização ativa — NÃO exclui a conta (Usuario) dele.
 // Antes do multi-tenant esta rota excluía a conta inteira; virou remoção de
@@ -71,7 +72,7 @@ export async function DELETE(
   // próxima tentativa (atualizar/route.ts relê o Membro a cada renovação).
   await prisma.tokenAtualizacao.updateMany({
     where: { usuarioId: id, organizacaoId: payload.organizacaoId, revogadoEm: null },
-    data: { revogadoEm: new Date() },
+    data: revogacao("remocao_organizacao"),
   });
 
   await registrarEvento({

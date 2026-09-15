@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { contextoEmail } from "@/lib/aplicacao";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
@@ -142,11 +143,13 @@ export async function POST(req: Request) {
     email,
     papel,
   });
-  const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
-  await enviarEmailConviteOrganizacao(email, `${baseUrl}/aceitar-convite?token=${token}`, {
-    organizacaoNome: organizacao.nome,
-    convidadoPorNome: remetente.nome,
-  });
+  const { marca, baseLinks } = await contextoEmail(organizacao.aplicacaoId);
+  await enviarEmailConviteOrganizacao(
+    email,
+    `${baseLinks}/aceitar-convite?token=${token}`,
+    { organizacaoNome: organizacao.nome, convidadoPorNome: remetente.nome },
+    marca,
+  );
 
   await registrarEvento({
     req,

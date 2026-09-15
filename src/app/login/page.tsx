@@ -5,11 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Fingerprint } from "lucide-react";
 import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
-import { entrar, entrarComPasskey, ErroCaptchaNecessario, verificarMfaLogin } from "@/lib/clienteAuth";
+import {
+  entrar,
+  entrarComPasskey,
+  ErroCaptchaNecessario,
+  verificarCodigoBackupLogin,
+  verificarMfaLogin,
+} from "@/lib/clienteAuth";
 import { CampoSenha } from "@/components/CampoSenha";
 import { DesafioTurnstile } from "@/components/DesafioTurnstile";
 import { CascaAuth, LinkAuth } from "@/components/auth/CascaAuth";
 import { AvisoErro } from "@/components/ui/AvisoErro";
+import { notificar } from "@/components/ui/Toaster";
 
 export default function PaginaLogin() {
   const router = useRouter();
@@ -18,6 +25,7 @@ export default function PaginaLogin() {
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [codigo, setCodigo] = useState("");
   const [lembrarDispositivo, setLembrarDispositivo] = useState(false);
+  const [usandoBackup, setUsandoBackup] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
 
@@ -89,7 +97,18 @@ export default function PaginaLogin() {
     setErro(null);
     setCarregando(true);
     try {
-      await verificarMfaLogin({ mfaToken, codigo, lembrarDispositivo });
+      if (usandoBackup) {
+        const { codigosBackupRestantes } = await verificarCodigoBackupLogin({ mfaToken, codigo });
+        // Poucos códigos sobrando é o momento de avisar: quem chegou até
+        // aqui provavelmente perdeu o autenticador.
+        if (codigosBackupRestantes <= 3) {
+          notificar.info(
+            `Restam ${codigosBackupRestantes} código(s) de backup. Gere novos em Segurança.`,
+          );
+        }
+      } else {
+        await verificarMfaLogin({ mfaToken, codigo, lembrarDispositivo });
+      }
       router.push("/dashboard");
       router.refresh();
     } catch (erroCapturado) {
@@ -104,50 +123,95 @@ export default function PaginaLogin() {
   }
 
   if (mfaToken) {
+    // Código de backup: 10 caracteres do alfabeto de src/lib/backupMfa.ts,
+    // com hífen opcional no meio (o servidor normaliza os dois formatos).
+    const codigoBackupCompleto = codigo.replace("-", "").length === 10;
     return (
       <CascaAuth
         titulo="Só falta o código"
-        descricao="Passo 2 de 2 — abra seu aplicativo autenticador e digite os 6 dígitos."
+        descricao={
+          usandoBackup
+            ? "Passo 2 de 2 — digite um dos códigos de backup que você guardou ao ativar a verificação em duas etapas."
+            : "Passo 2 de 2 — abra seu aplicativo autenticador e digite os 6 dígitos."
+        }
       >
         <form onSubmit={aoEnviarCodigoMfa} className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="codigo" className="text-sm text-zinc-600 dark:text-zinc-400">
-              Código
+              {usandoBackup ? "Código de backup" : "Código"}
             </label>
-            <input
-              id="codigo"
-              name="codigo"
-              inputMode="numeric"
-              pattern="\d{6}"
-              maxLength={6}
-              required
-              autoFocus
-              value={codigo}
-              onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))}
-              className="input-field text-center font-mono text-lg tracking-[0.5em]"
-            />
+            {usandoBackup ? (
+              <input
+                key="codigo-backup"
+                id="codigo"
+                name="codigo"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={11}
+                required
+                autoFocus
+                placeholder="XXXXX-XXXXX"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ""))}
+                className="input-field text-center font-mono text-lg tracking-[0.2em]"
+              />
+            ) : (
+              <input
+                key="codigo-totp"
+                id="codigo"
+                name="codigo"
+                inputMode="numeric"
+                pattern="\d{6}"
+                maxLength={6}
+                required
+                autoFocus
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ""))}
+                className="input-field text-center font-mono text-lg tracking-[0.5em]"
+              />
+            )}
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-            <input
-              type="checkbox"
-              checked={lembrarDispositivo}
-              onChange={(e) => setLembrarDispositivo(e.target.checked)}
-              className="h-4 w-4 rounded border-black/[.2] accent-[var(--accent)] dark:border-white/[.2]"
-            />
-            Confiar neste dispositivo por 30 dias
-          </label>
+          {!usandoBackup && (
+            <label className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+              <input
+                type="checkbox"
+                checked={lembrarDispositivo}
+                onChange={(e) => setLembrarDispositivo(e.target.checked)}
+                className="h-4 w-4 rounded border-black/[.2] accent-[var(--accent)] dark:border-white/[.2]"
+              />
+              Confiar neste dispositivo por 30 dias
+            </label>
+          )}
 
           <AvisoErro>{erro}</AvisoErro>
 
-          <button type="submit" disabled={carregando || codigo.length !== 6} className="btn-primary mt-1">
+          <button
+            type="submit"
+            disabled={carregando || (usandoBackup ? !codigoBackupCompleto : codigo.length !== 6)}
+            className="btn-primary mt-1"
+          >
             {carregando ? "Verificando..." : "Verificar"}
           </button>
 
           <button
             type="button"
             onClick={() => {
+              setUsandoBackup((atual) => !atual);
+              setCodigo("");
+              setErro(null);
+            }}
+            className="link-underline self-center text-sm text-zinc-600 dark:text-zinc-400"
+          >
+            {usandoBackup ? "Usar o aplicativo autenticador" : "Perdi o autenticador — usar um código de backup"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
               setMfaToken(null);
+              setUsandoBackup(false);
               setCodigo("");
               setErro(null);
             }}

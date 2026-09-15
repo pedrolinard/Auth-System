@@ -31,7 +31,10 @@ export default function PaginaCadastro() {
     setCarregando(true);
     try {
       await cadastrar({ nome, email, senha, turnstileToken: turnstileToken ?? undefined });
-      notificar.sucesso("Conta criada. Agora é só entrar.");
+      // Mesmo texto pra conta nova e e-mail já cadastrado: o servidor não
+      // distingue os dois na resposta (anti-enumeração), e a tela também não
+      // pode. Quem já tinha conta recebe um e-mail dizendo isso.
+      notificar.sucesso("Cadastro recebido. Confira seu e-mail e entre com sua senha.");
       router.push("/login");
     } catch (erroCapturado) {
       if (erroCapturado instanceof ErroCaptchaNecessario) {

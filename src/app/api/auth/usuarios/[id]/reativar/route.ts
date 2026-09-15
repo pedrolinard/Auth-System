@@ -27,7 +27,8 @@ export async function POST(
 
   const { id } = await params;
 
-  if (!(await obterMembroDaOrganizacao(payload.organizacaoId, id))) {
+  const membro = await obterMembroDaOrganizacao(payload.organizacaoId, id);
+  if (!membro) {
     return NextResponse.json(
       { erro: "Usuário não encontrado nesta organização." },
       { status: 404 },
@@ -39,8 +40,10 @@ export async function POST(
     return NextResponse.json({ erro: "Usuário não encontrado." }, { status: 404 });
   }
 
-  await prisma.usuario.update({
-    where: { id },
+  // Reativa só nesta organização — suspensão em outra organização é decisão
+  // de outra organização.
+  await prisma.membro.update({
+    where: { id: membro.id },
     data: { suspenso: false, suspensoAte: null, suspensoMotivo: null },
   });
 

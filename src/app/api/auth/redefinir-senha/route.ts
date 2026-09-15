@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { revogarDispositivosConfiaveis } from "@/lib/dispositivoConfiavel";
 import { enviarEmailSenhaAlterada } from "@/lib/email";
+import { revogacao } from "@/lib/revogacao";
 import { gerarHashSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { verificarTokenRedefinicaoSenha } from "@/lib/token";
@@ -65,12 +67,12 @@ export async function POST(req: Request) {
   // "dispositivo confiável" que pularia o MFA no próximo login.
   await prisma.tokenAtualizacao.updateMany({
     where: { usuarioId: payload.sub, revogadoEm: null },
-    data: { revogadoEm: new Date() },
+    data: revogacao("senha_redefinida"),
   });
   await revogarDispositivosConfiaveis(payload.sub);
 
   await registrarEvento({ req, evento: "senha_redefinida", usuarioId: payload.sub });
-  await enviarEmailSenhaAlterada(usuario.email);
+  await enviarEmailSenhaAlterada(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({ sucesso: true });
 }

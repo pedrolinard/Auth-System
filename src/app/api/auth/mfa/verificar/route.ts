@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { aplicacaoEstaAtiva } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { definirCookieDispositivoConfiavel } from "@/lib/cookies";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { criarDispositivoConfiavel } from "@/lib/dispositivoConfiavel";
 import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
-import { criarSessao } from "@/lib/sessao";
-import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
+import { bloqueioPorSuspensao, criarSessao } from "@/lib/sessao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaVerificacaoMfa } from "@/lib/validacao";
 
@@ -57,6 +57,11 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // O desafio foi emitido quando a aplicação estava ativa; se ela foi
+  // desativada nos até 5 min seguintes, o login não conclui.
+  if (!(await aplicacaoEstaAtiva(usuario.aplicacaoId))) {
+    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  }
 
   let codigoValido: boolean;
   try {
@@ -84,9 +89,10 @@ export async function POST(req: Request) {
   // Cobre a janela entre o desafio de MFA (até 5 min) e a confirmação do
   // código: se um admin suspender a conta nesse meio-tempo, o login não deve
   // completar mesmo com o código certo.
-  if (estaSuspenso(usuario)) {
+  const bloqueio = await bloqueioPorSuspensao(usuario.id);
+  if (bloqueio) {
     await registrarEvento({ req, evento: "login_bloqueado_suspenso", usuarioId: usuario.id, email: usuario.email });
-    return NextResponse.json({ erro: mensagemSuspensao(usuario) }, { status: 403 });
+    return NextResponse.json({ erro: bloqueio }, { status: 403 });
   }
 
   // Consome o jti só na conclusão bem-sucedida — uma tentativa com código

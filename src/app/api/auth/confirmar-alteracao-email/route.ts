@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { revogarDispositivosConfiaveis } from "@/lib/dispositivoConfiavel";
 import { enviarEmailEmailAlterado } from "@/lib/email";
+import { revogacao } from "@/lib/revogacao";
 import { verificarTokenAlteracaoEmail } from "@/lib/token";
 import { esquemaConfirmarAlteracaoEmail } from "@/lib/validacao";
 
@@ -54,8 +56,8 @@ export async function POST(req: Request) {
     // O token carrega o novoEmail direto no JWT (não reconsulta o pedido
     // original) — outra conta pode ter registrado esse mesmo e-mail entre o
     // pedido e a confirmação (o link fica de pé por até 1h), então a
-    // constraint @unique de Usuario.email é a defesa real contra a corrida,
-    // não uma checagem prévia aqui.
+    // constraint única (aplicacaoId, email) de Usuario é a defesa real contra
+    // a corrida, não uma checagem prévia aqui.
     await prisma.usuario.update({
       where: { id: usuario.id },
       // O endereço acabou de ser confirmado clicando no link enviado pra
@@ -84,7 +86,7 @@ export async function POST(req: Request) {
   // novo.
   await prisma.tokenAtualizacao.updateMany({
     where: { usuarioId: usuario.id, revogadoEm: null },
-    data: { revogadoEm: new Date() },
+    data: revogacao("email_alterado"),
   });
   await revogarDispositivosConfiaveis(usuario.id);
 
@@ -94,7 +96,11 @@ export async function POST(req: Request) {
     usuarioId: usuario.id,
     email: emailAntigo,
   });
-  await enviarEmailEmailAlterado(emailAntigo, payload.novoEmail);
+  await enviarEmailEmailAlterado(
+    emailAntigo,
+    payload.novoEmail,
+    (await contextoEmail(usuario.aplicacaoId)).marca,
+  );
 
   return NextResponse.json({ sucesso: true, novoEmail: payload.novoEmail });
 }

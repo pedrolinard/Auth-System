@@ -9,6 +9,7 @@ import {
   removerCookieCsrf,
 } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
+import { revogacao } from "@/lib/revogacao";
 import { hashToken } from "@/lib/token";
 
 export async function DELETE(
@@ -34,12 +35,13 @@ export async function DELETE(
     );
   }
 
-  if (!sessao.revogadoEm) {
-    await prisma.tokenAtualizacao.update({
-      where: { id },
-      data: { revogadoEm: new Date() },
-    });
-  }
+  // `revogadoEm: null` no filtro: se a sessão foi rotacionada entre a leitura
+  // acima e este update, o motivo "rotacao" dela não pode ser sobrescrito —
+  // é ele que mantém a detecção de reuso sobre esse token (ver revogacao.ts).
+  await prisma.tokenAtualizacao.updateMany({
+    where: { id, revogadoEm: null },
+    data: revogacao("sessao_encerrada"),
+  });
 
   const cookieAtual = await obterCookieAtualizacao();
   if (cookieAtual && hashToken(cookieAtual) === sessao.tokenHash) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
-import { origemPermitida, resolverAplicacao } from "@/lib/aplicacao";
+import { autenticarAplicacao, contextoEmail } from "@/lib/aplicacao";
 import { obterCookieDispositivoConfiavel } from "@/lib/cookies";
 import { dispositivoEhConfiavel } from "@/lib/dispositivoConfiavel";
 import { enviarEmailDispositivoNovo, enviarEmailViagemImpossivel } from "@/lib/email";
@@ -14,8 +14,7 @@ import {
   registrarTentativaIp,
 } from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
-import { criarSessao } from "@/lib/sessao";
-import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
+import { bloqueioPorSuspensao, criarSessao } from "@/lib/sessao";
 import { gerarTokenDesafioMfa } from "@/lib/token";
 import { verificarTurnstile } from "@/lib/turnstile";
 import { esquemaLogin } from "@/lib/validacao";
@@ -62,13 +61,13 @@ const HASH_FALSO_PARA_EQUALIZAR_TEMPO =
 const JANELA_VIAGEM_IMPOSSIVEL_MS = 2 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
-  const aplicacao = await resolverAplicacao(req);
-  if (!aplicacao) {
-    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  // Origem cadastrada (navegador) ou client secret (servidor) — ver
+  // autenticarAplicacao em src/lib/aplicacao.ts.
+  const acessoAplicacao = await autenticarAplicacao(req);
+  if (!acessoAplicacao.ok) {
+    return NextResponse.json({ erro: acessoAplicacao.erro }, { status: acessoAplicacao.status });
   }
-  if (!origemPermitida(aplicacao, req)) {
-    return NextResponse.json({ erro: "Origem não autorizada para esta aplicação." }, { status: 403 });
-  }
+  const { aplicacao } = acessoAplicacao;
 
   const ip = obterIp(req);
   const falhasIp = await contarEventosPorIp({ ip, evento: "login_falha" });
@@ -141,9 +140,10 @@ export async function POST(req: Request) {
     );
   }
 
-  if (estaSuspenso(usuario)) {
+  const bloqueio = await bloqueioPorSuspensao(usuario.id);
+  if (bloqueio) {
     await registrarEvento({ req, evento: "login_bloqueado_suspenso", usuarioId: usuario.id, email });
-    return NextResponse.json({ erro: mensagemSuspensao(usuario) }, { status: 403 });
+    return NextResponse.json({ erro: bloqueio }, { status: 403 });
   }
 
   // Detecção de "dispositivo novo" sem schema novo: reaproveita o próprio
@@ -175,6 +175,8 @@ export async function POST(req: Request) {
 
   await registrarEvento({ req, evento: "login_sucesso", usuarioId: usuario.id, email });
 
+  // Os alertas saem com a marca da aplicação dona da conta.
+  const { marca } = await contextoEmail(usuario.aplicacaoId);
   if (viagemImpossivel) {
     // Alerta mais específico que o de "dispositivo novo" — evita mandar os
     // dois e-mails pro mesmo login suspeito.
@@ -183,9 +185,9 @@ export async function POST(req: Request) {
       paisAnterior: formatarLocalizacao({ cidade: null, regiao: null, pais: ultimaSessao!.geoPais }) ?? ultimaSessao!.geoPais!,
       paisAtual: formatarLocalizacao({ cidade: null, regiao: null, pais: geoAtual.pais }) ?? geoAtual.pais!,
       quando: new Date(),
-    });
+    }, marca);
   } else if (!loginAnteriorMesmoDispositivo) {
-    await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando: new Date() });
+    await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando: new Date() }, marca);
   }
 
   if (usuario.mfaAtivado) {

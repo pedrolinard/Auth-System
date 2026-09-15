@@ -161,6 +161,111 @@ export const esquemaCriarConvite = z.object({
   papel: z.enum(["admin", "membro"], { error: "Papel inválido para convite." }),
 });
 
+// Origem completa, sem caminho: "https://app.cliente.com" ou
+// "http://localhost:3000". Comparada byte a byte com o header Origin do
+// navegador (aplicacao.ts) e com a origem do WebAuthn, então qualquer barra
+// sobrando ou caminho faria a origem nunca bater — normaliza exigindo que o
+// valor já seja igual a `new URL(valor).origin`. http só em localhost: numa
+// origem http de verdade, qualquer um no caminho da rede reescreve a página.
+const esquemaOrigem = z
+  .string()
+  .trim()
+  .refine(
+    (valor) => {
+      try {
+        const url = new URL(valor);
+        if (url.origin !== valor) return false;
+        if (url.protocol === "https:") return true;
+        return url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname);
+      } catch {
+        return false;
+      }
+    },
+    {
+      error:
+        "Origem inválida: use só esquema e host (ex.: https://app.exemplo.com), sem caminho nem barra final. http só é aceito em localhost.",
+    },
+  );
+
+// Domínio puro, minúsculo, sem esquema nem porta (ex.: "exemplo.com").
+const esquemaRpId = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^(localhost|([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})$/, {
+    error: "RP ID inválido: informe só o domínio (ex.: exemplo.com), sem esquema nem porta.",
+  });
+
+// URL https (http só em localhost), usada na marca da aplicação. Campo vazio
+// no formulário vira null — "sem valor", não "string vazia inválida".
+function esquemaUrlOpcional(mensagem: string) {
+  return z.preprocess(
+    (valor) => (typeof valor === "string" && valor.trim() === "" ? null : valor),
+    z
+      .string()
+      .trim()
+      .max(500, { error: mensagem })
+      .refine(
+        (valor) => {
+          try {
+            const url = new URL(valor);
+            if (url.protocol === "https:") return true;
+            return url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname);
+          } catch {
+            return false;
+          }
+        },
+        { error: mensagem },
+      )
+      // Sem barra final: os links são montados como `${urlLinks}/verificar-email`.
+      .transform((valor) => valor.replace(/\/+$/, ""))
+      .nullable(),
+  );
+}
+
+const camposAplicacao = {
+  nome: z
+    .string({ error: "Informe o nome da aplicação." })
+    .trim()
+    .min(2, { error: "O nome deve ter pelo menos 2 caracteres." })
+    .max(80, { error: "O nome é longo demais (máximo de 80 caracteres)." }),
+  origens: z
+    .array(esquemaOrigem)
+    .max(20, { error: "No máximo 20 origens por aplicação." })
+    .transform((lista) => [...new Set(lista)]),
+  // null = sem passkeys próprias (cai no RP ID do ambiente).
+  passkeyRpId: esquemaRpId.nullable(),
+  emailRemetente: z.preprocess(
+    (valor) => (typeof valor === "string" && valor.trim() === "" ? null : valor),
+    z.email({ error: "Remetente inválido: informe só o endereço (ex.: seguranca@cliente.com)." }).trim().toLowerCase().nullable(),
+  ),
+  urlLinks: esquemaUrlOpcional("Endereço dos links inválido: use uma URL https (ex.: https://app.cliente.com)."),
+  logoUrl: esquemaUrlOpcional("Logo inválida: use uma URL https de imagem."),
+};
+
+export const esquemaCriarAplicacao = z.object({
+  nome: camposAplicacao.nome,
+  origens: camposAplicacao.origens.default([]),
+  passkeyRpId: camposAplicacao.passkeyRpId.optional().default(null),
+  emailRemetente: camposAplicacao.emailRemetente.optional().default(null),
+  urlLinks: camposAplicacao.urlLinks.optional().default(null),
+  logoUrl: camposAplicacao.logoUrl.optional().default(null),
+});
+
+export const esquemaAtualizarAplicacao = z
+  .object({
+    nome: camposAplicacao.nome.optional(),
+    origens: camposAplicacao.origens.optional(),
+    passkeyRpId: camposAplicacao.passkeyRpId.optional(),
+    emailRemetente: camposAplicacao.emailRemetente.optional(),
+    urlLinks: camposAplicacao.urlLinks.optional(),
+    logoUrl: camposAplicacao.logoUrl.optional(),
+    ativa: z.boolean().optional(),
+  })
+  .refine((dados) => Object.values(dados).some((valor) => valor !== undefined), {
+    error: "Nada para atualizar.",
+  });
+
 export const esquemaAceitarConvite = z.object({
   token: z.string({ error: "Convite inválido." }).min(1, { error: "Convite inválido." }),
 });

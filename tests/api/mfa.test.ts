@@ -82,6 +82,26 @@ describe("Fluxo de MFA (TOTP)", () => {
     expect(corpoMe.usuario.codigosBackupRestantes).toBe(10);
   });
 
+  it("confirmar de novo com o MFA já ativo é recusado e não multiplica os códigos de backup", async () => {
+    const usuario = await criarUsuarioTeste("mfa-reconfirmar");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const { segredo } = await (await chamar("/api/auth/mfa/iniciar", cabecalhos)).json();
+    const primeira = await chamar("/api/auth/mfa/confirmar", cabecalhos, {
+      codigo: gerarCodigoTotp(segredo),
+    });
+    expect(primeira.status).toBe(200);
+
+    const segunda = await chamar("/api/auth/mfa/confirmar", cabecalhos, {
+      codigo: gerarCodigoTotp(segredo, 1),
+    });
+    expect(segunda.status).toBe(409);
+
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
+    expect(await prisma.codigoBackupMfa.count({ where: { usuarioId: usuarioDb.id } })).toBe(10);
+  });
+
   it("rejeita código incorreto na confirmação", async () => {
     const usuario = await criarUsuarioTeste("mfa-codigo-errado");
     emailsCriados.push(usuario.email);

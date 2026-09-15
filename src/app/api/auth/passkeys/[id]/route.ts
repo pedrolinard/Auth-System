@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
@@ -32,7 +33,11 @@ export async function DELETE(
   }
 
   await registrarEvento({ req, evento: "passkey_removida", usuarioId: payload.sub, email: payload.email });
-  await enviarEmailPasskeyAlterada(payload.email, "removida");
+  await enviarEmailPasskeyAlterada(
+    payload.email,
+    "removida",
+    (await contextoEmail(payload.aplicacaoId)).marca,
+  );
 
   return NextResponse.json({ sucesso: true });
 }

@@ -33,6 +33,18 @@ export function ipAleatorio(): string {
   return `10.${parte()}.${parte()}.${parte()}`;
 }
 
+// Apaga a conta e as organizações que ficariam sem nenhum membro — mesmo
+// cuidado de tests/helpers.ts (Membro cai em cascata, Organizacao não).
 export async function apagarUsuarioTeste(email: string) {
-  await comConexao((client) => client.query(`DELETE FROM usuarios WHERE email = $1`, [email]));
+  await comConexao(async (client) => {
+    const { rows } = await client.query(
+      `SELECT m."organizacaoId" FROM membros m JOIN usuarios u ON u.id = m."usuarioId" WHERE u.email = $1`,
+      [email],
+    );
+    await client.query(`DELETE FROM usuarios WHERE email = $1`, [email]);
+    await client.query(
+      `DELETE FROM organizacoes o WHERE o.id = ANY($1) AND NOT EXISTS (SELECT 1 FROM membros m WHERE m."organizacaoId" = o.id)`,
+      [rows.map((r) => r.organizacaoId)],
+    );
+  });
 }

@@ -31,6 +31,20 @@ describe("POST /api/auth/verificar-email", () => {
     expect(corpoMe.usuario.emailVerificado).toBe(true);
   });
 
+  it("link de uma conta já excluída responde 401, não 500", async () => {
+    const usuario = await criarUsuarioTeste("verificar-email-excluida");
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
+    const token = await gerarTokenVerificacaoEmail(registro.id);
+    await apagarUsuariosTeste([usuario.email]);
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/verificar-email`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    expect(resposta.status).toBe(401);
+  });
+
   it("rejeita token inválido/adulterado com 401", async () => {
     const resposta = await fetch(`${BASE_URL}/api/auth/verificar-email`, {
       method: "POST",

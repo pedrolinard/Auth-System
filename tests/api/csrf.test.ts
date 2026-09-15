@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { apagarUsuariosTeste, BASE_URL, criarUsuarioTeste, loginTeste } from "../helpers";
+import { apagarUsuariosTeste, BASE_URL, criarUsuarioTeste, ipAleatorio, loginTeste } from "../helpers";
 
 const emailsCriados: string[] = [];
 
@@ -15,11 +15,29 @@ describe("Proteção CSRF (double-submit cookie)", () => {
 
     const resposta = await fetch(`${BASE_URL}/api/auth/mfa/iniciar`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${cookies.tokenAcesso}` },
+      // IP próprio: mfa/iniciar tem limite por IP (10/h) que sobrevive entre
+      // rodadas da suíte.
+      headers: { Authorization: `Bearer ${cookies.tokenAcesso}`, "X-Forwarded-For": ipAleatorio() },
       // sem header Cookie nenhum — simula um cliente não-navegador
     });
 
     expect(resposta.status).toBe(200);
+  });
+
+  it("cookie de sessão SEM o cookie CSRF é bloqueado (403), não tratado como cliente sem navegador", async () => {
+    // Uma requisição autenticada pelo cookie de acesso, mas sem o par CSRF,
+    // é a forma de um ataque CSRF — antes, a falta do cookie CSRF bastava pra
+    // pular a checagem.
+    const usuario = await criarUsuarioTeste("csrf-so-sessao");
+    emailsCriados.push(usuario.email);
+    const { cookies } = await loginTeste(usuario.email, usuario.senha);
+
+    const resposta = await fetch(`${BASE_URL}/api/auth/mfa/iniciar`, {
+      method: "POST",
+      headers: { Cookie: `tokenAcesso=${cookies.tokenAcesso}` },
+    });
+
+    expect(resposta.status).toBe(403);
   });
 
   it("com cookie CSRF presente, header ausente é bloqueado (403)", async () => {

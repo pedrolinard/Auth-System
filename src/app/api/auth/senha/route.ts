@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieAtualizacao, obterCookieCsrf } from "@/lib/cookies";
@@ -13,6 +14,7 @@ import {
   registrarTentativaEmail,
   registrarTentativaIp,
 } from "@/lib/rateLimit";
+import { revogacao } from "@/lib/revogacao";
 import { gerarHashSenha, verificarSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { hashToken } from "@/lib/token";
@@ -132,12 +134,12 @@ export async function PUT(req: Request) {
       revogadoEm: null,
       ...(hashAtual ? { tokenHash: { not: hashAtual } } : {}),
     },
-    data: { revogadoEm: new Date() },
+    data: revogacao("senha_alterada"),
   });
   await revogarDispositivosConfiaveis(usuario.id);
 
   await registrarEvento({ req, evento: "senha_alterada", usuarioId: usuario.id });
-  await enviarEmailSenhaAlterada(usuario.email);
+  await enviarEmailSenhaAlterada(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({ sucesso: true });
 }

@@ -8,9 +8,11 @@ const CONFIG_COMPLETA: Record<string, string> = {
   TURNSTILE_SECRET_KEY: "secret",
   NEXT_PUBLIC_TURNSTILE_SITE_KEY: "site",
   RESEND_API_KEY: "re_123",
+  EMAIL_FROM: "Auth Gateway <seguranca@auth-gateway.example.com>",
   ROLLBAR_AUTH_GATEWAY_SERVER_TOKEN_1787151157: "srv",
   NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157: "cli",
   CRON_SECRET: "cron",
+  DJANGO_SERVICE_URL: "https://dominio.example.com",
 };
 
 describe("Checagem de config de produção (src/lib/configProducao.ts)", () => {
@@ -61,6 +63,18 @@ describe("Checagem de config de produção (src/lib/configProducao.ts)", () => {
     });
     expect(erros).toEqual([]);
     expect(avisos.some((a) => a.includes("RESEND_API_KEY"))).toBe(true);
+  });
+
+  it("Resend configurado mas no remetente de teste (@resend.dev) é aviso", () => {
+    const sandbox = checarConfigProducao({
+      ...CONFIG_COMPLETA,
+      EMAIL_FROM: "onboarding@resend.dev",
+    });
+    expect(sandbox.erros).toEqual([]);
+    expect(sandbox.avisos.some((a) => a.includes("EMAIL_FROM"))).toBe(true);
+
+    const semRemetente = checarConfigProducao({ ...CONFIG_COMPLETA, EMAIL_FROM: undefined });
+    expect(semRemetente.avisos.some((a) => a.includes("EMAIL_FROM"))).toBe(true);
   });
 
   it("Rollbar sem um dos tokens é aviso", () => {

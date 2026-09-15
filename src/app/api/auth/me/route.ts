@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { contarCodigosRestantes } from "@/lib/backupMfa";
+import { ehAplicacaoPadrao } from "@/lib/gestaoAplicacoes";
 
 export async function GET(req: Request) {
   const payload = await autenticarRequisicao(req);
@@ -48,6 +49,11 @@ export async function GET(req: Request) {
       // Usuario.papel).
       organizacaoId: payload.organizacaoId,
       papelOrganizacao: payload.papelOrganizacao,
+      // Decide se o painel mostra a gestão de aplicações. Mesma regra da
+      // autorização das rotas (src/lib/gestaoAplicacoes.ts) — a flag só
+      // esconde o link; quem barra de verdade é a rota.
+      operadorProvedor:
+        usuario.papel === "admin" && (await ehAplicacaoPadrao(payload.aplicacaoId)),
     },
   });
 }

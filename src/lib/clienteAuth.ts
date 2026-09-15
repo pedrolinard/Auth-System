@@ -17,6 +17,17 @@ export function cabecalhoCsrf(): HeadersInit {
   return token ? { "X-CSRF-Token": token } : {};
 }
 
+// Um 500 não tratado no servidor chega com o corpo VAZIO — `resposta.json()`
+// lançava "Unexpected end of JSON input" e essa mensagem técnica ia parar
+// crua na tela. Corpo ilegível vira objeto vazio, e quem chama cai na
+// mensagem padrão em português dela.
+// O `any` é o mesmo que `resposta.json()` já devolvia: cada chamador lê do
+// corpo os campos da sua própria rota.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function lerCorpo(resposta: Response): Promise<any> {
+  return resposta.json().catch(() => ({}));
+}
+
 // As rotas devolvem `detalhes` (saída de Zod `.flatten()`) junto do erro
 // genérico quando a validação falha — sem isso, toda falha de senha/e-mail/
 // nome aparecia como "Dados inválidos." sem dizer qual campo nem por quê.
@@ -56,7 +67,7 @@ export async function cadastrar(dados: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) {
     if (corpo.captchaNecessario) {
       throw new ErroCaptchaNecessario(mensagemErro(corpo, "Verificação necessária."));
@@ -72,7 +83,7 @@ export async function solicitarRecuperacaoSenha(email: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao solicitar recuperação."));
   return corpo;
 }
@@ -83,7 +94,7 @@ export async function redefinirSenha(token: string, novaSenha: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, novaSenha }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao redefinir senha."));
 }
 
@@ -93,7 +104,7 @@ export async function verificarEmail(token: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao verificar e-mail.");
 }
 
@@ -103,7 +114,7 @@ export async function reenviarVerificacaoEmail() {
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao reenviar e-mail."));
 }
 
@@ -118,7 +129,7 @@ export async function entrar(dados: {
     body: JSON.stringify(dados),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) {
     if (corpo.captchaNecessario) {
       throw new ErroCaptchaNecessario(corpo.erro ?? "Verificação necessária.");
@@ -144,8 +155,28 @@ export async function verificarMfaLogin(dados: {
     body: JSON.stringify(dados),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Código inválido.");
+  return corpo;
+}
+
+// Segundo passo do login com um código de backup no lugar do TOTP — o
+// caminho de quem perdeu o aplicativo autenticador. A API sempre existiu
+// (/api/auth/mfa/backup), mas nenhuma tela a chamava: os códigos de backup
+// eram gerados e não serviam pra entrar. Consome o código (uso único), abre
+// a sessão e devolve quantos ainda restam.
+export async function verificarCodigoBackupLogin(dados: {
+  mfaToken: string;
+  codigo: string;
+}): Promise<{ codigosBackupRestantes: number }> {
+  const resposta = await fetch("/api/auth/mfa/backup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados),
+    credentials: "include",
+  });
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Código de backup inválido."));
   return corpo;
 }
 
@@ -156,7 +187,7 @@ export async function trocarSenha(dados: { senhaAtual: string; novaSenha: string
     credentials: "include",
     body: JSON.stringify(dados),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao trocar a senha."));
 }
 
@@ -169,7 +200,7 @@ export type Passkey = {
 
 export async function listarPasskeys(): Promise<Passkey[]> {
   const resposta = await fetch("/api/auth/passkeys", { credentials: "include" });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao listar passkeys."));
   return corpo.passkeys;
 }
@@ -184,7 +215,7 @@ export async function registrarPasskey(nome?: string) {
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  const corpoOpcoes = await respostaOpcoes.json();
+  const corpoOpcoes = await lerCorpo(respostaOpcoes);
   if (!respostaOpcoes.ok) {
     throw new Error(mensagemErro(corpoOpcoes, "Falha ao iniciar o registro da passkey."));
   }
@@ -201,7 +232,7 @@ export async function registrarPasskey(nome?: string) {
       nome,
     }),
   });
-  const corpoConfirmar = await respostaConfirmar.json();
+  const corpoConfirmar = await lerCorpo(respostaConfirmar);
   if (!respostaConfirmar.ok) {
     throw new Error(mensagemErro(corpoConfirmar, "Falha ao confirmar a passkey."));
   }
@@ -213,7 +244,7 @@ export async function excluirPasskey(id: string) {
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao excluir a passkey."));
 }
 
@@ -222,7 +253,7 @@ export async function excluirPasskey(id: string) {
 // salvas pra este site e o usuário escolhe qual usar.
 export async function entrarComPasskey() {
   const respostaOpcoes = await fetch("/api/auth/passkeys/login/opcoes", { method: "POST" });
-  const corpoOpcoes = await respostaOpcoes.json();
+  const corpoOpcoes = await lerCorpo(respostaOpcoes);
   if (!respostaOpcoes.ok) {
     throw new Error(mensagemErro(corpoOpcoes, "Falha ao iniciar o login com passkey."));
   }
@@ -235,7 +266,7 @@ export async function entrarComPasskey() {
     credentials: "include",
     body: JSON.stringify({ passkeyToken: corpoOpcoes.passkeyToken, resposta: respostaAsserto }),
   });
-  const corpoConfirmar = await respostaConfirmar.json();
+  const corpoConfirmar = await lerCorpo(respostaConfirmar);
   if (!respostaConfirmar.ok) {
     throw new Error(mensagemErro(corpoConfirmar, "Falha ao entrar com a passkey."));
   }
@@ -249,7 +280,7 @@ export async function exportarMeusDados(senha: string): Promise<unknown> {
     credentials: "include",
     body: JSON.stringify({ senha }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao exportar os dados da conta."));
   return corpo;
 }
@@ -261,7 +292,7 @@ export async function excluirMinhaConta(senha: string) {
     credentials: "include",
     body: JSON.stringify({ senha }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao excluir a conta."));
 }
 
@@ -272,7 +303,7 @@ export async function alterarEmail(novoEmail: string, senha: string) {
     credentials: "include",
     body: JSON.stringify({ novoEmail, senha }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao pedir a troca de e-mail."));
 }
 
@@ -282,7 +313,7 @@ export async function confirmarAlteracaoEmail(token: string): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao confirmar a troca de e-mail.");
   return corpo.novoEmail;
 }
@@ -308,6 +339,9 @@ export type UsuarioAtual = {
   papel: "usuario" | "admin";
   organizacaoId: string;
   papelOrganizacao: "dono" | "admin" | "membro";
+  // Admin de sistema da aplicação padrão: quem gerencia as aplicações
+  // clientes (ver src/lib/gestaoAplicacoes.ts).
+  operadorProvedor: boolean;
 };
 
 export async function obterUsuarioAtual(tentouRenovar = false): Promise<UsuarioAtual | null> {
@@ -320,17 +354,44 @@ export async function obterUsuarioAtual(tentouRenovar = false): Promise<UsuarioA
   }
 
   if (!resposta.ok) return null;
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   return corpo.usuario;
 }
 
-export async function tentarAtualizarToken(): Promise<boolean> {
+// Renovação em andamento nesta aba — várias requisições que dão 401 ao mesmo
+// tempo (o painel dispara algumas em paralelo) compartilham UMA renovação.
+let renovacaoEmAndamento: Promise<boolean> | null = null;
+
+async function postarRenovacao(): Promise<boolean> {
   const resposta = await fetch("/api/auth/atualizar", {
     method: "POST",
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
   return resposta.ok;
+}
+
+// O servidor só deixa UMA renovação por token vencer (atualizar/route.ts).
+// Abas diferentes compartilham o cookie e o access token delas expira junto:
+// sem coordenação, a aba A renova e a aba B, que já tinha mandado o cookie
+// antigo, recebe 401 e age como deslogada com uma sessão válida no cookie.
+// Web Locks serializa as renovações entre abas — B só faz o POST quando A
+// terminou, e já sai com o cookie novo. Sem Web Locks (navegador antigo), uma
+// nova tentativa após uma pausa curta cobre o mesmo caso.
+export async function tentarAtualizarToken(): Promise<boolean> {
+  if (!renovacaoEmAndamento) {
+    renovacaoEmAndamento = (async () => {
+      if (typeof navigator !== "undefined" && navigator.locks) {
+        return navigator.locks.request("renovar-sessao", postarRenovacao);
+      }
+      if (await postarRenovacao()) return true;
+      await new Promise((resolver) => setTimeout(resolver, 300));
+      return postarRenovacao();
+    })().finally(() => {
+      renovacaoEmAndamento = null;
+    });
+  }
+  return renovacaoEmAndamento;
 }
 
 export type Sessao = {
@@ -345,7 +406,7 @@ export type Sessao = {
 export async function listarSessoes(): Promise<Sessao[]> {
   const resposta = await fetch("/api/auth/sessoes", { credentials: "include" });
   if (!resposta.ok) throw new Error("Falha ao carregar sessões.");
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   return corpo.sessoes;
 }
 
@@ -365,7 +426,7 @@ export type UsuarioAdmin = {
 
 export async function listarUsuarios(): Promise<UsuarioAdmin[]> {
   const resposta = await fetch("/api/auth/usuarios", { credentials: "include" });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao carregar usuários.");
   return corpo.usuarios;
 }
@@ -379,7 +440,7 @@ export async function removerMembroDaOrganizacao(id: string) {
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao remover membro."));
 }
 
@@ -390,7 +451,7 @@ export async function suspenderUsuario(id: string, dados: { dias?: number; motiv
     credentials: "include",
     body: JSON.stringify(dados),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao suspender usuário."));
 }
 
@@ -418,7 +479,7 @@ export async function listarAuditoria(filtros?: {
   const resposta = await fetch(`/api/auth/auditoria?${query.toString()}`, {
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao carregar auditoria.");
   return corpo.registros;
 }
@@ -429,7 +490,7 @@ export async function reativarUsuario(id: string) {
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao reativar usuário."));
 }
 
@@ -439,7 +500,7 @@ export async function revogarSessao(id: string) {
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao revogar sessão.");
 }
 
@@ -449,7 +510,7 @@ export async function revogarTodasSessoes() {
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao revogar sessões.");
 }
 
@@ -463,7 +524,7 @@ export async function iniciarMfa(): Promise<{
     headers: cabecalhoCsrf(),
     credentials: "include",
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Falha ao iniciar MFA.");
   return corpo;
 }
@@ -475,7 +536,7 @@ export async function confirmarMfa(codigo: string) {
     credentials: "include",
     body: JSON.stringify({ codigo }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Código inválido.");
 }
 
@@ -486,6 +547,6 @@ export async function desativarMfa(codigo: string) {
     credentials: "include",
     body: JSON.stringify({ codigo }),
   });
-  const corpo = await resposta.json();
+  const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(corpo.erro ?? "Código inválido.");
 }

@@ -1,5 +1,6 @@
 import type { RegistrationResponseJSON } from "@simplewebauthn/server";
 import { NextResponse } from "next/server";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
@@ -7,7 +8,7 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { enviarEmailPasskeyAlterada } from "@/lib/email";
-import { obterAplicacaoPorId } from "@/lib/aplicacao";
+import { contextoEmail, obterAplicacaoPorId } from "@/lib/aplicacao";
 import { verificarRegistroPasskey } from "@/lib/passkey";
 import { verificarTokenDesafioPasskey } from "@/lib/token";
 import { esquemaPasskeyRegistroConfirmar } from "@/lib/validacao";
@@ -78,19 +79,36 @@ export async function POST(req: Request) {
   }
 
   const { credential } = verificacao.registrationInfo;
-  await prisma.passkeyCredencial.create({
-    data: {
-      usuarioId: usuario.id,
-      credentialId: credential.id,
-      publicKey: Buffer.from(credential.publicKey).toString("base64"),
-      contador: credential.counter,
-      transportes: credential.transports ?? [],
-      nome: nome || null,
-    },
-  });
+  try {
+    await prisma.passkeyCredencial.create({
+      data: {
+        usuarioId: usuario.id,
+        credentialId: credential.id,
+        publicKey: Buffer.from(credential.publicKey).toString("base64"),
+        contador: credential.counter,
+        transportes: credential.transports ?? [],
+        nome: nome || null,
+      },
+    });
+  } catch (erro) {
+    // Mesma credencial registrada de novo (ex.: duplo clique, ou um
+    // authenticator que ignorou excludeCredentials): o credentialId é único,
+    // e sem este tratamento a colisão virava 500.
+    if (erro instanceof Prisma.PrismaClientKnownRequestError && erro.code === "P2002") {
+      return NextResponse.json(
+        { erro: "Esta passkey já está registrada." },
+        { status: 409 },
+      );
+    }
+    throw erro;
+  }
 
   await registrarEvento({ req, evento: "passkey_adicionada", usuarioId: usuario.id, email: usuario.email });
-  await enviarEmailPasskeyAlterada(usuario.email, "adicionada");
+  await enviarEmailPasskeyAlterada(
+    usuario.email,
+    "adicionada",
+    (await contextoEmail(usuario.aplicacaoId)).marca,
+  );
 
   return NextResponse.json({ sucesso: true });
 }

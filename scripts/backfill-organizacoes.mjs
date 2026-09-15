@@ -47,8 +47,15 @@ function gerarSlugBase(nome, email) {
   return (normalizado || "organizacao").slice(0, 40);
 }
 
-async function slugDisponivel(client, slug) {
-  const { rows } = await client.query('SELECT 1 FROM organizacoes WHERE slug = $1', [slug]);
+// Desde a Fase 00 o slug é único POR APLICAÇÃO (@@unique([aplicacaoId, slug])),
+// e organizacoes."aplicacaoId" é NOT NULL — a versão anterior deste script
+// checava o slug globalmente e não preenchia a aplicação, então quebrava no
+// primeiro INSERT.
+async function slugDisponivel(client, aplicacaoId, slug) {
+  const { rows } = await client.query(
+    'SELECT 1 FROM organizacoes WHERE "aplicacaoId" = $1 AND slug = $2',
+    [aplicacaoId, slug],
+  );
   return rows.length === 0;
 }
 
@@ -56,12 +63,12 @@ async function slugDisponivel(client, slug) {
 // contador sequencial — evita uma segunda ida ao banco por tentativa em
 // cadastros em massa, e não vaza quantas organizações concorrentes existem
 // com nome parecido).
-async function gerarSlugUnico(client, base) {
-  if (await slugDisponivel(client, base)) return base;
+async function gerarSlugUnico(client, aplicacaoId, base) {
+  if (await slugDisponivel(client, aplicacaoId, base)) return base;
   for (let tentativa = 0; tentativa < 5; tentativa++) {
     const sufixo = randomBytes(3).toString("hex");
     const candidato = `${base}-${sufixo}`;
-    if (await slugDisponivel(client, candidato)) return candidato;
+    if (await slugDisponivel(client, aplicacaoId, candidato)) return candidato;
   }
   throw new Error(`Não foi possível gerar um slug único a partir de "${base}".`);
 }
@@ -71,7 +78,7 @@ async function principal() {
   await client.connect();
 
   const { rows: usuarios } = await client.query(`
-    SELECT u.id, u.nome, u.email
+    SELECT u.id, u.nome, u.email, u."aplicacaoId"
     FROM usuarios u
     LEFT JOIN membros m ON m."usuarioId" = u.id
     WHERE m.id IS NULL
@@ -86,16 +93,19 @@ async function principal() {
     const slugBase = gerarSlugBase(usuario.nome, usuario.email);
     try {
       await client.query("BEGIN");
-      const slug = await gerarSlugUnico(client, slugBase);
+      const slug = await gerarSlugUnico(client, usuario.aplicacaoId, slugBase);
       const nomeOrganizacao = usuario.nome?.trim()
         ? `${usuario.nome} (pessoal)`
         : "Organização pessoal";
 
+      // A organização vive na MESMA aplicação da conta — nunca na padrão por
+      // conveniência, senão o usuário final de um cliente ganharia uma
+      // organização dentro do painel de outro.
       const { rows: [organizacao] } = await client.query(
-        `INSERT INTO organizacoes (id, nome, slug, "criadoEm")
-         VALUES ($1, $2, $3, now())
+        `INSERT INTO organizacoes (id, "aplicacaoId", nome, slug, "criadoEm")
+         VALUES ($1, $2, $3, $4, now())
          RETURNING id`,
-        [gerarId(), nomeOrganizacao, slug],
+        [gerarId(), usuario.aplicacaoId, nomeOrganizacao, slug],
       );
       await client.query(
         `INSERT INTO membros (id, "organizacaoId", "usuarioId", papel, "criadoEm")

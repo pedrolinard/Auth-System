@@ -21,10 +21,19 @@ export async function POST(req: Request) {
     );
   }
 
-  await prisma.usuario.update({
+  // updateMany em vez de update: o link vive 1 dia, e se a conta foi excluída
+  // nesse meio-tempo o `update` estourava P2025 (500 sem corpo) em vez de
+  // dizer que o link não vale mais.
+  const { count } = await prisma.usuario.updateMany({
     where: { id: payload.sub },
     data: { emailVerificado: true },
   });
+  if (count === 0) {
+    return NextResponse.json(
+      { erro: "Link de verificação inválido ou expirado." },
+      { status: 401 },
+    );
+  }
 
   return NextResponse.json({ sucesso: true });
 }

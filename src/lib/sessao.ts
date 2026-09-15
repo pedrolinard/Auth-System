@@ -8,7 +8,14 @@ import {
 } from "@/lib/cookies";
 import { gerarTokenCsrf } from "@/lib/csrf";
 import { obterGeo } from "@/lib/geo";
+import { criarOrganizacaoPessoal } from "@/lib/organizacao";
 import { obterIp } from "@/lib/rateLimit";
+import { revogacao } from "@/lib/revogacao";
+import {
+  estaSuspenso,
+  filtroMembroNaoSuspenso,
+  mensagemContaSuspensa,
+} from "@/lib/suspensao";
 import {
   gerarTokenAcesso,
   gerarTokenAtualizacao,
@@ -46,22 +53,57 @@ export const MAX_SESSOES_SIMULTANEAS = 5;
 // tokens_atualizacao) é renovada — nesse caso não tem organizacaoId salva no
 // TokenAtualizacao pra reler o papel, então resolve do mesmo jeito que uma
 // sessão nova resolveria.
+//
+// Organização em que a pessoa está suspensa é pulada: a suspensão vale só
+// dentro dela, então o login abre na próxima acessível.
 export async function resolverOrganizacaoAtiva(usuarioId: string) {
   const membro = await prisma.membro.findFirst({
-    where: { usuarioId },
+    where: { usuarioId, ...filtroMembroNaoSuspenso() },
     orderBy: { criadoEm: "asc" },
     select: { organizacaoId: true, papel: true },
   });
-  if (!membro) {
-    // Não deveria acontecer: cadastro (fase 2) sempre cria uma organização
-    // junto, e toda conta anterior passou pelo backfill (fase 1). Se
-    // acontecer mesmo assim, é bug — melhor falhar alto aqui do que emitir
-    // um token sem organizacaoId que quebraria em qualquer rota de domínio.
-    throw new Error(
-      `Usuário ${usuarioId} não pertence a nenhuma organização — rode npm run backfill:organizacoes.`,
-    );
+  if (membro) {
+    return { organizacaoId: membro.organizacaoId, papelOrganizacao: membro.papel };
   }
-  return { organizacaoId: membro.organizacaoId, papelOrganizacao: membro.papel };
+
+  // Conta SEM NENHUM Membro: ganha a organização pessoal aqui, na hora. Isso
+  // não deveria existir (o cadastro cria a organização junto, e o backfill de
+  // 2026-09-08 cobriu as contas antigas), mas existiu em produção — contas
+  // criadas depois do backfill e antes do deploy do multi-tenant, pelo
+  // código antigo que não criava organização. Falhar alto aqui significava
+  // login com 500 sem corpo, para sempre, até alguém rodar SQL à mão. Criar a
+  // organização pessoal é exatamente o estado que o cadastro atual produziria,
+  // então consertar no caminho é seguro.
+  //
+  // Só pra conta sem nenhum vínculo: quem tem organizações mas está suspenso
+  // em todas continua recusado (bloqueioPorSuspensao, antes de chegar aqui) —
+  // dar a essa pessoa uma organização nova seria driblar a suspensão.
+  const totalMembros = await prisma.membro.count({ where: { usuarioId } });
+  if (totalMembros > 0) {
+    throw new Error(`Usuário ${usuarioId} está suspenso em todas as organizações.`);
+  }
+  const usuario = await prisma.usuario.findUniqueOrThrow({
+    where: { id: usuarioId },
+    select: { id: true, nome: true, email: true, aplicacaoId: true },
+  });
+  const organizacao = await prisma.$transaction((tx) => criarOrganizacaoPessoal(tx, usuario));
+  console.warn(`Usuário ${usuarioId} estava sem organização — organização pessoal criada no login.`);
+  return { organizacaoId: organizacao.id, papelOrganizacao: "dono" as const };
+}
+
+// Checagem de suspensão das rotas de login (senha, MFA, código de backup,
+// passkey): devolve a mensagem de recusa quando a conta está suspensa em
+// TODAS as organizações de que participa, e null quando existe pelo menos
+// uma em que a sessão pode abrir. Conta sem nenhum Membro devolve null de
+// propósito — isso é bug de dado, não suspensão, e resolverOrganizacaoAtiva
+// cria a organização pessoal que faltava.
+export async function bloqueioPorSuspensao(usuarioId: string): Promise<string | null> {
+  const membros = await prisma.membro.findMany({
+    where: { usuarioId },
+    select: { suspenso: true, suspensoAte: true, suspensoMotivo: true },
+  });
+  if (membros.length === 0 || membros.some((m) => !estaSuspenso(m))) return null;
+  return mensagemContaSuspensa(membros);
 }
 
 // Mesma forma de resolverOrganizacaoAtiva, mas pra uma organização
@@ -73,10 +115,13 @@ export async function resolverOrganizacaoAtiva(usuarioId: string) {
 async function obterOrganizacaoOuFalhar(usuarioId: string, organizacaoId: string) {
   const membro = await prisma.membro.findUnique({
     where: { organizacaoId_usuarioId: { organizacaoId, usuarioId } },
-    select: { organizacaoId: true, papel: true },
+    select: { organizacaoId: true, papel: true, suspenso: true, suspensoAte: true },
   });
   if (!membro) {
     throw new Error(`Usuário ${usuarioId} não é membro da organização ${organizacaoId}.`);
+  }
+  if (estaSuspenso(membro)) {
+    throw new Error(`Usuário ${usuarioId} está suspenso na organização ${organizacaoId}.`);
   }
   return { organizacaoId: membro.organizacaoId, papelOrganizacao: membro.papel };
 }
@@ -139,9 +184,13 @@ export async function criarSessao(
     skip: MAX_SESSOES_SIMULTANEAS,
   });
   if (sessoesExcedentes.length > 0) {
+    // `revogadoEm: null` de novo aqui, não só no findMany: se uma dessas
+    // sessões for rotacionada entre a leitura e este update, o motivo
+    // "rotacao" dela não pode virar "limite_sessoes" — é ele que mantém a
+    // detecção de reuso sobre o token antigo (ver revogacao.ts).
     await prisma.tokenAtualizacao.updateMany({
-      where: { id: { in: sessoesExcedentes.map((s) => s.id) } },
-      data: { revogadoEm: new Date() },
+      where: { id: { in: sessoesExcedentes.map((s) => s.id) }, revogadoEm: null },
+      data: revogacao("limite_sessoes"),
     });
   }
 

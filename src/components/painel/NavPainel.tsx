@@ -11,6 +11,7 @@ import {
   Users,
   ScrollText,
   Building2,
+  AppWindow,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -30,7 +31,9 @@ type ItemNav = {
   // "sistema": só quem tem o papel de sistema (Usuario.papel) — instalação
   // inteira, não uma organização específica. Eixos diferentes, ver
   // src/lib/rbacOrganizacao.ts.
-  restrito?: "organizacao" | "sistema";
+  // "provedor": admin de sistema da aplicação padrão — quem gerencia os
+  // clientes do provedor (ver src/lib/gestaoAplicacoes.ts).
+  restrito?: "organizacao" | "sistema" | "provedor";
 };
 
 const ITENS: ItemNav[] = [
@@ -41,6 +44,7 @@ const ITENS: ItemNav[] = [
   { href: "/dashboard/seguranca", rotulo: "Segurança", icone: ShieldCheck },
   { href: "/dashboard/usuarios", rotulo: "Usuários", icone: Users, restrito: "organizacao" },
   { href: "/dashboard/auditoria", rotulo: "Auditoria", icone: ScrollText, restrito: "sistema" },
+  { href: "/dashboard/aplicacoes", rotulo: "Aplicações", icone: AppWindow, restrito: "provedor" },
 ];
 
 // Barra de navegação persistente do painel — montada pra todas as telas de
@@ -99,6 +103,7 @@ export function NavPainel() {
   const itensVisiveis = ITENS.filter((item) => {
     if (item.restrito === "organizacao") return ehAdminOrganizacao;
     if (item.restrito === "sistema") return ehAdminSistema;
+    if (item.restrito === "provedor") return !!usuario?.operadorProvedor;
     return true;
   });
 

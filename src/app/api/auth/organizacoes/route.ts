@@ -7,6 +7,7 @@ import { csrfValido } from "@/lib/csrf";
 import { criarOrganizacao } from "@/lib/organizacao";
 import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { criarSessao } from "@/lib/sessao";
+import { estaSuspenso } from "@/lib/suspensao";
 import { esquemaCriarOrganizacao } from "@/lib/validacao";
 
 // Toda rota autenticada que cria estado persistente tem algum limite no
@@ -29,12 +30,22 @@ export async function GET(req: Request) {
     where: { usuarioId: payload.sub },
     select: {
       papel: true,
+      suspenso: true,
+      suspensoAte: true,
       organizacao: { select: { id: true, nome: true, slug: true } },
     },
     orderBy: { criadoEm: "asc" },
   });
 
-  const organizacoes = membros.map(({ papel, organizacao }) => ({ ...organizacao, papel }));
+  // `suspenso` deixa o seletor desabilitar a troca pra uma organização em que
+  // a pessoa está suspensa, em vez de ela descobrir só no 403 do /entrar.
+  // Motivo e prazo ficam de fora: é a própria pessoa, mas o /entrar já os
+  // informa quando ela tenta.
+  const organizacoes = membros.map(({ papel, suspenso, suspensoAte, organizacao }) => ({
+    ...organizacao,
+    papel,
+    suspenso: estaSuspenso({ suspenso, suspensoAte }),
+  }));
   return NextResponse.json({ organizacoes });
 }
 

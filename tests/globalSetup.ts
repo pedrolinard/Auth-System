@@ -92,6 +92,14 @@ const ROTAS_PARA_AQUECER = [
   "/api/auth/usuarios/id-de-aquecimento/reativar",
   "/api/auth/usuarios/id-de-aquecimento/suspender",
   "/api/auth/verificar-email",
+  "/api/auth/aplicacoes",
+  "/api/auth/aplicacoes/id-de-aquecimento",
+  "/api/auth/aplicacoes/id-de-aquecimento/segredo",
+  "/api/auth/organizacoes",
+  "/api/auth/organizacoes/id-de-aquecimento/entrar",
+  "/api/auth/organizacoes/aceitar-convite",
+  "/api/auth/mfa/backup",
+  "/roadmap",
 ];
 
 async function aquecerRotas(baseUrl: string) {

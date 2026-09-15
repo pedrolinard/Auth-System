@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import {
   obterCookieAtualizacao,
@@ -11,6 +12,7 @@ import {
 import { csrfValido } from "@/lib/csrf";
 import { classificarDispositivo } from "@/lib/dispositivo";
 import { formatarLocalizacao } from "@/lib/geo";
+import { revogacao } from "@/lib/revogacao";
 import { hashToken } from "@/lib/token";
 
 export async function GET(req: Request) {
@@ -74,7 +76,15 @@ export async function DELETE(req: Request) {
 
   await prisma.tokenAtualizacao.updateMany({
     where: { usuarioId: payload.sub, revogadoEm: null },
-    data: { revogadoEm: new Date() },
+    data: revogacao("todas_sessoes_encerradas"),
+  });
+  // "Sair de todos os dispositivos" é justamente o que alguém faz ao
+  // desconfiar de invasão — tem que aparecer na trilha de auditoria.
+  await registrarEvento({
+    req,
+    evento: "todas_sessoes_encerradas",
+    usuarioId: payload.sub,
+    email: payload.email,
   });
 
   await removerCookieAtualizacao();

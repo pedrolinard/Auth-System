@@ -13,13 +13,21 @@ const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KE
 // preciso verificar um domínio próprio e trocar EMAIL_FROM.
 const REMETENTE = process.env.EMAIL_FROM ?? "onboarding@resend.dev";
 
-const RODAPE_PADRAO =
-  '<p style="color:#71717a;font-size:12px">Este é um e-mail automático de segurança da sua conta.</p>';
+// A marca da aplicação cliente dona da conta. Um usuário final do cliente
+// "Acme" não conhece este provedor: um e-mail de "Auth Gateway" pedindo pra
+// ele confirmar o e-mail ou avisando de login novo parece phishing. Com a
+// marca, o assunto e o cabeçalho levam o nome da aplicação e, se o cliente
+// tiver um remetente verificado no Resend, sai dele. `null` = aplicação
+// padrão (o próprio painel), comportamento de sempre.
+export type MarcaEmail = {
+  nome: string;
+  remetente: string | null;
+  logoUrl: string | null;
+} | null;
 
-// IP e User-Agent vêm direto da requisição (o segundo é 100% controlado pelo
-// cliente) e são interpolados no HTML do e-mail — sem escapar, um User-Agent
-// forjado com marcação HTML/JS injetaria conteúdo arbitrário no e-mail
-// recebido pelo usuário.
+// IP, User-Agent, nomes digitados por usuários e a própria marca vão
+// interpolados no HTML do e-mail — sem escapar, um User-Agent forjado com
+// marcação HTML/JS injetaria conteúdo arbitrário no e-mail recebido.
 function escaparHtml(valor: string): string {
   return valor
     .replace(/&/g, "&amp;")
@@ -29,255 +37,219 @@ function escaparHtml(valor: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export async function enviarEmailVerificacao(destinatario: string, link: string) {
+const ESTILO_NOTA = 'style="color:#71717a;font-size:12px"';
+
+function rodape(marca: MarcaEmail) {
+  const conta = marca ? ` em ${escaparHtml(marca.nome)}` : "";
+  return `<p ${ESTILO_NOTA}>Este é um e-mail automático de segurança da sua conta${conta}.</p>`;
+}
+
+function cabecalhoMarca(marca: MarcaEmail) {
+  if (!marca) return "";
+  const logo = marca.logoUrl
+    ? `<img src="${escaparHtml(marca.logoUrl)}" alt="" height="32" style="display:block;margin-bottom:8px">`
+    : "";
+  return `${logo}<p style="font-weight:600;margin:0 0 12px">${escaparHtml(marca.nome)}</p>`;
+}
+
+// Todo envio passa por aqui: aplica a marca, e é best-effort — uma falha no
+// provedor de e-mail (erro retornado OU exceção de rede) só é logada, nunca
+// derruba o fluxo principal (cadastro, login, troca de senha). O usuário já
+// foi criado / a senha já mudou; só o aviso não chegou.
+async function enviar(dados: {
+  destinatario: string;
+  assunto: string;
+  corpoHtml: string;
+  marca: MarcaEmail;
+  // O que aparece no console em dev e nos logs de falha.
+  descricao: string;
+  logDev?: string;
+}) {
+  const { destinatario, assunto, corpoHtml, marca, descricao } = dados;
   if (!resend) {
-    console.log(`[dev] Link de verificação de e-mail para ${destinatario}: ${link}`);
+    console.log(`[dev] ${dados.logDev ?? descricao} para ${destinatario}`);
     return;
   }
 
   try {
     const { error } = await resend.emails.send({
-      from: REMETENTE,
+      // Nome de exibição sem <, >, aspas ou quebra de linha: são os
+      // caracteres que desmontariam o header From ("Nome <email>").
+      from: marca?.remetente
+        ? `${marca.nome.replace(/[<>"\r\n]/g, "")} <${marca.remetente}>`
+        : REMETENTE,
       to: destinatario,
-      subject: "Confirme seu e-mail",
-      html: `
-        <p>Confirme seu e-mail pra ativar sua conta.</p>
-        <p><a href="${link}">${link}</a></p>
-        <p style="color:#71717a;font-size:12px">Se você não criou essa conta, pode ignorar este e-mail.</p>
-      `,
+      subject: marca ? `${marca.nome}: ${assunto}` : assunto,
+      html: `${cabecalhoMarca(marca)}${corpoHtml}`,
     });
-
-    // Best-effort: uma falha no envio não deve impedir o cadastro em si (o
-    // usuário já foi criado; o link continua válido, só não chegou por e-mail).
-    if (error) {
-      console.error("Falha ao enviar e-mail de verificação:", error);
-    }
+    if (error) console.error(`Falha ao enviar e-mail (${descricao}):`, error);
   } catch (erro) {
-    console.error("Falha ao enviar e-mail de verificação:", erro);
+    console.error(`Falha ao enviar e-mail (${descricao}):`, erro);
   }
 }
 
-export async function enviarEmailRedefinicaoSenha(destinatario: string, link: string) {
-  if (!resend) {
-    console.log(`[dev] Link de redefinição de senha para ${destinatario}: ${link}`);
-    return;
-  }
+export async function enviarEmailVerificacao(destinatario: string, link: string, marca: MarcaEmail = null) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "verificação de e-mail",
+    logDev: `Link de verificação de e-mail: ${link}`,
+    assunto: "Confirme seu e-mail",
+    corpoHtml: `
+      <p>Confirme seu e-mail pra ativar sua conta.</p>
+      <p><a href="${link}">${link}</a></p>
+      <p ${ESTILO_NOTA}>Se você não criou essa conta, pode ignorar este e-mail.</p>
+    `,
+  });
+}
 
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Redefinição de senha",
-      html: `
-        <p>Pediram a redefinição da senha desta conta. Clique no link abaixo pra escolher uma nova senha:</p>
-        <p><a href="${link}">${link}</a></p>
-        <p style="color:#71717a;font-size:12px">O link expira em 1 hora. Se você não pediu isso, pode ignorar este e-mail — sua senha continua a mesma.</p>
-      `,
-    });
-
-    // Best-effort, mesmo raciocínio do envio de verificação: falha no envio não
-    // deve estourar a resposta genérica da rota (que já não revela se o
-    // e-mail existe ou não).
-    if (error) {
-      console.error("Falha ao enviar e-mail de redefinição de senha:", error);
-    }
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de redefinição de senha:", erro);
-  }
+export async function enviarEmailRedefinicaoSenha(destinatario: string, link: string, marca: MarcaEmail = null) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "redefinição de senha",
+    logDev: `Link de redefinição de senha: ${link}`,
+    assunto: "Redefinição de senha",
+    corpoHtml: `
+      <p>Pediram a redefinição da senha desta conta. Clique no link abaixo pra escolher uma nova senha:</p>
+      <p><a href="${link}">${link}</a></p>
+      <p ${ESTILO_NOTA}>O link expira em 1 hora. Se você não pediu isso, pode ignorar este e-mail — sua senha continua a mesma.</p>
+    `,
+  });
 }
 
 export async function enviarEmailConviteOrganizacao(
   destinatario: string,
   link: string,
   dados: { organizacaoNome: string; convidadoPorNome: string },
+  marca: MarcaEmail = null,
 ) {
   const organizacaoNome = escaparHtml(dados.organizacaoNome);
   const convidadoPorNome = escaparHtml(dados.convidadoPorNome);
-
-  if (!resend) {
-    console.log(
-      `[dev] Convite de ${convidadoPorNome} para ${destinatario} entrar em "${organizacaoNome}": ${link}`,
-    );
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: `${convidadoPorNome} te convidou para "${organizacaoNome}"`,
-      html: `
-        <p><strong>${convidadoPorNome}</strong> te convidou para entrar na organização <strong>${organizacaoNome}</strong>.</p>
-        <p><a href="${link}">${link}</a></p>
-        <p style="color:#71717a;font-size:12px">O link expira em 7 dias. Se você não esperava este convite, pode ignorar este e-mail.</p>
-      `,
-    });
-
-    // Best-effort, mesmo raciocínio dos outros links por e-mail: uma falha
-    // aqui não deve estourar a resposta da rota (o convite já foi criado, só
-    // não chegou por e-mail).
-    if (error) {
-      console.error("Falha ao enviar e-mail de convite de organização:", error);
-    }
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de convite de organização:", erro);
-  }
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "convite de organização",
+    logDev: `Convite de ${dados.convidadoPorNome} para entrar em "${dados.organizacaoNome}": ${link}`,
+    // Assunto não é HTML: vai o nome cru. Escapado, um "&" no nome da
+    // organização aparecia como "&amp;" na caixa de entrada.
+    assunto: `${dados.convidadoPorNome} te convidou para "${dados.organizacaoNome}"`,
+    corpoHtml: `
+      <p><strong>${convidadoPorNome}</strong> te convidou para entrar na organização <strong>${organizacaoNome}</strong>.</p>
+      <p><a href="${link}">${link}</a></p>
+      <p ${ESTILO_NOTA}>O link expira em 7 dias. Se você não esperava este convite, pode ignorar este e-mail.</p>
+    `,
+  });
 }
 
-// Notificações de segurança abaixo: nenhuma delas pode derrubar o fluxo
-// principal (login, MFA, troca de senha) — todas seguem o mesmo padrão
-// best-effort (try/catch + log) das duas funções acima, mesmo sem link
-// nenhum pra clicar (são só avisos).
+// Notificações de segurança abaixo: nenhuma tem link pra clicar, são só
+// avisos — e todas passam pelo mesmo envio best-effort.
 
 export async function enviarEmailDispositivoNovo(
   destinatario: string,
   dados: { ip: string | null; userAgent: string | null; quando: Date },
+  marca: MarcaEmail = null,
 ) {
   const quando = dados.quando.toLocaleString("pt-BR");
   const ip = escaparHtml(dados.ip ?? "desconhecido");
   const userAgent = escaparHtml(dados.userAgent ?? "desconhecido");
-
-  if (!resend) {
-    console.log(`[dev] Alerta de login em novo dispositivo para ${destinatario} (IP ${ip})`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Novo login detectado na sua conta",
-      html: `
-        <p>Detectamos um login na sua conta a partir de um dispositivo ou local que não reconhecemos.</p>
-        <ul>
-          <li><strong>Quando:</strong> ${quando}</li>
-          <li><strong>IP:</strong> ${ip}</li>
-          <li><strong>Dispositivo:</strong> ${userAgent}</li>
-        </ul>
-        <p>Se foi você, pode ignorar este e-mail. Se não foi, troque sua senha agora e revise as sessões ativas na sua conta.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de novo dispositivo:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de novo dispositivo:", erro);
-  }
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "novo dispositivo",
+    logDev: `Alerta de login em novo dispositivo (IP ${ip})`,
+    assunto: "Novo login detectado na sua conta",
+    corpoHtml: `
+      <p>Detectamos um login na sua conta a partir de um dispositivo ou local que não reconhecemos.</p>
+      <ul>
+        <li><strong>Quando:</strong> ${quando}</li>
+        <li><strong>IP:</strong> ${ip}</li>
+        <li><strong>Dispositivo:</strong> ${userAgent}</li>
+      </ul>
+      <p>Se foi você, pode ignorar este e-mail. Se não foi, troque sua senha agora e revise as sessões ativas na sua conta.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
-export async function enviarEmailMfaAtivado(destinatario: string) {
-  if (!resend) {
-    console.log(`[dev] Aviso de MFA ativado para ${destinatario}`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Verificação em duas etapas ativada",
-      html: `
-        <p>A verificação em duas etapas (MFA) foi ativada na sua conta.</p>
-        <p>Se não foi você, entre na sua conta agora, desative o MFA e troque sua senha.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de MFA ativado:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de MFA ativado:", erro);
-  }
+export async function enviarEmailMfaAtivado(destinatario: string, marca: MarcaEmail = null) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "MFA ativado",
+    logDev: "Aviso de MFA ativado",
+    assunto: "Verificação em duas etapas ativada",
+    corpoHtml: `
+      <p>A verificação em duas etapas (MFA) foi ativada na sua conta.</p>
+      <p>Se não foi você, entre na sua conta agora, desative o MFA e troque sua senha.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
-export async function enviarEmailMfaDesativado(destinatario: string) {
-  if (!resend) {
-    console.log(`[dev] Aviso de MFA desativado para ${destinatario}`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Verificação em duas etapas desativada",
-      html: `
-        <p>A verificação em duas etapas (MFA) foi desativada na sua conta — a partir de agora, só a sua senha protege o acesso.</p>
-        <p>Se não foi você, reative o MFA e troque sua senha imediatamente.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de MFA desativado:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de MFA desativado:", erro);
-  }
+export async function enviarEmailMfaDesativado(destinatario: string, marca: MarcaEmail = null) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "MFA desativado",
+    logDev: "Aviso de MFA desativado",
+    assunto: "Verificação em duas etapas desativada",
+    corpoHtml: `
+      <p>A verificação em duas etapas (MFA) foi desativada na sua conta — a partir de agora, só a sua senha protege o acesso.</p>
+      <p>Se não foi você, reative o MFA e troque sua senha imediatamente.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
-export async function enviarEmailSenhaAlterada(destinatario: string) {
-  if (!resend) {
-    console.log(`[dev] Aviso de senha alterada para ${destinatario}`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Sua senha foi alterada",
-      html: `
-        <p>A senha da sua conta foi alterada. Todas as sessões ativas foram encerradas por segurança.</p>
-        <p>Se não foi você, use a opção "Esqueci minha senha" para recuperar o acesso agora.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de senha alterada:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de senha alterada:", erro);
-  }
+export async function enviarEmailSenhaAlterada(destinatario: string, marca: MarcaEmail = null) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "senha alterada",
+    logDev: "Aviso de senha alterada",
+    assunto: "Sua senha foi alterada",
+    corpoHtml: `
+      <p>A senha da sua conta foi alterada. Todas as sessões ativas foram encerradas por segurança.</p>
+      <p>Se não foi você, use a opção "Esqueci minha senha" para recuperar o acesso agora.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
-export async function enviarEmailCodigosBackupRegenerados(destinatario: string) {
-  if (!resend) {
-    console.log(`[dev] Aviso de códigos de backup regenerados para ${destinatario}`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Códigos de backup de MFA regenerados",
-      html: `
-        <p>Um novo conjunto de códigos de backup foi gerado para a verificação em duas etapas da sua conta — os códigos antigos não funcionam mais.</p>
-        <p>Se não foi você, troque sua senha e revise se o MFA continua configurado do jeito que você espera.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de códigos de backup regenerados:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de códigos de backup regenerados:", erro);
-  }
+export async function enviarEmailCodigosBackupRegenerados(destinatario: string, marca: MarcaEmail = null) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "códigos de backup regenerados",
+    logDev: "Aviso de códigos de backup regenerados",
+    assunto: "Códigos de backup de MFA regenerados",
+    corpoHtml: `
+      <p>Um novo conjunto de códigos de backup foi gerado para a verificação em duas etapas da sua conta — os códigos antigos não funcionam mais.</p>
+      <p>Se não foi você, troque sua senha e revise se o MFA continua configurado do jeito que você espera.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
-export async function enviarEmailConfirmacaoAlteracaoEmail(destinatario: string, link: string) {
-  if (!resend) {
-    console.log(`[dev] Link de confirmação de alteração de e-mail para ${destinatario}: ${link}`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Confirme seu novo e-mail",
-      html: `
-        <p>Pediram a troca do e-mail desta conta para este endereço. Clique no link
-        abaixo para confirmar — o e-mail da conta só muda depois dessa confirmação:</p>
-        <p><a href="${link}">${link}</a></p>
-        <p style="color:#71717a;font-size:12px">O link expira em 1 hora. Se você não pediu essa troca, pode ignorar este e-mail.</p>
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de confirmação de alteração de e-mail:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de confirmação de alteração de e-mail:", erro);
-  }
+export async function enviarEmailConfirmacaoAlteracaoEmail(
+  destinatario: string,
+  link: string,
+  marca: MarcaEmail = null,
+) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "confirmação de alteração de e-mail",
+    logDev: `Link de confirmação de alteração de e-mail: ${link}`,
+    assunto: "Confirme seu novo e-mail",
+    corpoHtml: `
+      <p>Pediram a troca do e-mail desta conta para este endereço. Clique no link
+      abaixo para confirmar — o e-mail da conta só muda depois dessa confirmação:</p>
+      <p><a href="${link}">${link}</a></p>
+      <p ${ESTILO_NOTA}>O link expira em 1 hora. Se você não pediu essa troca, pode ignorar este e-mail.</p>
+    `,
+  });
 }
 
 // Aviso pro e-mail ANTIGO no momento em que a troca é PEDIDA (antes da
@@ -288,164 +260,141 @@ export async function enviarEmailConfirmacaoAlteracaoEmail(destinatario: string,
 export async function enviarEmailAlteracaoEmailSolicitada(
   destinatarioAntigo: string,
   novoEmail: string,
+  marca: MarcaEmail = null,
 ) {
   const novoEmailEscapado = escaparHtml(novoEmail);
-
-  if (!resend) {
-    console.log(
-      `[dev] Aviso de troca de e-mail SOLICITADA para ${destinatarioAntigo} (novo: ${novoEmailEscapado})`,
-    );
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatarioAntigo,
-      subject: "Pediram para trocar o e-mail da sua conta",
-      html: `
-        <p>Alguém pediu para trocar o e-mail desta conta para <strong>${novoEmailEscapado}</strong>.
-        A troca só acontece quando o link enviado para o novo endereço for confirmado.</p>
-        <p>Se foi você, pode ignorar este aviso. <strong>Se não foi</strong>, troque sua senha agora
-        e revise as sessões ativas — sua conta pode estar comprometida.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar aviso de troca de e-mail solicitada:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar aviso de troca de e-mail solicitada:", erro);
-  }
+  await enviar({
+    destinatario: destinatarioAntigo,
+    marca,
+    descricao: "troca de e-mail solicitada",
+    logDev: `Aviso de troca de e-mail SOLICITADA (novo: ${novoEmailEscapado})`,
+    assunto: "Pediram para trocar o e-mail da sua conta",
+    corpoHtml: `
+      <p>Alguém pediu para trocar o e-mail desta conta para <strong>${novoEmailEscapado}</strong>.
+      A troca só acontece quando o link enviado para o novo endereço for confirmado.</p>
+      <p>Se foi você, pode ignorar este aviso. <strong>Se não foi</strong>, troque sua senha agora
+      e revise as sessões ativas — sua conta pode estar comprometida.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
-export async function enviarEmailEmailAlterado(destinatarioAntigo: string, novoEmail: string) {
+export async function enviarEmailEmailAlterado(
+  destinatarioAntigo: string,
+  novoEmail: string,
+  marca: MarcaEmail = null,
+) {
   const novoEmailEscapado = escaparHtml(novoEmail);
-
-  if (!resend) {
-    console.log(`[dev] Aviso de e-mail alterado para ${destinatarioAntigo} (novo: ${novoEmailEscapado})`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatarioAntigo,
-      subject: "O e-mail da sua conta foi alterado",
-      html: `
-        <p>O e-mail desta conta foi trocado para <strong>${novoEmailEscapado}</strong>.</p>
-        <p>Se não foi você, alguém pode ter acesso à sua conta — troque sua senha imediatamente e revise as sessões ativas.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de alerta de alteração de e-mail:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de alerta de alteração de e-mail:", erro);
-  }
+  await enviar({
+    destinatario: destinatarioAntigo,
+    marca,
+    descricao: "e-mail alterado",
+    logDev: `Aviso de e-mail alterado (novo: ${novoEmailEscapado})`,
+    assunto: "O e-mail da sua conta foi alterado",
+    corpoHtml: `
+      <p>O e-mail desta conta foi trocado para <strong>${novoEmailEscapado}</strong>.</p>
+      <p>Se não foi você, alguém pode ter acesso à sua conta — troque sua senha imediatamente e revise as sessões ativas.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
 export async function enviarEmailViagemImpossivel(
   destinatario: string,
   dados: { paisAnterior: string; paisAtual: string; quando: Date },
+  marca: MarcaEmail = null,
 ) {
   const quando = dados.quando.toLocaleString("pt-BR");
   const paisAnterior = escaparHtml(dados.paisAnterior);
   const paisAtual = escaparHtml(dados.paisAtual);
-
-  if (!resend) {
-    console.log(
-      `[dev] Alerta de viagem impossível para ${destinatario} (${paisAnterior} -> ${paisAtual})`,
-    );
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Login suspeito: locais incompatíveis detectados",
-      html: `
-        <p>Sua conta acabou de ser acessada de <strong>${paisAtual}</strong>, pouco tempo depois de
-        um acesso de <strong>${paisAnterior}</strong> — distância improvável de percorrer nesse
-        intervalo (${quando}).</p>
-        <p>Se foi você (ex.: usando uma VPN), pode ignorar este e-mail. Se não foi, troque sua
-        senha agora e revise as sessões ativas na sua conta.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de viagem impossível:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de viagem impossível:", erro);
-  }
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "viagem impossível",
+    logDev: `Alerta de viagem impossível (${paisAnterior} -> ${paisAtual})`,
+    assunto: "Login suspeito: locais incompatíveis detectados",
+    corpoHtml: `
+      <p>Sua conta acabou de ser acessada de <strong>${paisAtual}</strong>, pouco tempo depois de
+      um acesso de <strong>${paisAnterior}</strong> — distância improvável de percorrer nesse
+      intervalo (${quando}).</p>
+      <p>Se foi você (ex.: usando uma VPN), pode ignorar este e-mail. Se não foi, troque sua
+      senha agora e revise as sessões ativas na sua conta.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
 export async function enviarEmailPasskeyAlterada(
   destinatario: string,
   acao: "adicionada" | "removida",
+  marca: MarcaEmail = null,
 ) {
-  if (!resend) {
-    console.log(`[dev] Aviso de passkey ${acao} para ${destinatario}`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: acao === "adicionada" ? "Nova passkey adicionada" : "Passkey removida",
-      html: `
-        <p>Uma passkey foi ${acao} na sua conta.</p>
-        <p>Se não foi você, revise as passkeys e sessões ativas da sua conta e troque sua senha.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error(`Falha ao enviar e-mail de passkey ${acao}:`, error);
-  } catch (erro) {
-    console.error(`Falha ao enviar e-mail de passkey ${acao}:`, erro);
-  }
+  await enviar({
+    destinatario,
+    marca,
+    descricao: `passkey ${acao}`,
+    logDev: `Aviso de passkey ${acao}`,
+    assunto: acao === "adicionada" ? "Nova passkey adicionada" : "Passkey removida",
+    corpoHtml: `
+      <p>Uma passkey foi ${acao} na sua conta.</p>
+      <p>Se não foi você, revise as passkeys e sessões ativas da sua conta e troque sua senha.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
-export async function enviarEmailContaExcluida(destinatario: string) {
-  if (!resend) {
-    console.log(`[dev] Confirmação de conta excluída para ${destinatario}`);
-    return;
-  }
-
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Sua conta foi excluída",
-      html: `
-        <p>Confirmamos a exclusão permanente da sua conta e de todos os dados associados a ela (sessões, MFA, dispositivos confiáveis).</p>
-        <p>Se você não pediu essa exclusão, entre em contato com o suporte imediatamente — não é possível desfazer essa ação sozinho, já que a conta não existe mais para fazer login.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de confirmação de exclusão de conta:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de confirmação de exclusão de conta:", erro);
-  }
+export async function enviarEmailContaExcluida(destinatario: string, marca: MarcaEmail = null) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "conta excluída",
+    logDev: "Confirmação de conta excluída",
+    assunto: "Sua conta foi excluída",
+    corpoHtml: `
+      <p>Confirmamos a exclusão permanente da sua conta e de todos os dados associados a ela (sessões, MFA, dispositivos confiáveis).</p>
+      <p>Se você não pediu essa exclusão, entre em contato com o suporte imediatamente — não é possível desfazer essa ação sozinho, já que a conta não existe mais para fazer login.</p>
+      ${rodape(marca)}
+    `,
+  });
 }
 
-export async function enviarEmailReusoTokenDetectado(destinatario: string) {
-  if (!resend) {
-    console.log(`[dev] Alerta de reuso de token detectado para ${destinatario}`);
-    return;
-  }
+// Par do cadastro anti-enumeração: a tela responde igual para e-mail novo e
+// e-mail já cadastrado, então é por aqui — na caixa de entrada do dono do
+// endereço, que é quem já sabe que a conta existe — que a pessoa que
+// esqueceu que tinha conta descobre isso e acha o caminho de volta.
+export async function enviarEmailCadastroComContaExistente(
+  destinatario: string,
+  links: { login: string; esqueciSenha: string },
+  marca: MarcaEmail = null,
+) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "cadastro com conta existente",
+    logDev: `Aviso de cadastro com conta existente: ${links.login} | ${links.esqueciSenha}`,
+    assunto: "Tentaram criar uma conta com o seu e-mail",
+    corpoHtml: `
+      <p>Alguém tentou criar uma conta nova com este endereço, mas ele já tem uma conta — nada foi alterado nela.</p>
+      <p>Se foi você, é só entrar: <a href="${links.login}">${links.login}</a></p>
+      <p>Não lembra a senha? <a href="${links.esqueciSenha}">${links.esqueciSenha}</a></p>
+      <p>Se não foi você, pode ignorar este e-mail. A senha digitada na tentativa não foi usada nem guardada.</p>
+      ${rodape(marca)}
+    `,
+  });
+}
 
-  try {
-    const { error } = await resend.emails.send({
-      from: REMETENTE,
-      to: destinatario,
-      subject: "Atividade suspeita: todas as sessões foram encerradas",
-      html: `
-        <p>Detectamos o reuso de um token de sessão que já tinha sido substituído — um sinal clássico de que alguém mais pode ter tido acesso a uma sessão sua.</p>
-        <p>Por segurança, <strong>todas as suas sessões ativas foram encerradas</strong> automaticamente (inclusive a sua, se estiver com alguma aba aberta agora).</p>
-        <p>Se não foi você, troque sua senha assim que possível.</p>
-        ${RODAPE_PADRAO}
-      `,
-    });
-    if (error) console.error("Falha ao enviar e-mail de alerta de reuso de token:", error);
-  } catch (erro) {
-    console.error("Falha ao enviar e-mail de alerta de reuso de token:", erro);
-  }
+export async function enviarEmailReusoTokenDetectado(destinatario: string, marca: MarcaEmail = null) {
+  await enviar({
+    destinatario,
+    marca,
+    descricao: "reuso de token detectado",
+    logDev: "Alerta de reuso de token detectado",
+    assunto: "Atividade suspeita: todas as sessões foram encerradas",
+    corpoHtml: `
+      <p>Detectamos o reuso de um token de sessão que já tinha sido substituído — um sinal clássico de que alguém mais pode ter tido acesso a uma sessão sua.</p>
+      <p>Por segurança, <strong>todas as suas sessões ativas foram encerradas</strong> automaticamente (inclusive a sua, se estiver com alguma aba aberta agora).</p>
+      <p>Se não foi você, troque sua senha assim que possível.</p>
+      ${rodape(marca)}
+    `,
+  });
 }

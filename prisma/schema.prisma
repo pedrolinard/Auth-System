@@ -43,6 +43,17 @@ model Aplicacao {
   // (PASSKEY_RP_ID); com clientes em domínios próprios, tem que ser por
   // aplicação, porque uma credencial só vale na origem em que nasceu.
   passkeyRpId String?
+  // Marca nos e-mails enviados aos usuários finais desta aplicação (ver
+  // MarcaEmail em src/lib/email.ts). Todos opcionais: sem eles, os e-mails
+  // saem com o nome da aplicação no assunto e o remetente do provedor.
+  // Remetente precisa ser de um domínio verificado no Resend do provedor.
+  emailRemetente String?
+  // Endereço base dos links nos e-mails (verificar e-mail, redefinir senha,
+  // aceitar convite). Sem ele, os links apontam pras páginas do próprio
+  // provedor (BASE_URL) — que funcionam pra qualquer aplicação, porque o token
+  // do link já diz de quem é a conta.
+  urlLinks       String?
+  logoUrl        String?
   ativa    Boolean @default(true)
   // A aplicação de primeira parte: o próprio painel deste projeto. Requisição
   // que chega sem x-aplicacao-id (o dashboard, as páginas de login, tudo que
@@ -135,9 +146,13 @@ model Usuario {
   mfaUltimoTimestep Int?
   emailVerificado Boolean            @default(false)
   papel          Papel               @default(usuario)
-  // suspensoAte null + suspenso true = suspensão permanente; suspensoAte no
-  // passado é tratado como suspensão expirada (login volta a funcionar sem
-  // precisar de reativação manual nem de job de limpeza).
+  // LEGADO — nenhum código lê nem escreve mais estes três campos. A suspensão
+  // passou a ser por organização (ver Membro.suspenso): um dono/admin da
+  // organização A não tem por que bloquear a pessoa na organização B. A
+  // migration 20260914120000_suspensao_por_membro copiou as suspensões ativas
+  // pra cada Membro da conta. As colunas só saem num deploy POSTERIOR: o
+  // código anterior ainda as seleciona, e derrubá-las junto com a troca de
+  // código quebraria o login na janela entre a migration e o deploy.
   suspenso       Boolean             @default(false)
   suspensoAte    DateTime?           @db.Timestamptz(3)
   suspensoMotivo String?
@@ -201,6 +216,10 @@ model TokenAtualizacao {
   criadoEm     DateTime  @default(now()) @db.Timestamptz(3)
   expiraEm     DateTime  @db.Timestamptz(3)
   revogadoEm   DateTime? @db.Timestamptz(3)
+  // Por que foi revogada (ver src/lib/revogacao.ts). Só a revogação por
+  // ROTAÇÃO faz a reapresentação do token contar como roubo; nulo = revogada
+  // antes desta coluna existir, tratada como rotação.
+  revogadoMotivo String?
 
   @@index([usuarioId])
   @@index([organizacaoId])
@@ -384,6 +403,14 @@ model Membro {
   usuarioId     String
   usuario       Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   papel         PapelOrganizacao @default(membro)
+  // Suspensão DENTRO desta organização. Quem suspende é dono/admin da
+  // organização, então o efeito fica nela: a pessoa continua entrando nas
+  // outras organizações de que participa (inclusive a pessoal). suspensoAte
+  // null + suspenso true = permanente; suspensoAte no passado = suspensão
+  // expirada (volta a valer sozinha, sem reativação manual nem job).
+  suspenso       Boolean          @default(false)
+  suspensoAte    DateTime?        @db.Timestamptz(3)
+  suspensoMotivo String?
   criadoEm      DateTime         @default(now()) @db.Timestamptz(3)
 
   @@unique([organizacaoId, usuarioId])

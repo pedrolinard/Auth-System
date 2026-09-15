@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { prisma } from "@/lib/db";
 import {
   apagarUsuariosTeste,
   BASE_URL,
@@ -34,18 +35,33 @@ describe("POST /api/auth/cadastro", () => {
 
     expect(resposta.status).toBe(201);
     const corpo = await resposta.json();
-    expect(corpo.usuario.email).toBe(email);
-    expect(corpo.usuario.id).toBeTruthy();
+    // Não devolve o usuário: esses campos só existiriam pra conta nova.
+    expect(corpo.usuario).toBeUndefined();
+    const usuario = await prisma.usuario.findFirst({ where: { email } });
+    expect(usuario).not.toBeNull();
   });
 
-  it("rejeita e-mail duplicado com 409", async () => {
+  it("e-mail já cadastrado recebe a MESMA resposta de um cadastro novo (anti-enumeração)", async () => {
     const email = proximoEmail("cadastro-duplicado");
-    const dados = { nome: "Teste", email, senha: SENHA_TESTE };
+    const novo = await cadastrar({ nome: "Teste", email, senha: SENHA_TESTE });
+    const corpoNovo = await novo.json();
+    const contaOriginal = await prisma.usuario.findFirstOrThrow({ where: { email } });
 
-    await cadastrar(dados);
-    const resposta = await cadastrar(dados);
+    const duplicado = await cadastrar({ nome: "Outro Nome", email, senha: "OutraSenhaForte456!" });
 
-    expect(resposta.status).toBe(409);
+    expect(duplicado.status).toBe(novo.status);
+    expect(await duplicado.json()).toEqual(corpoNovo);
+
+    // A conta original não foi tocada: nem nome, nem senha.
+    const contaDepois = await prisma.usuario.findFirstOrThrow({ where: { email } });
+    expect(contaDepois.nome).toBe(contaOriginal.nome);
+    expect(contaDepois.senhaHash).toBe(contaOriginal.senhaHash);
+    expect(await prisma.usuario.count({ where: { email } })).toBe(1);
+
+    const aviso = await prisma.logAuditoria.findFirst({
+      where: { evento: "cadastro_conta_existente", email },
+    });
+    expect(aviso).not.toBeNull();
   });
 
   it("rejeita dados inválidos com 400", async () => {

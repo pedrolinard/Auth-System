@@ -24,30 +24,25 @@ export async function GET(req: Request) {
     where: { organizacaoId: payload.organizacaoId },
     select: {
       papel: true,
-      usuario: {
-        select: {
-          id: true,
-          nome: true,
-          email: true,
-          criadoEm: true,
-          suspenso: true,
-          suspensoAte: true,
-          suspensoMotivo: true,
-        },
-      },
+      suspenso: true,
+      suspensoAte: true,
+      suspensoMotivo: true,
+      usuario: { select: { id: true, nome: true, email: true, criadoEm: true } },
     },
     orderBy: { criadoEm: "asc" },
   });
 
   // suspensoAtivo já vem calculado (suspensão temporária expirada = false)
-  // pra o cliente não precisar refazer essa conta com o relógio local.
-  // Suspensão continua sendo por CONTA (Usuario), não por organização — ver
-  // nota em rbacOrganizacao.ts: suspender aqui afeta a conta em qualquer
-  // organização de que o usuário participe, trade-off aceito por enquanto.
-  const usuarios = membros.map(({ papel, usuario }) => ({
+  // pra o cliente não precisar refazer essa conta com o relógio local. A
+  // suspensão é a DESTA organização (Membro) — se a pessoa estiver suspensa
+  // em outra, isso não aparece aqui, e nem deveria.
+  const usuarios = membros.map(({ papel, suspenso, suspensoAte, suspensoMotivo, usuario }) => ({
     ...usuario,
     papel,
-    suspensoAtivo: estaSuspenso(usuario),
+    suspenso,
+    suspensoAte,
+    suspensoMotivo,
+    suspensoAtivo: estaSuspenso({ suspenso, suspensoAte }),
   }));
 
   return NextResponse.json({ usuarios });

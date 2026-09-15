@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
+import { contextoEmail } from "@/lib/aplicacao";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
@@ -115,14 +116,15 @@ export async function POST(req: Request) {
   // POST /api/auth/confirmar-alteracao-email) — até lá, `usuario.email`
   // continua o de sempre, então um pedido nunca sequestra a conta sozinho.
   const token = await gerarTokenAlteracaoEmail(usuario.id, novoEmail);
-  const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
+  const { marca, baseLinks } = await contextoEmail(usuario.aplicacaoId);
   await enviarEmailConfirmacaoAlteracaoEmail(
     novoEmail,
-    `${baseUrl}/confirmar-alteracao-email?token=${token}`,
+    `${baseLinks}/confirmar-alteracao-email?token=${token}`,
+    marca,
   );
   // Avisa o endereço ATUAL de que uma troca foi pedida — quem realmente é o
   // dono fica sabendo mesmo que o pedido tenha partido de uma sessão roubada.
-  await enviarEmailAlteracaoEmailSolicitada(usuario.email, novoEmail);
+  await enviarEmailAlteracaoEmailSolicitada(usuario.email, novoEmail, marca);
 
   await registrarEvento({ req, evento: "alteracao_email_solicitada", usuarioId: usuario.id });
 

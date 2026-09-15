@@ -1,7 +1,21 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import * as OTPAuth from "otpauth";
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
-import { apagarUsuariosTeste, BASE_URL, criarUsuarioTeste, loginTeste } from "../helpers";
+import {
+  apagarUsuariosTeste,
+  BASE_URL,
+  cabecalhoCookie,
+  criarUsuarioTeste,
+  extrairTodosCookies,
+  loginTeste,
+} from "../helpers";
+
+async function chaveUsuario(email: string) {
+  const { aplicacaoId } = await prisma.usuario.findFirstOrThrow({ where: { email } });
+  return { aplicacaoId, email };
+}
 
 const emailsCriados: string[] = [];
 
@@ -40,6 +54,16 @@ async function adicionarComoMembro(
   await prisma.membro.create({ data: { organizacaoId, usuarioId, papel } });
 }
 
+// Suspensão é por organização: com a organização pessoal intacta, o alvo
+// suspenso na organização do dono continua logando (na pessoal). Pra testar
+// o bloqueio TOTAL de login, o alvo precisa pertencer só à organização do
+// dono — apaga a pessoal dele (Membro cai junto, em cascata).
+async function deixarSomenteNaOrganizacao(organizacaoId: string, usuarioId: string) {
+  const pessoal = await obterOrganizacaoDoUsuario(usuarioId);
+  await prisma.organizacao.delete({ where: { id: pessoal } });
+  await adicionarComoMembro(organizacaoId, usuarioId);
+}
+
 describe("Admin de organização — suspender/reativar/remover membro", () => {
   afterAll(async () => {
     await apagarUsuariosTeste(emailsCriados);
@@ -64,14 +88,14 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     expect(resposta.status).toBe(403);
   });
 
-  it("dono suspende temporariamente e o login passa a ser bloqueado", async () => {
+  it("dono suspende temporariamente e o login passa a ser bloqueado (única organização)", async () => {
     const dono = await criarUsuarioTeste("dono-susp-temp");
     const alvo = await criarUsuarioTeste("alvo-susp-temp");
     emailsCriados.push(dono.email, alvo.email);
     const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
     const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
-    await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
+    await deixarSomenteNaOrganizacao(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
 
     const respostaSuspender = await fetch(
@@ -107,7 +131,7 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const adminRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: admin.email } });
     const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoAdmin = await definirPapelNaPropriaOrganizacao(adminRegistro.id, "admin");
-    await adicionarComoMembro(organizacaoDoAdmin, alvoRegistro.id);
+    await deixarSomenteNaOrganizacao(organizacaoDoAdmin, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(admin.email, admin.senha);
 
     await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
@@ -137,7 +161,7 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     expect(loginLiberado.status).toBe(200);
   });
 
-  it("suspender revoga as sessões ativas na hora", async () => {
+  it("suspender revoga na hora as sessões da organização, e só as dela", async () => {
     const dono = await criarUsuarioTeste("dono-susp-sessao");
     const alvo = await criarUsuarioTeste("alvo-susp-sessao");
     emailsCriados.push(dono.email, alvo.email);
@@ -146,7 +170,20 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
     await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
-    const sessaoAlvo = await loginTeste(alvo.email, alvo.senha);
+
+    // Duas sessões do alvo: uma na organização pessoal (a do login) e outra
+    // trocada pra organização do dono.
+    const sessaoPessoal = await loginTeste(alvo.email, alvo.senha);
+    const sessaoParaTrocar = await loginTeste(alvo.email, alvo.senha);
+    const respostaEntrar = await fetch(
+      `${BASE_URL}/api/auth/organizacoes/${organizacaoDoDono}/entrar`,
+      { method: "POST", headers: sessaoParaTrocar.cabecalhos },
+    );
+    expect(respostaEntrar.status).toBe(200);
+    const cookiesNaOrganizacaoDoDono = {
+      ...sessaoParaTrocar.cookies,
+      ...extrairTodosCookies(respostaEntrar),
+    };
 
     await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`, {
       method: "POST",
@@ -154,11 +191,136 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
       body: JSON.stringify({ dias: 1 }),
     });
 
-    const respostaAtualizar = await fetch(`${BASE_URL}/api/auth/atualizar`, {
+    const atualizarNaOrganizacaoDoDono = await fetch(`${BASE_URL}/api/auth/atualizar`, {
       method: "POST",
+      headers: {
+        Cookie: cabecalhoCookie(cookiesNaOrganizacaoDoDono),
+        "X-CSRF-Token": cookiesNaOrganizacaoDoDono.csrfToken,
+      },
+    });
+    expect(atualizarNaOrganizacaoDoDono.status).toBe(401);
+
+    const atualizarNaPessoal = await fetch(`${BASE_URL}/api/auth/atualizar`, {
+      method: "POST",
+      headers: sessaoPessoal.cabecalhos,
+    });
+    // Ordem importa: a renovação recusada acima reapresentou um token
+    // revogado. Se isso fosse tratado como reuso de token roubado, teria
+    // derrubado esta sessão também (e mandado alerta de invasão).
+    expect(atualizarNaPessoal.status).toBe(200);
+    const alertaReuso = await prisma.logAuditoria.findFirst({
+      where: { evento: "reuso_token_detectado", usuarioId: alvoRegistro.id },
+    });
+    expect(alertaReuso).toBeNull();
+  });
+
+  it("suspenso numa organização continua logando nas outras, mas não entra na suspensa", async () => {
+    const dono = await criarUsuarioTeste("dono-susp-parcial");
+    const alvo = await criarUsuarioTeste("alvo-susp-parcial");
+    emailsCriados.push(dono.email, alvo.email);
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
+    const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
+    const organizacaoPessoalDoAlvo = await obterOrganizacaoDoUsuario(alvoRegistro.id);
+    await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
+    const { cabecalhos } = await loginTeste(dono.email, dono.senha);
+
+    const respostaSuspender = await fetch(
+      `${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}/suspender`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...cabecalhos },
+        body: JSON.stringify({ motivo: "só nesta organização" }),
+      },
+    );
+    expect(respostaSuspender.status).toBe(200);
+
+    // A conta em si segue intacta — nada foi gravado em Usuario.
+    const contaAlvo = await prisma.usuario.findUniqueOrThrow({ where: { id: alvoRegistro.id } });
+    expect(contaAlvo.suspenso).toBe(false);
+
+    const sessaoAlvo = await loginTeste(alvo.email, alvo.senha);
+    const sessaoCriada = await prisma.tokenAtualizacao.findFirstOrThrow({
+      where: { usuarioId: alvoRegistro.id, revogadoEm: null },
+      orderBy: { criadoEm: "desc" },
+    });
+    expect(sessaoCriada.organizacaoId).toBe(organizacaoPessoalDoAlvo);
+
+    const respostaLista = await fetch(`${BASE_URL}/api/auth/organizacoes`, {
       headers: sessaoAlvo.cabecalhos,
     });
-    expect(respostaAtualizar.status).toBe(401);
+    const { organizacoes } = await respostaLista.json();
+    const naDoDono = organizacoes.find((o: { id: string }) => o.id === organizacaoDoDono);
+    expect(naDoDono.suspenso).toBe(true);
+    // Motivo não vaza na listagem — só o /entrar conta, a quem tenta.
+    expect(naDoDono.suspensoMotivo).toBeUndefined();
+
+    const respostaEntrar = await fetch(
+      `${BASE_URL}/api/auth/organizacoes/${organizacaoDoDono}/entrar`,
+      { method: "POST", headers: sessaoAlvo.cabecalhos },
+    );
+    expect(respostaEntrar.status).toBe(403);
+    expect((await respostaEntrar.json()).erro).toMatch(/só nesta organização/);
+  });
+
+  it("organização em que a pessoa entrou antes da pessoal é pulada no login quando suspensa", async () => {
+    // resolverOrganizacaoAtiva pega a PRIMEIRA por criadoEm — se a suspensa é
+    // a primeira, o login tem que abrir na seguinte, não recusar.
+    const dono = await criarUsuarioTeste("dono-susp-ordem");
+    const alvo = await criarUsuarioTeste("alvo-susp-ordem");
+    emailsCriados.push(dono.email, alvo.email);
+    const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
+    const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
+    const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
+    const organizacaoPessoalDoAlvo = await obterOrganizacaoDoUsuario(alvoRegistro.id);
+    await prisma.membro.create({
+      data: {
+        organizacaoId: organizacaoDoDono,
+        usuarioId: alvoRegistro.id,
+        criadoEm: new Date("2000-01-01T00:00:00Z"),
+        suspenso: true,
+      },
+    });
+
+    const sessaoAlvo = await loginTeste(alvo.email, alvo.senha);
+    const sessao = await prisma.tokenAtualizacao.findFirstOrThrow({
+      where: { usuarioId: alvoRegistro.id, revogadoEm: null },
+      orderBy: { criadoEm: "desc" },
+    });
+    expect(sessaoAlvo.resposta.status).toBe(200);
+    expect(sessao.organizacaoId).toBe(organizacaoPessoalDoAlvo);
+  });
+
+  it("migration copia a suspensão legada de conta para cada organização", async () => {
+    // Reproduz o UPDATE da migration 20260914120000_suspensao_por_membro
+    // sobre dados montados à mão: garante que suspensão ativa é copiada e
+    // expirada não. O SQL é o mesmo do arquivo — lido de lá, não duplicado.
+    const ativo = await criarUsuarioTeste("legado-susp-ativa");
+    const expirado = await criarUsuarioTeste("legado-susp-expirada");
+    emailsCriados.push(ativo.email, expirado.email);
+    const ativoRegistro = await prisma.usuario.update({
+      where: { aplicacaoId_email: await chaveUsuario(ativo.email) },
+      data: { suspenso: true, suspensoMotivo: "legado" },
+    });
+    const expiradoRegistro = await prisma.usuario.update({
+      where: { aplicacaoId_email: await chaveUsuario(expirado.email) },
+      data: { suspenso: true, suspensoAte: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
+    });
+
+    const sql = readFileSync(
+      path.join(process.cwd(), "prisma/migrations/20260914120000_suspensao_por_membro/migration.sql"),
+      "utf8",
+    );
+    const update = sql.slice(sql.indexOf("UPDATE"));
+    await prisma.$executeRawUnsafe(update);
+
+    const membroAtivo = await prisma.membro.findFirstOrThrow({ where: { usuarioId: ativoRegistro.id } });
+    expect(membroAtivo.suspenso).toBe(true);
+    expect(membroAtivo.suspensoMotivo).toBe("legado");
+    const membroExpirado = await prisma.membro.findFirstOrThrow({
+      where: { usuarioId: expiradoRegistro.id },
+    });
+    expect(membroExpirado.suspenso).toBe(false);
   });
 
   it("dono não consegue suspender nem remover a si mesmo", async () => {
@@ -191,7 +353,7 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const donoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: dono.email } });
     const alvoRegistro = await prisma.usuario.findFirstOrThrow({ where: { email: alvo.email } });
     const organizacaoDoDono = await obterOrganizacaoDoUsuario(donoRegistro.id);
-    await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
+    await deixarSomenteNaOrganizacao(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos: cabecalhosDono } = await loginTeste(dono.email, dono.senha);
     const { cabecalhos: cabecalhosAlvo } = await loginTeste(alvo.email, alvo.senha);
 
@@ -309,11 +471,39 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     await adicionarComoMembro(organizacaoDoDono, alvoRegistro.id);
     const { cabecalhos } = await loginTeste(dono.email, dono.senha);
 
+    // Sessão do alvo trocada pra organização do dono, antes da remoção.
+    const sessaoPessoalAlvo = await loginTeste(alvo.email, alvo.senha);
+    const sessaoParaTrocar = await loginTeste(alvo.email, alvo.senha);
+    const respostaEntrar = await fetch(
+      `${BASE_URL}/api/auth/organizacoes/${organizacaoDoDono}/entrar`,
+      { method: "POST", headers: sessaoParaTrocar.cabecalhos },
+    );
+    const cookiesNaOrganizacaoDoDono = {
+      ...sessaoParaTrocar.cookies,
+      ...extrairTodosCookies(respostaEntrar),
+    };
+
     const respostaRemover = await fetch(`${BASE_URL}/api/auth/usuarios/${alvoRegistro.id}`, {
       method: "DELETE",
       headers: cabecalhos,
     });
     expect(respostaRemover.status).toBe(200);
+
+    // Renovar a sessão da organização de onde saiu é recusado, mas NÃO conta
+    // como reuso de token roubado: a sessão pessoal sobrevive.
+    const atualizarRemovida = await fetch(`${BASE_URL}/api/auth/atualizar`, {
+      method: "POST",
+      headers: {
+        Cookie: cabecalhoCookie(cookiesNaOrganizacaoDoDono),
+        "X-CSRF-Token": cookiesNaOrganizacaoDoDono.csrfToken,
+      },
+    });
+    expect(atualizarRemovida.status).toBe(401);
+    const atualizarPessoal = await fetch(`${BASE_URL}/api/auth/atualizar`, {
+      method: "POST",
+      headers: sessaoPessoalAlvo.cabecalhos,
+    });
+    expect(atualizarPessoal.status).toBe(200);
 
     const membro = await prisma.membro.findUnique({
       where: {

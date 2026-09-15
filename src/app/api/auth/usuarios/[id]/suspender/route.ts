@@ -5,16 +5,13 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { obterMembroDaOrganizacao, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
+import { revogacao } from "@/lib/revogacao";
 import { esquemaSuspensao } from "@/lib/validacao";
 
-// Quem pode suspender é escopado por organização (dono/admin da org ativa),
-// mas suspenso/suspensoAte/suspensoMotivo continuam campos GLOBAIS do
-// Usuario — suspender aqui bloqueia login em QUALQUER organização de que a
-// pessoa participe, não só nesta. Trade-off aceito por enquanto: mover
-// suspensão pra dentro de Membro é escopo maior (schema novo, refazer
-// estaSuspenso() e todos os pontos de login), não crítico o bastante pra
-// bloquear o multi-tenant por causa disso — documentado em
-// ROADMAP.md ("O que falta") e src/data/roadmap.ts.
+// Suspende a pessoa DENTRO da organização ativa de quem está agindo — o
+// efeito fica em Membro, não em Usuario. Ela continua entrando nas outras
+// organizações de que participa (inclusive a pessoal): um dono/admin da
+// organização A não tem autoridade sobre o que ela faz na organização B.
 export async function POST(
   req: Request,
   { params }: RouteContext<"/api/auth/usuarios/[id]/suspender">,
@@ -54,7 +51,8 @@ export async function POST(
   // Alvo precisa ser membro da MESMA organização de quem está agindo — sem
   // isso, um admin da organização A suspenderia qualquer conta do sistema
   // só sabendo o id.
-  if (!(await obterMembroDaOrganizacao(payload.organizacaoId, id))) {
+  const membro = await obterMembroDaOrganizacao(payload.organizacaoId, id);
+  if (!membro) {
     return NextResponse.json(
       { erro: "Usuário não encontrado nesta organização." },
       { status: 404 },
@@ -69,8 +67,8 @@ export async function POST(
   const { dias, motivo } = dadosValidados.data;
   const suspensoAte = dias ? new Date(Date.now() + dias * 24 * 60 * 60 * 1000) : null;
 
-  await prisma.usuario.update({
-    where: { id },
+  await prisma.membro.update({
+    where: { id: membro.id },
     data: {
       suspenso: true,
       suspensoAte,
@@ -78,12 +76,20 @@ export async function POST(
     },
   });
 
-  // Derruba as sessões ativas na hora. O access token de até 15 min ainda
-  // vale até expirar naturalmente — mesmo trade-off já aceito em "sair de
-  // todos os dispositivos" (JWT stateless não dá pra revogar no meio do voo).
+  // Derruba na hora as sessões DESTA organização — as das outras seguem
+  // vivas, pelo mesmo motivo de a suspensão ser por organização. Sessão sem
+  // organizacaoId (emitida antes da coluna existir) cai junto: não dá pra
+  // saber a que organização ela pertence, e /atualizar a resolveria de novo.
+  // O access token de até 15 min ainda vale até expirar naturalmente — mesmo
+  // trade-off já aceito em "sair de todos os dispositivos" (JWT stateless não
+  // dá pra revogar no meio do voo).
   await prisma.tokenAtualizacao.updateMany({
-    where: { usuarioId: id, revogadoEm: null },
-    data: { revogadoEm: new Date() },
+    where: {
+      usuarioId: id,
+      revogadoEm: null,
+      OR: [{ organizacaoId: payload.organizacaoId }, { organizacaoId: null }],
+    },
+    data: revogacao("suspensao"),
   });
 
   await registrarEvento({

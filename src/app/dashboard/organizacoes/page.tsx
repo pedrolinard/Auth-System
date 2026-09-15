@@ -79,8 +79,8 @@ export default function PaginaOrganizacoes() {
       // Recarrega a página inteira de propósito (não router.push/refresh):
       // o cookie da sessão mudou de organização, e todo estado em memória
       // desta e de outras telas (NavPainel incluso) precisa refletir isso,
-      // não só os dados desta rota.
-      window.location.assign("/dashboard/organizacoes");
+      // não só os dados desta rota. É esta mesma página, então reload basta.
+      window.location.reload();
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
       setCriandoOrg(false);
@@ -93,7 +93,7 @@ export default function PaginaOrganizacoes() {
     try {
       await entrarNaOrganizacao(org.id);
       // Mesmo motivo do criar organização acima — precisa recarregar tudo.
-      window.location.assign("/dashboard/organizacoes");
+      window.location.reload();
     } catch (erroCapturado) {
       notificar.erro(
         erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra trocar de organização.",
@@ -172,6 +172,10 @@ export default function PaginaOrganizacoes() {
                   {ativa ? (
                     <span className="rounded-full bg-[var(--accent-wash)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]">
                       Ativa
+                    </span>
+                  ) : org.suspenso ? (
+                    <span className="rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                      Acesso suspenso
                     </span>
                   ) : (
                     <button

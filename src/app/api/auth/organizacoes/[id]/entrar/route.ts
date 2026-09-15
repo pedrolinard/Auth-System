@@ -4,6 +4,7 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { criarSessao } from "@/lib/sessao";
+import { estaSuspenso, mensagemSuspensaoOrganizacao } from "@/lib/suspensao";
 
 // Troca a organização ATIVA da sessão pra uma outra de que o usuário já é
 // membro — reemite o par de tokens (mesmo formato do login), sem pedir
@@ -34,6 +35,11 @@ export async function POST(
       { erro: "Você não é membro desta organização." },
       { status: 404 },
     );
+  }
+  // Depois da checagem de filiação, não antes: quem não é membro recebe o 404
+  // de sempre, e só quem é membro fica sabendo da própria suspensão.
+  if (estaSuspenso(membro)) {
+    return NextResponse.json({ erro: mensagemSuspensaoOrganizacao(membro) }, { status: 403 });
   }
 
   const usuario = await prisma.usuario.findUnique({ where: { id: payload.sub } });

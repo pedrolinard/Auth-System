@@ -32,7 +32,11 @@ type ChaveAtiva = { kid: string; privada: CryptoKey };
 const TTL_MS = 60_000;
 
 let ativaCache: { valor: ChaveAtiva | null; expiraEm: number } | null = null;
-const publicasCache = new Map<string, CryptoKey>();
+// Com TTL, e não pra sempre: quando uma chave sai do conjunto (rotação, ou
+// pior, porque vazou), cada instância aquecida da função seguiria aceitando
+// tokens assinados por ela até ser reciclada — que na Vercel pode levar horas.
+// O mesmo minuto da chave ativa limita esse atraso.
+const publicasCache = new Map<string, { chave: CryptoKey; expiraEm: number }>();
 let jwksCache: { valor: { keys: JWK[] }; expiraEm: number } | null = null;
 
 /** Só para os testes: zera os caches depois de mexer nas chaves. */
@@ -108,7 +112,8 @@ export async function obterChavePublica(kid: string | undefined): Promise<Crypto
   }
 
   const emCache = publicasCache.get(kid);
-  if (emCache) return emCache;
+  if (emCache && emCache.expiraEm > Date.now()) return emCache.chave;
+  if (emCache) publicasCache.delete(kid);
 
   const linha = await prisma.chaveAssinatura.findUnique({
     where: { kid },
@@ -119,7 +124,7 @@ export async function obterChavePublica(kid: string | undefined): Promise<Crypto
   if (!pem) return null;
 
   const chave = await importSPKI(pem, "RS256");
-  publicasCache.set(kid, chave);
+  publicasCache.set(kid, { chave, expiraEm: Date.now() + TTL_MS });
   return chave;
 }
 

@@ -102,6 +102,52 @@ describe("Notificações de segurança por e-mail (src/lib/email.ts)", () => {
     }
   });
 
+  it("com a marca da aplicação: nome no assunto, remetente próprio e cabeçalho escapado", async () => {
+    const { enviarEmailRedefinicaoSenha, enviarEmailMfaAtivado } = await carregarEmailComResendConfigurado();
+
+    await enviarEmailRedefinicaoSenha("usuario@teste.local", "https://app.cliente.com/redefinir-senha?token=x", {
+      nome: "Acme <script>",
+      remetente: "seguranca@acme.com",
+      logoUrl: "https://acme.com/logo.png",
+    });
+    const { subject, from, html } = enviarMock.mock.calls[0][0];
+    expect(subject).toBe("Acme <script>: Redefinição de senha");
+    // Nome de exibição sem < > (quebrariam o header From).
+    expect(from).toBe("Acme script <seguranca@acme.com>");
+    expect(html).toContain("Acme &lt;script&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).toContain('src="https://acme.com/logo.png"');
+    expect(html).toContain("https://app.cliente.com/redefinir-senha?token=x");
+
+    // Sem remetente próprio: nome no assunto, mas sai do remetente do provedor.
+    await enviarEmailMfaAtivado("usuario@teste.local", { nome: "Acme", remetente: null, logoUrl: null });
+    expect(enviarMock.mock.calls[1][0].from).toBe("remetente@teste.local");
+    expect(enviarMock.mock.calls[1][0].html).toContain("sua conta em Acme");
+  });
+
+  it("sem marca (aplicação padrão): assunto e remetente de sempre", async () => {
+    const { enviarEmailSenhaAlterada } = await carregarEmailComResendConfigurado();
+    await enviarEmailSenhaAlterada("usuario@teste.local");
+    const { subject, from } = enviarMock.mock.calls[0][0];
+    expect(subject).toBe("Sua senha foi alterada");
+    expect(from).toBe("remetente@teste.local");
+  });
+
+  it("cadastro com conta existente: manda os caminhos de login e de recuperação", async () => {
+    const { enviarEmailCadastroComContaExistente } = await carregarEmailComResendConfigurado();
+
+    await enviarEmailCadastroComContaExistente("usuario@teste.local", {
+      login: "https://app.teste/login",
+      esqueciSenha: "https://app.teste/esqueci-senha",
+    });
+
+    expect(enviarMock).toHaveBeenCalledTimes(1);
+    const { to, html } = enviarMock.mock.calls[0][0];
+    expect(to).toBe("usuario@teste.local");
+    expect(html).toContain("https://app.teste/login");
+    expect(html).toContain("https://app.teste/esqueci-senha");
+  });
+
   it("erro retornado pela API do provedor não lança exceção (best-effort)", async () => {
     enviarMock.mockResolvedValue({ data: null, error: { message: "falhou" } });
     const { enviarEmailMfaAtivado } = await carregarEmailComResendConfigurado();

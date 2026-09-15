@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { aplicacaoEstaAtiva } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { consumirCodigoBackup, contarCodigosRestantes } from "@/lib/backupMfa";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
-import { criarSessao } from "@/lib/sessao";
-import { estaSuspenso, mensagemSuspensao } from "@/lib/suspensao";
+import { bloqueioPorSuspensao, criarSessao } from "@/lib/sessao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaCodigoBackup } from "@/lib/validacao";
 
@@ -58,6 +58,12 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
+  // Checado ANTES de consumir o código de backup: numa aplicação desativada
+  // o login não conclui, e gastar o código mesmo assim tiraria da pessoa um
+  // dos 10 códigos à toa.
+  if (!(await aplicacaoEstaAtiva(usuario.aplicacaoId))) {
+    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  }
 
   const codigoValido = await consumirCodigoBackup(usuario.id, codigo);
   if (!codigoValido) {
@@ -69,9 +75,10 @@ export async function POST(req: Request) {
   // Mesmo cuidado que /mfa/verificar: cobre a janela entre o desafio de MFA
   // (até 5 min) e o consumo do código — se um admin suspender a conta nesse
   // meio-tempo, o login não deve completar mesmo com um código válido.
-  if (estaSuspenso(usuario)) {
+  const bloqueio = await bloqueioPorSuspensao(usuario.id);
+  if (bloqueio) {
     await registrarEvento({ req, evento: "login_bloqueado_suspenso", usuarioId: usuario.id, email: usuario.email });
-    return NextResponse.json({ erro: mensagemSuspensao(usuario) }, { status: 403 });
+    return NextResponse.json({ erro: bloqueio }, { status: 403 });
   }
 
   // Mesma proteção de uso único de /mfa/verificar: consome o jti só na

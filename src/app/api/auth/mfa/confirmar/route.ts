@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { persistirCodigosBackup } from "@/lib/backupMfa";
@@ -55,6 +56,16 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  // Com o MFA já ativo, "confirmar de novo" com um TOTP válido gerava MAIS 10
+  // códigos de backup sem apagar os anteriores — os antigos (inclusive um
+  // conjunto que tenha vazado) continuavam valendo. Trocar os códigos tem
+  // rota própria, que invalida o conjunto velho: /mfa/backup/regenerar.
+  if (usuario.mfaAtivado) {
+    return NextResponse.json(
+      { erro: "A verificação em duas etapas já está ativada." },
+      { status: 409 },
+    );
+  }
 
   let codigoValido: boolean;
   try {
@@ -90,7 +101,7 @@ export async function POST(req: Request) {
   // antigos — não existe endpoint de "mostrar de novo".
   const codigosBackup = await persistirCodigosBackup(usuario.id);
   await registrarEvento({ req, evento: "codigos_backup_gerados", usuarioId: usuario.id });
-  await enviarEmailMfaAtivado(usuario.email);
+  await enviarEmailMfaAtivado(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({
     sucesso: true,

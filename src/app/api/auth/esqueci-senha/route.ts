@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
-import { origemPermitida, resolverAplicacao } from "@/lib/aplicacao";
+import { autenticarAplicacao, contextoEmail } from "@/lib/aplicacao";
 import { enviarEmailRedefinicaoSenha } from "@/lib/email";
 import {
   limiteExcedido,
@@ -24,13 +24,13 @@ const JANELA_RECUPERACAO_MS = 60 * 60 * 1000;
 const MAX_RECUPERACAO_POR_EMAIL = 3;
 
 export async function POST(req: Request) {
-  const aplicacao = await resolverAplicacao(req);
-  if (!aplicacao) {
-    return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
+  // Origem cadastrada (navegador) ou client secret (servidor) — ver
+  // autenticarAplicacao em src/lib/aplicacao.ts.
+  const acessoAplicacao = await autenticarAplicacao(req);
+  if (!acessoAplicacao.ok) {
+    return NextResponse.json({ erro: acessoAplicacao.erro }, { status: acessoAplicacao.status });
   }
-  if (!origemPermitida(aplicacao, req)) {
-    return NextResponse.json({ erro: "Origem não autorizada para esta aplicação." }, { status: 403 });
-  }
+  const { aplicacao } = acessoAplicacao;
 
   const ip = obterIp(req);
   if (
@@ -91,8 +91,8 @@ export async function POST(req: Request) {
   // inexistente de senha errada).
   if (usuario && !floodDeEmail) {
     const token = await gerarTokenRedefinicaoSenha(usuario.id);
-    const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
-    await enviarEmailRedefinicaoSenha(email, `${baseUrl}/redefinir-senha?token=${token}`);
+    const { marca, baseLinks } = await contextoEmail(usuario.aplicacaoId);
+    await enviarEmailRedefinicaoSenha(email, `${baseLinks}/redefinir-senha?token=${token}`, marca);
   }
 
   return NextResponse.json({

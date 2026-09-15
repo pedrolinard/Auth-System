@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf, removerCookieAcesso, removerCookieAtualizacao, removerCookieCsrf } from "@/lib/cookies";
@@ -150,8 +151,12 @@ export async function DELETE(req: Request) {
     evento: "conta_excluida_pelo_titular",
     usuarioId: usuario.id,
     email: usuario.email,
+    // Explícito: a conta acabou de ser apagada, então o fallback de
+    // registrarEvento (buscar a aplicação pelo usuarioId) não acharia nada e o
+    // evento sairia sem escopo — sumindo da auditoria do cliente.
+    aplicacaoId: usuario.aplicacaoId,
   });
-  await enviarEmailContaExcluida(usuario.email);
+  await enviarEmailContaExcluida(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   await removerCookieAtualizacao();
   await removerCookieAcesso();

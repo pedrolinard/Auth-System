@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import Link from "next/link";
+import { NOME_COOKIE_ACESSO } from "@/lib/cookies";
 import { prisma } from "@/lib/db";
+import { ehAplicacaoPadrao } from "@/lib/gestaoAplicacoes";
+import { verificarTokenAcesso } from "@/lib/token";
 import {
   atualizadoEm,
   concluido,
@@ -79,8 +83,23 @@ function Stat({ valor, rotulo }: { valor: string | number; rotulo: string }) {
   );
 }
 
+// A página é pública, mas os números de uso não: quantas contas, admins e
+// sessões ativas um provedor de autenticação tem é informação operacional —
+// útil pra quem mapeia um alvo, inútil pro visitante. Só quem opera o
+// provedor (mesma regra da gestão de aplicações) vê.
+async function visitanteOperaProvedor(): Promise<boolean> {
+  try {
+    const token = (await cookies()).get(NOME_COOKIE_ACESSO)?.value;
+    const payload = token ? await verificarTokenAcesso(token) : null;
+    return !!payload && payload.papel === "admin" && (await ehAplicacaoPadrao(payload.aplicacaoId));
+  } catch {
+    return false;
+  }
+}
+
 export default async function PaginaRoadmap() {
-  const uso = await lerUso();
+  const operador = await visitanteOperaProvedor();
+  const uso: Uso | null = operador ? await lerUso() : null;
   const agora = new Date();
 
   const deploy = {
@@ -107,7 +126,7 @@ export default async function PaginaRoadmap() {
           Gateway de cadastro, login e emissão de tokens JWT (acesso +
           atualização) para outras aplicações, com um serviço de domínio em
           Django/DRF por trás. Estado atual do que foi entregue, o que falta e
-          métricas ao vivo do sistema em produção.
+          métricas do sistema em produção.
         </p>
         <span className="font-mono text-xs text-zinc-500 dark:text-zinc-500">
           atualizado em {atualizadoEm} · roadmap gerado a partir de{" "}
@@ -134,16 +153,22 @@ export default async function PaginaRoadmap() {
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-2.5">
             <h2 className="font-mono text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-500">
-              Uso · banco de produção {uso.ok ? "" : "(indisponível)"}
+              Uso · banco de produção {uso && !uso.ok ? "(indisponível)" : ""}
             </h2>
-            <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-black/[.08] bg-black/[.08] sm:grid-cols-3 dark:border-white/[.1] dark:bg-white/[.1]">
-              <Stat valor={uso.ok ? uso.usuarios : "—"} rotulo="usuários cadastrados" />
-              <Stat valor={uso.ok ? uso.sessoesAtivas : "—"} rotulo="sessões ativas agora" />
-              <Stat valor={uso.ok ? uso.mfaAtivo : "—"} rotulo="contas com MFA" />
-              <Stat valor={uso.ok ? uso.passkeys : "—"} rotulo="passkeys registradas" />
-              <Stat valor={uso.ok ? uso.admins : "—"} rotulo="admins" />
-              <Stat valor={uso.ok ? uso.eventos7d : "—"} rotulo="eventos de auditoria (7d)" />
-            </div>
+            {uso ? (
+              <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-black/[.08] bg-black/[.08] sm:grid-cols-3 dark:border-white/[.1] dark:bg-white/[.1]">
+                <Stat valor={uso.ok ? uso.usuarios : "—"} rotulo="usuários cadastrados" />
+                <Stat valor={uso.ok ? uso.sessoesAtivas : "—"} rotulo="sessões ativas agora" />
+                <Stat valor={uso.ok ? uso.mfaAtivo : "—"} rotulo="contas com MFA" />
+                <Stat valor={uso.ok ? uso.passkeys : "—"} rotulo="passkeys registradas" />
+                <Stat valor={uso.ok ? uso.admins : "—"} rotulo="admins" />
+                <Stat valor={uso.ok ? uso.eventos7d : "—"} rotulo="eventos de auditoria (7d)" />
+              </div>
+            ) : (
+              <p className="rounded-2xl border border-dashed border-black/[.12] px-5 py-4 text-sm text-zinc-500 dark:border-white/[.14] dark:text-zinc-400">
+                Visível só para quem opera o provedor.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-2.5">

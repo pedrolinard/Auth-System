@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { invalidarCodigosBackup } from "@/lib/backupMfa";
@@ -94,7 +95,7 @@ export async function POST(req: Request) {
   // novo) deixaria os códigos de backup antigos ainda válidos.
   await invalidarCodigosBackup(usuario.id);
   await registrarEvento({ req, evento: "codigos_backup_invalidados", usuarioId: usuario.id });
-  await enviarEmailMfaDesativado(usuario.email);
+  await enviarEmailMfaDesativado(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({ sucesso: true });
 }

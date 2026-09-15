@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { invalidarCodigosBackup, persistirCodigosBackup } from "@/lib/backupMfa";
@@ -89,7 +90,7 @@ export async function POST(req: Request) {
   const codigosBackup = await persistirCodigosBackup(usuario.id);
 
   await registrarEvento({ req, evento: "codigos_backup_regenerados", usuarioId: usuario.id });
-  await enviarEmailCodigosBackupRegenerados(usuario.email);
+  await enviarEmailCodigosBackupRegenerados(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({
     sucesso: true,

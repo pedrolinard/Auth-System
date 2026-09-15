@@ -135,9 +135,14 @@ export async function POST(req: Request) {
       prisma.membro.findMany({
         where: { usuarioId: usuario.id },
         orderBy: { criadoEm: "asc" },
+        // Suspensão entra junto: prazo e motivo foram escritos por um admin
+        // SOBRE a pessoa — dado pessoal dela, mesmo que ela não o tenha criado.
         select: {
           papel: true,
           criadoEm: true,
+          suspenso: true,
+          suspensoAte: true,
+          suspensoMotivo: true,
           organizacao: { select: { nome: true, slug: true } },
         },
       }),
