@@ -36,6 +36,20 @@
   }
 }
 
+/* Barras de rolagem finas, no tom do texto em vez do cinza do sistema. */
+:root {
+  --barra-rolagem: rgba(20, 19, 15, 0.22);
+  scrollbar-color: var(--barra-rolagem) transparent;
+}
+* {
+  scrollbar-width: thin;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --barra-rolagem: rgba(255, 255, 255, 0.2);
+  }
+}
+
 body {
   background:
     radial-gradient(ellipse 80% 55% at 50% -10%, var(--vignette), transparent),
@@ -120,6 +134,115 @@ body {
    secondary) — usado em "reenviar", "voltar", links de ação inline. */
 .btn-ghost {
   @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-zinc-500 transition-colors hover:bg-black/[.04] hover:text-foreground disabled:pointer-events-none disabled:opacity-50 dark:text-zinc-400 dark:hover:bg-white/[.06];
+}
+
+/* --- Rolagem horizontal ---------------------------------------------------
+   Conteúdo que não cabe (menu do painel, tabelas) esmaece na borda do lado
+   em que ainda há mais coisa — o esmaecimento é o aviso de "tem mais pra lá"
+   que a barra de rolagem escondida não dá. As larguras são propriedades
+   registradas (@property) pra poderem ANIMAR: a borda some e aparece
+   suavemente conforme se rola, em vez de piscar. Ver RolagemHorizontal.tsx. */
+@property --esmaecer-inicio {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --esmaecer-fim {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.rolagem-horizontal {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  --esmaecer-inicio: 0px;
+  --esmaecer-fim: 0px;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--esmaecer-inicio),
+    #000 calc(100% - var(--esmaecer-fim)),
+    transparent 100%
+  );
+  transition:
+    --esmaecer-inicio 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    --esmaecer-fim 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.rolagem-horizontal[data-mais-inicio="true"] {
+  --esmaecer-inicio: 2.5rem;
+}
+.rolagem-horizontal[data-mais-fim="true"] {
+  --esmaecer-fim: 2.5rem;
+}
+.rolagem-horizontal.sem-barra {
+  scrollbar-width: none;
+}
+.rolagem-horizontal.sem-barra::-webkit-scrollbar {
+  display: none;
+}
+
+/* Setas que aparecem sobre a borda esmaecida quando há mais conteúdo. */
+.seta-rolagem {
+  @apply absolute top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-black/[.08] bg-white/95 text-zinc-500 shadow-[0_4px_12px_-4px_rgba(20,19,15,0.25)] backdrop-blur transition-[opacity,scale,color,background-color] duration-200 ease-out hover:bg-white hover:text-foreground active:scale-90 dark:border-white/[.12] dark:bg-zinc-900/95 dark:text-zinc-400 dark:hover:bg-zinc-800;
+}
+.seta-rolagem[data-visivel="false"] {
+  @apply pointer-events-none scale-75 opacity-0;
+}
+
+/* --- Campo de seleção ------------------------------------------------------
+   <select> nativo (teclado, leitor de tela e o menu do sistema no celular
+   continuam de graça) com a seta do navegador trocada por um chevron do
+   próprio painel, que reage a hover, foco e abertura. Ver CampoSelecao.tsx. */
+.campo-selecao select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.campo-selecao select:hover:not(:disabled) {
+  @apply border-black/[.16] bg-black/[.025] dark:border-white/[.2] dark:bg-white/[.04];
+}
+.campo-selecao select:focus-visible {
+  @apply border-[var(--accent)] ring-2 ring-[var(--accent-wash)] outline-none;
+}
+.campo-selecao select:disabled {
+  cursor: default;
+}
+/* `translate`/`rotate` como propriedades separadas (não `transform`): é o que
+   os utilitários do Tailwind v4 usam, e misturar os dois somaria o
+   deslocamento. */
+.campo-selecao .chevron-selecao {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  pointer-events: none;
+  opacity: 0.6;
+  transition:
+    translate 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    rotate 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.2s ease,
+    color 0.2s ease;
+}
+.campo-selecao:hover .chevron-selecao {
+  opacity: 1;
+  translate: 0 calc(-50% + 1.5px);
+}
+.campo-selecao:focus-within .chevron-selecao {
+  opacity: 1;
+  color: var(--accent);
+}
+.campo-selecao[data-aberto="true"] .chevron-selecao {
+  opacity: 1;
+  translate: 0 -50%;
+  rotate: 180deg;
+}
+.campo-selecao[data-ocupado="true"] .chevron-selecao {
+  animation: pulso-suave 1s ease-in-out infinite;
 }
 
 /* --- Movimento -----------------------------------------------------------

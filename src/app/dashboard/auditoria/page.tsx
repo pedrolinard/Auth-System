@@ -7,6 +7,7 @@ import { exportarAuditoriaPdf } from "@/lib/exportarAuditoriaPdf";
 import { CabecalhoSecao } from "@/components/ui/CabecalhoSecao";
 import { AvisoErro } from "@/components/ui/AvisoErro";
 import { EstadoVazio } from "@/components/ui/EstadoVazio";
+import { RolagemHorizontal } from "@/components/ui/RolagemHorizontal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { notificar } from "@/components/ui/Toaster";
 
@@ -176,7 +177,7 @@ export default function PaginaAuditoria() {
         )}
 
         {registros && registros.length > 0 && (
-          <div className="card-surface overflow-x-auto">
+          <RolagemHorizontal className="card-surface overflow-hidden">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/[.08] text-xs uppercase tracking-wide text-zinc-500 dark:border-white/[.1] dark:text-zinc-500">
@@ -220,7 +221,7 @@ export default function PaginaAuditoria() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </RolagemHorizontal>
         )}
       </div>
     </div>

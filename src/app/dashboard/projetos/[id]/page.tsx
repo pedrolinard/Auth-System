@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ListTodo, Plus, Trash2 } from "lucide-react";
+import { CampoSelecao } from "@/components/ui/CampoSelecao";
 import {
   atualizarStatusTarefa,
   criarTarefa,
@@ -122,9 +123,12 @@ export default function PaginaProjeto() {
       <div className="flex w-full min-w-0 max-w-lg flex-col gap-4">
         <Link
           href="/dashboard/projetos"
-          className="flex items-center gap-1.5 self-start text-sm text-zinc-500 transition-colors hover:text-foreground dark:text-zinc-400"
+          className="group flex items-center gap-1.5 self-start text-sm text-zinc-500 transition-colors hover:text-foreground dark:text-zinc-400"
         >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          <ArrowLeft
+            className="h-4 w-4 transition-transform duration-200 group-hover:-translate-x-0.5"
+            aria-hidden="true"
+          />
           Projetos
         </Link>
 
@@ -200,18 +204,22 @@ export default function PaginaProjeto() {
                   >
                     {tarefa.titulo}
                   </p>
-                  <select
+                  <CampoSelecao
                     value={tarefa.status}
                     onChange={(e) => aoMudarStatus(tarefa, e.target.value as StatusTarefa)}
                     disabled={atualizandoId === tarefa.id}
-                    className={`mt-1.5 rounded-md border border-black/[.09] bg-transparent px-2 py-1 text-xs font-medium outline-none focus:border-[var(--accent)] disabled:opacity-50 dark:border-white/[.13] ${COR_STATUS[tarefa.status]}`}
+                    ocupado={atualizandoId === tarefa.id}
+                    aria-label={`Status da tarefa ${tarefa.titulo}`}
+                    tamanho="sm"
+                    classeContainer={`mt-1.5 transition-colors duration-200 ${COR_STATUS[tarefa.status]}`}
+                    className="rounded-md border border-black/[.09] bg-transparent py-1 pl-2 text-xs font-medium outline-none disabled:opacity-50 dark:border-white/[.13]"
                   >
                     {Object.entries(ROTULOS_STATUS).map(([valor, rotulo]) => (
                       <option key={valor} value={valor}>
                         {rotulo}
                       </option>
                     ))}
-                  </select>
+                  </CampoSelecao>
                 </div>
                 <button
                   onClick={() => aoExcluirTarefa(tarefa)}
