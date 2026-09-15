@@ -30,19 +30,19 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-09-08";
+export const atualizadoEm = "2026-09-15";
 
 // Métricas ESTÁTICAS do código — atualize junto com a mudança que as move
 // (mesma disciplina do resto do arquivo). As métricas AO VIVO (contagens do
 // banco, commit/deploy) são calculadas em tempo de requisição na página.
 export const metricas = {
-  rotasApi: 40,
-  migracoesPrisma: 21,
-  modulosLib: 34,
+  rotasApi: 44,
+  migracoesPrisma: 24,
+  modulosLib: 38,
   tabelas: 13,
-  testesVitest: 194,
-  testesE2e: 6,
-  testesDjango: 36,
+  testesVitest: 237,
+  testesE2e: 8,
+  testesDjango: 40,
 };
 
 export const concluido: GrupoConcluido[] = [
@@ -92,8 +92,8 @@ export const concluido: GrupoConcluido[] = [
     categoria: "Contas & RBAC",
     itens: [
       "RBAC mínimo de sistema (usuario/admin) como claim no token de acesso, mais RBAC por organização (dono/admin/membro) escopando as mesmas ações administrativas — ver categoria \"Multi-tenant (organizações)\" abaixo",
-      "Admin pode suspender (temporária ou permanente) ou excluir permanentemente a conta de outro usuário",
-      "Suspensão revoga todas as sessões ativas na hora e bloqueia login imediatamente",
+      "Dono/admin de organização pode suspender (temporária ou permanente) ou remover um membro — a suspensão vale só naquela organização (a pessoa segue entrando nas outras)",
+      "Suspensão revoga na hora as sessões daquela organização e bloqueia a entrada nela; login só é recusado quando a pessoa está suspensa em todas as organizações",
       "Auditoria de ações administrativas registra também QUEM (qual admin) suspendeu/reativou/excluiu, não só o alvo",
       "Autoatendimento LGPD: POST /api/auth/minha-conta/exportar e DELETE /api/auth/minha-conta — o próprio titular exporta os dados que o serviço guarda sobre ele (dados pessoais, sessões, dispositivos confiáveis, códigos de backup, passkeys, auditoria, organizações de que é membro e convites que criou) ou exclui a conta; os dois exigem a senha atual + CSRF + rate limit (o export virou POST porque o arquivo traz IP/geolocalização/user-agents). Excluir a conta também apaga a organização pessoal órfã (Membro cascade-deleta, Organizacao sozinha não) e bloqueia quem é a única pessoa dona de uma organização com outros membros",
       "E-mails de segurança: dispositivo novo, MFA ativado/desativado, senha alterada, códigos de backup regenerados, reuso de refresh token detectado, viagem impossível (login em país diferente do último, tempo curto demais pra ser real)",
@@ -106,7 +106,7 @@ export const concluido: GrupoConcluido[] = [
       "Painel de auditoria para admins (/dashboard/auditoria) — consulta os últimos 200 logs com filtro por evento/e-mail, atalhos de filtro e exportação em PDF (jsPDF carregado sob demanda), sem precisar acessar o banco direto",
       "Retenção da trilha de auditoria: o job de limpeza (POST /api/cron/limpar-tokens) poda LogAuditoria além de 365 dias e DesafioMfaConsumido já expirado, com índice em criadoEm pro DELETE não varrer a tabela",
       "Proteção CSRF explícita (double-submit cookie, comparado em tempo constante) em toda mutação autenticada por cookie",
-      "Headers de segurança HTTP (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Permissions-Policy)",
+      "Headers de segurança HTTP (HSTS, X-Frame-Options, X-Content-Type-Options, Permissions-Policy) e CSP com nonce por requisição nas páginas — sem 'unsafe-inline' em script-src — e política fechada nas rotas de API",
       "Job de limpeza de tokens expirados/revogados antigos, protegido por CRON_SECRET (comparado em tempo constante, mesma disciplina do token CSRF)",
       "Checagem de config de produção no boot (src/instrumentation.ts → register): aborta o boot se BASE_URL faltar ou o Turnstile estiver configurado pela metade; loga aviso pra degradações toleráveis (sem Resend, sem Rollbar, sem CRON_SECRET)",
       "Todas as colunas de data usam timestamptz — elimina ambiguidade de fuso horário entre o runtime da Vercel (UTC) e leituras de outros fusos",
@@ -140,7 +140,7 @@ export const concluido: GrupoConcluido[] = [
     itens: [
       "Dois projetos Vercel independentes (Next.js + Django) na mesma instância Supabase: auth-gateway no schema public, auth-gateway-django no schema dominio (isolados, sem FK entre eles)",
       "Deploy automático via GitHub a cada push na main, com prisma migrate deploy antes do build",
-      "221 testes: 179 Next.js (Vitest contra servidor next dev real, não mocka cookies) + 6 E2E (Playwright, incluindo passkey via virtual authenticator) + 36 Django (pytest-django)",
+      "285 testes: 237 Next.js e SDK (Vitest contra servidor next dev real, não mocka cookies) + 8 E2E (Playwright, incluindo passkey via virtual authenticator, código de backup e várias abas) + 40 Django (pytest-django)",
       "CI no GitHub Actions (.github/workflows/ci.yml): lint, typecheck (com next typegen antes do tsc) e testes em todo PR/push na main, antes do deploy automático de produção",
       "Django não carrega .env na Vercel (load_dotenv só fora da plataforma) e .vercelignore mantém o arquivo fora do bundle — sem isso o serviço subia com DEBUG=True em produção",
     ],
@@ -229,21 +229,23 @@ export const proximosPassos: ItemProximoPasso[] = [
   },
   {
     id: "csp-nonce",
-    titulo: "CSP sem 'unsafe-inline' (nonce ou SRI)",
+    titulo: "CSP sem 'unsafe-inline' (nonce por requisição)",
     descricao:
-      "`script-src` ainda tem `'unsafe-inline'`. O nonce por request (via proxy.ts) força renderização dinâmica em TODAS as páginas — perde a otimização estática de `/`, `/login`, `/cadastro`, `/roadmap` e o cache de CDN. O SRI hash-based é experimental (\"may change or be removed\"). Adiado até valer o custo; o resto do CSP (default-src, frame-ancestors, base-uri, form-action, object-src, sem unsafe-eval em prod) já é estrito.",
+      "`script-src` tinha `'unsafe-inline'`, então um XSS que conseguisse injetar um <script> rodava — num serviço de autenticação, isso vale o token de quem está logado. Agora o CSP das páginas é montado no src/proxy.ts com um nonce novo a cada requisição e `'strict-dynamic'` (src/lib/csp.ts): o Next carimba o nonce nos próprios scripts e os chunks carregados por eles herdam a confiança, sem nonce um a um. As rotas de API recebem uma política fixa fechada (`default-src 'none'`) via next.config.ts. Custo aceito: toda página passa a ser renderizada por requisição (`await connection()` no layout raiz) — página pré-gerada no build sairia sem nonce e com os scripts do Next bloqueados, e isso só aparece em produção (em dev tudo já é dinâmico). Conferido num build de produção de verdade: todo <script> do HTML sai com o nonce do header, nenhuma violação no Chromium, hidratação funcionando e o widget do Turnstile (chaves de teste da Cloudflare) carregando e emitindo token sob o CSP novo. `style-src` segue com 'unsafe-inline': atributo style=\"\" não aceita nonce e CSS não executa código.",
     categoria: "Segurança",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-09-14",
   },
   {
     id: "cadastro-enumeracao",
     titulo: "Cadastro sem enumeração de e-mail",
     descricao:
-      "`POST /api/auth/cadastro` retorna 409 \"e-mail já cadastrado\" — revela quais e-mails têm conta. Login e recuperação de senha já são anti-enumeração; o cadastro fica assim de propósito por enquanto: a alternativa (resposta genérica + e-mail \"alguém tentou criar conta com seu endereço\") tem custo de UX real pra quem esqueceu que já tem conta, e o ganho é marginal já que os fluxos que importam não enumeram.",
+      "`POST /api/auth/cadastro` respondia 409 \"e-mail já cadastrado\" — qualquer um descobria quais endereços têm conta. Agora e-mail novo e e-mail já cadastrado recebem a mesma resposta (201, mesmo corpo, sem o usuário criado — os campos dele só existiriam num dos casos) e fazem o mesmo trabalho antes de responder (hash da senha, tentativa de insert, um envio de e-mail), pra o tempo também não separar os dois. Quem já tinha conta recebe um e-mail \"tentaram criar uma conta com o seu e-mail\" com os links de login e de recuperação de senha — é por ali, na caixa de entrada que só o dono lê, que a pessoa que esqueceu que tinha conta acha o caminho, em vez de pela tela. Esse aviso tem teto de 3/h por endereço, pra o cadastro não virar ferramenta de encher a caixa de alguém. A conta existente não é tocada (nem nome, nem senha). A tela diz o mesmo nos dois casos: \"Cadastro recebido. Confira seu e-mail e entre com sua senha.\"",
     categoria: "Segurança",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-09-14",
   },
   {
     id: "rate-limit-endpoints-restantes",
@@ -319,7 +321,7 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "preview-com-banco-proprio",
     titulo: "Banco próprio para o ambiente Preview",
     descricao:
-      "Preview e Production compartilham a mesma instância Supabase e o mesmo DATABASE_URL. Depois do portão de migrations, um preview não escreve mais no banco de produção — mas ainda LÊ dele, e roda contra um schema que pode não ser o do próprio branch. Um banco próprio (ou um branch de banco por PR) devolveria ao preview a função de ambiente de verdade. Não foi feito junto porque envolve provisionar e semear um segundo banco, e o sangramento já parou com o portão.",
+      "Preview e Production compartilham a mesma instância Supabase e o mesmo DATABASE_URL. Depois do portão de migrations, um preview não escreve mais no banco de produção — mas ainda LÊ dele, e roda contra um schema que pode não ser o do próprio branch. Um banco próprio (ou um branch de banco por PR) devolveria ao preview a função de ambiente de verdade. Não foi feito junto porque envolve provisionar e semear um segundo banco, e o sangramento já parou com o portão. Andamento em 2026-09-14/15: projeto Supabase próprio do Preview criado (mfpjqueyefqqzewksqgt) e migrado; o rewrite do Django deixou de quebrar o build sem DJANGO_SERVICE_URL. Falta: semear o banco novo (aplicação padrão e chave de assinatura próprias), apontar o DATABASE_URL do Preview pra ele e criar as env vars que faltam no Preview — passo a passo em docs/operacao.md, item 6.",
     categoria: "Infraestrutura",
     prioridade: "media",
     status: "pendente",
@@ -338,8 +340,123 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "suspensao-por-organizacao",
     titulo: "Suspensão de conta por organização, não por conta inteira",
     descricao:
-      "suspenso/suspensoAte/suspensoMotivo continuam campos globais do Usuario — suspender bloqueia login em QUALQUER organização de que a pessoa participe, não só na organização de quem suspendeu. Mover pra dentro de Membro é escopo maior (schema novo, refazer estaSuspenso() e todos os pontos de login); trade-off aceito por enquanto, não crítico o bastante pra ter bloqueado o multi-tenant.",
+      "suspenso/suspensoAte/suspensoMotivo eram campos globais do Usuario — um dono/admin da organização A que suspendesse alguém bloqueava essa pessoa em TODAS as organizações, inclusive a pessoal. A suspensão foi pra dentro de Membro: login abre na primeira organização em que a pessoa não está suspensa e só é recusado se ela estiver suspensa em todas; trocar pra organização suspensa responde 403 com prazo e motivo; renovar sessão de organização suspensa é recusado; suspender revoga só as sessões daquela organização. A listagem de organizações marca as suspensas (sem motivo), e o export LGPD inclui a suspensão — prazo e motivo foram escritos sobre a pessoa. Migration só aditiva: copia as suspensões de conta ainda ativas pra cada Membro (preserva o efeito de hoje, cada organização passa a poder reativar só a sua parte) e deixa as colunas antigas no lugar, sem uso, porque o código anterior ainda as lê na janela entre migration e deploy. Achado no caminho, e corrigido junto: a detecção de reuso de refresh token tratava como roubo qualquer token revogado reapresentado — então a pessoa suspensa ou removida de UMA organização, ao renovar a sessão dela, perdia as sessões de todas as outras e recebia um e-mail de \"atividade suspeita\". O caso de remoção já existia desde o multi-tenant. A correção definitiva veio no pente fino de 2026-09-15: toda revogação passou a gravar o motivo, e só a revogação por rotação conta como roubo (ver item \"pente-fino-2026-09-15\").",
     categoria: "Multi-tenant",
+    prioridade: "baixa",
+    status: "feito",
+    concluidoEm: "2026-09-14",
+  },
+  {
+    id: "gestao-aplicacoes",
+    titulo: "Fase 01 do provedor: gestão de aplicações",
+    descricao:
+      "Até aqui, criar uma aplicação cliente era INSERT à mão no banco. Agora /dashboard/aplicacoes e /api/auth/aplicacoes cadastram, editam (nome, origens, RP ID de passkey), desativam/reativam e rotacionam o clientSecret. Só quem opera o provedor acessa: admin de sistema com conta NA APLICAÇÃO PADRÃO — um admin de sistema dentro de uma aplicação cliente não enxerga as outras (mesmo raciocínio do escopo da auditoria por aplicação, um nível acima). O segredo aparece uma única vez e só o hash SHA-256 é gravado; rotacionar invalida o anterior na hora. Validação que evita configuração que nunca funciona: origem precisa ser só esquema+host (é comparada byte a byte com o header Origin e com a origem do WebAuthn), http só em localhost, e o RP ID tem que cobrir todas as origens (regra do WebAuthn). Trocar o RP ID de uma aplicação com passkeys registradas é recusado (409) — invalidaria todas em silêncio. Não existe exclusão (Restrict nas contas é proposital); desativar derruba na hora as sessões dos usuários finais daquela aplicação, e a renovação delas é recusada sem disparar o alerta de reuso de token. A aplicação padrão não pode ser desativada: o próprio painel depende dela.",
+    categoria: "Multi-tenant",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-14",
+  },
+  {
+    id: "validar-client-secret",
+    titulo: "Autenticação da aplicação cliente, CORS e SDK",
+    descricao:
+      "O clientId é público e só selecionava o tenant — qualquer site ou script podia falar em nome de uma aplicação cliente. Agora as rotas públicas (cadastro, login, esqueci-senha, login por passkey) passam por autenticarAplicacao: chamada de navegador precisa vir de uma origem cadastrada (lista vazia recusa — antes aceitava qualquer origem) e chamada de servidor precisa do client secret no header x-aplicacao-segredo (comparado por hash em tempo constante). A aplicação padrão segue como antes. CORS: o proxy responde ao preflight só pra origens de aplicações ativas, sem liberar o header do segredo nem cookies entre domínios; o JWKS é público (Access-Control-Allow-Origin: *). Logout passou a aceitar o refresh token no corpo — sem isso, uma aplicação integrada não tinha como revogar a sessão. SDK em sdk/: ClienteAuthGateway (cadastro, login com MFA e código de backup, renovação deduplicada, logout, usuário atual, conclusão dos links de e-mail) e criarVerificadorDeToken (valida o JWT no backend do cliente pelo JWKS, com audiência). O painel mostra a Audience (aud) de cada aplicação. Guia em docs/integracao.md; testes do SDK contra o servidor real em tests/sdk.",
+    categoria: "Multi-tenant",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-15",
+  },
+  {
+    id: "marca-emails",
+    titulo: "E-mails com a marca de cada aplicação",
+    descricao:
+      "Um usuário final do cliente \"Acme\" recebia e-mail de \"Auth Gateway\" pedindo pra confirmar o e-mail — cara de phishing. Agora todo e-mail sai com o nome da aplicação dona da conta no assunto e no cabeçalho, e cada aplicação pode configurar remetente próprio (domínio verificado no Resend), logo e o endereço base dos links (verificar e-mail, redefinir senha, confirmar troca de e-mail, aceitar convite) — pra hospedar essas páginas no próprio site com o SDK. A marca vem sempre da aplicação DONA DA CONTA, nunca do header da requisição. Os 17 envios, que repetiam o mesmo bloco, passaram por um envio central best-effort; o nome no header From é saneado e todo campo da marca é escapado no HTML. De quebra: o assunto do convite mostrava \"&amp;\" quando o nome da organização tinha \"&\" (o assunto não é HTML).",
+    categoria: "Multi-tenant",
+    prioridade: "media",
+    status: "feito",
+    concluidoEm: "2026-09-15",
+  },
+  {
+    id: "pente-fino-2026-09-15",
+    titulo: "Pente fino no projeto inteiro",
+    descricao:
+      "Leitura de todos os módulos de src/lib, todas as rotas de API, telas críticas, serviço Django, scripts, CI e configuração. Corrigido, cada um com teste de regressão: (1) aceitar convite deixava uma conta de OUTRA aplicação entrar na organização (o e-mail só é único por aplicação); (2) cache de chaves públicas sem expiração — chave removida do JWKS seguia aceita em instâncias aquecidas; (3) CSRF era dispensado quando só o cookie CSRF faltava, mesmo com cookie de sessão (Next e Django); (4) reconfirmar o MFA gerava mais 10 códigos de backup sem invalidar os antigos; (5) MFA e código de backup concluíam login em aplicação desativada durante o desafio; (6) alarme de reuso de refresh token disparava em qualquer revogação — troca de senha em outro aparelho, logout, limite de sessões, suspensão — derrubando a sessão NOVA da pessoa e mandando e-mail de invasão falso: toda revogação agora grava o motivo e só a rotação conta como roubo; (7) renovação concorrente do mesmo token abria duas sessões e podia sobrescrever uma suspensão — rotação só com o token ainda ativo, e o navegador serializa renovações entre abas (Web Locks) pra não virar logout falso; (8) a tela de login não tinha como usar código de backup (a API existia, os códigos não serviam pra entrar); (9) /roadmap público expunha contagem de contas, admins e sessões de produção; (10) conta sem organização dava 500 sem corpo no login — agora ganha a organização pessoal; o script backfill-organizacoes estava quebrado desde a Fase 00; (11) erro 500 aparecia na tela como \"Unexpected end of JSON input\"; (12) aceitar convite estando suspenso, verificar e-mail de conta excluída e passkey duplicada davam 500; (13) Django dava 500 com ?projeto=abc; (14) datas gravadas deslocadas em Postgres fora de UTC (sessão agora sempre em UTC); (15) rewrite do Django inválido sem DJANGO_SERVICE_URL quebrava todo build de Preview; (16) exclusão de conta sumia da auditoria do cliente; \"sair de todos os dispositivos\" não era auditado; (17) sem aviso de EMAIL_FROM no sandbox do Resend em produção. Limpeza: .gitignore duplicado (a última linha re-ignorava o .env.example), comentários desatualizados, testes que dependiam de contadores de rate limit persistidos (e-mail e IP fixos) e deixavam 3.093 organizações órfãs no banco de teste.",
+    categoria: "Segurança",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-15",
+  },
+  {
+    id: "django-migration-pendente-producao",
+    titulo: "Tela de projetos em 500 por migration do Django não aplicada",
+    descricao:
+      "Descoberto em 2026-09-15: GET /api/dominio/projetos respondia 500 em produção pra qualquer usuário logado — \"column tarefas_projeto.organizacao_id does not exist\". O código do multi-tenant estava no ar desde 08/09, mas a migration tarefas.0002 nunca chegou ao banco de produção (o registro dizia que o migrate tinha rodado; o banco dizia que não). O lado Next.js tem portão de migrations no build desde o incidente de 08/09; o Django, de deploy manual, não tinha nenhum. Correção no código: django/scripts/checar_migrations.py (rodar antes de todo `vercel deploy --prod`, sai com erro e lista o que falta) e GET /api/dominio/saude (503 com migrationsPendentes, pro monitor externo). Correção no banco: SQL idempotente entregue pra rodar no SQL Editor do Supabase (aplica a 0002, faz o backfill de organizacao_id e registra a migration em django_migrations) — escrita em produção a partir desta sessão foi bloqueada pela política de permissões.",
+    categoria: "Infraestrutura",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-15",
+  },
+  {
+    id: "saude",
+    titulo: "Endpoint de saúde para monitoramento",
+    descricao:
+      "GET /api/saude verifica o banco e a chave de assinatura (sem as duas nenhum login funciona) e responde 503 se qualquer uma falhar, sem detalhe interno. É o alvo do monitor externo de disponibilidade descrito em docs/operacao.md.",
+    categoria: "Infraestrutura",
+    prioridade: "media",
+    status: "feito",
+    concluidoEm: "2026-09-15",
+  },
+  {
+    id: "infra-para-vender",
+    titulo: "Infraestrutura de produção para cliente pagante",
+    descricao:
+      "Domínio próprio (muda BASE_URL, RP ID das passkeys e o que os clientes configuram — trocar depois quebra as passkeys), domínio de e-mail verificado no Resend, planos pagos (Vercel, Supabase com backup e PITR), restauração de backup testada, alerta do Rollbar e monitor externo em /api/saude com página de status. Não é código: passo a passo em docs/operacao.md.",
+    categoria: "Infraestrutura",
+    prioridade: "alta",
+    status: "pendente",
+  },
+  {
+    id: "pentest-e-juridico",
+    titulo: "Pentest externo e revisão jurídica",
+    descricao:
+      "Antes do primeiro cliente relevante: teste de intrusão externo (escopo sugerido em docs/seguranca/escopo-pentest.md, contra o ambiente de Preview isolado) e revisão por advogado dos rascunhos em docs/juridico (termos de uso, política de privacidade, acordo de tratamento de dados — o provedor é operador dos dados dos usuários dos clientes). Também confirmar quem detém os direitos do código e as regiões de hospedagem (transferência internacional, art. 33 da LGPD).",
+    categoria: "Segurança",
+    prioridade: "alta",
+    status: "pendente",
+  },
+  {
+    id: "exclusao-dados-dominio",
+    titulo: "Excluir os projetos e tarefas no Django junto com a organização",
+    descricao:
+      "Excluir a própria conta apaga a organização pessoal no Next.js, mas os projetos e tarefas dela no serviço Django (schema dominio, sem FK entre os serviços) ficam órfãos. Pode haver dado pessoal ali, então o direito ao esquecimento fica incompleto. Precisa de uma chamada autenticada serviço-a-serviço ou de uma limpeza periódica por organizacao_id inexistente.",
+    categoria: "Multi-tenant",
+    prioridade: "media",
+    status: "pendente",
+  },
+  {
+    id: "publicar-sdk",
+    titulo: "Publicar o SDK no npm",
+    descricao:
+      "O SDK (sdk/) é consumido direto da fonte. Para um cliente instalar, falta um passo de build (.js + .d.ts), o nome público do pacote e versionamento semântico ligado às mudanças de contrato da API.",
+    categoria: "Multi-tenant",
+    prioridade: "baixa",
+    status: "pendente",
+  },
+  {
+    id: "remover-colunas-suspensao-legado",
+    titulo: "Remover as colunas de suspensão legadas de Usuario",
+    descricao:
+      "Usuario.suspenso/suspensoAte/suspensoMotivo ficaram no schema sem uso depois da suspensão por organização, de propósito: derrubá-las junto com a troca de código quebraria o login na janela entre a migration e o deploy (o código anterior ainda as seleciona). Sai numa migration própria, num deploy POSTERIOR ao da suspensão por organização.",
+    categoria: "Multi-tenant",
+    prioridade: "baixa",
+    status: "pendente",
+  },
+  {
+    id: "auditoria-alvo-aplicacao",
+    titulo: "Auditoria da gestão de aplicações sem o alvo",
+    descricao:
+      "Os eventos aplicacao_criada/atualizada/desativada/reativada e segredo_aplicacao_rotacionado registram QUEM agiu (autorId/autorEmail) e caem na trilha da aplicação padrão, mas LogAuditoria não tem coluna pra dizer QUAL aplicação foi alterada — usuarioId/email descrevem uma conta, não um cliente. Precisa de um campo de alvo (ou metadados) na tabela.",
+    categoria: "Auditoria",
     prioridade: "baixa",
     status: "pendente",
   },

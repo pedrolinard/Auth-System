@@ -1,8 +1,16 @@
-# Sistema de Autenticação 
+# Sistema de Autenticação
 
 Gateway de autenticação em Next.js (App Router) que centraliza **cadastro**,
 **login** e **geração de tokens** (JWT de acesso + atualização), para ser
 consumido por outras aplicações como camada intermediária de identidade.
+
+Outros documentos:
+
+- `docs/integracao.md`: guia para quem integra uma aplicação (painel, SDK, validação de token)
+- `docs/operacao.md`: o que falta de infraestrutura para cobrar de um cliente
+- `docs/seguranca/escopo-pentest.md`: escopo sugerido para o teste de intrusão
+- `docs/juridico/`: rascunhos de termos, política de privacidade e acordo de tratamento de dados (revisar com advogado)
+- `sdk/`: cliente e verificador de token para aplicações integradas
 
 ## Arquitetura
 
@@ -52,13 +60,14 @@ consumido por outras aplicações como camada intermediária de identidade.
 - **Proxy** (`src/proxy.ts`, equivalente ao antigo `middleware.ts` a partir do
   Next.js 16): faz checagem otimista de sessão para proteger `/dashboard` e
   redirecionar usuários já autenticados para longe de `/login` e `/cadastro`.
-- **Headers de segurança** (`next.config.ts`): `Content-Security-Policy`,
+- **Headers de segurança** (`next.config.ts` + `src/proxy.ts`):
+  `Content-Security-Policy` com nonce por requisição nas páginas,
   `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy`, `Permissions-Policy`, `Strict-Transport-Security`, e
   remove o header `X-Powered-By`.
-- **Suspensão/exclusão de conta**: admins podem suspender (temporária ou
-  permanente) ou excluir permanentemente a conta de outro usuário — ver seção
-  "Suspensão e exclusão de contas" abaixo.
+- **Suspensão/remoção de membro**: dono/admin da organização pode suspender
+  (temporária ou permanente, só dentro daquela organização) ou remover um
+  membro — ver seção "Suspensão e remoção de membros" abaixo.
 - **Logout automático por inatividade**: 5 minutos sem nenhuma interação em
   `/dashboard` derrubam a sessão de verdade e voltam pro login — ver seção
   "Logout automático por inatividade" abaixo.
@@ -224,7 +233,8 @@ produção nos dois projetos Vercel (Next.js e Django).
 | POST   | `/api/auth/cadastro`       | Cria um novo usuário                                                     |
 | POST   | `/api/auth/login`          | Autentica; retorna tokens ou `{ mfaObrigatorio: true }` se MFA ativado   |
 | POST   | `/api/auth/atualizar`      | Rotaciona o token de atualização e emite novo acesso                     |
-| POST   | `/api/auth/logout`         | Revoga o token de atualização atual                                      |
+| POST   | `/api/auth/logout`         | Revoga o token de atualização atual (do cookie ou do corpo: `tokenAtualizacao`) |
+| GET    | `/api/saude`               | Saúde do serviço: banco e chave de assinatura (200 ou 503)               |
 | GET    | `/api/auth/me`             | Retorna o usuário autenticado (rota protegida, exemplo)                  |
 | PUT    | `/api/auth/senha`          | Troca a senha estando logado, exigindo a senha atual (rota protegida)    |
 | POST   | `/api/auth/alterar-email`  | Envia link de confirmação para o e-mail NOVO (rota protegida)            |
@@ -252,9 +262,13 @@ produção nos dois projetos Vercel (Next.js e Django).
 | POST   | `/api/auth/passkeys/login/confirmar` | Verifica a assertion e conclui o login sem senha                |
 | GET    | `/api/auth/usuarios`       | Lista usuários — restrito a `papel = admin`                             |
 | GET    | `/api/auth/auditoria`      | Lista os últimos 200 logs de auditoria, com filtro por `evento`/`email` — restrito a `papel = admin` |
-| DELETE | `/api/auth/usuarios/[id]`  | Exclui permanentemente a conta de outro usuário (admin)                 |
-| POST   | `/api/auth/usuarios/[id]/suspender` | Suspende a conta de outro usuário, temporária ou permanentemente (admin) |
-| POST   | `/api/auth/usuarios/[id]/reativar` | Reativa uma conta suspensa (admin)                                |
+| DELETE | `/api/auth/usuarios/[id]`  | Remove o membro da organização ativa, sem excluir a conta (dono/admin da organização) |
+| POST   | `/api/auth/usuarios/[id]/suspender` | Suspende o membro na organização ativa, temporária ou permanentemente (dono/admin da organização) |
+| POST   | `/api/auth/usuarios/[id]/reativar` | Reativa o membro na organização ativa (dono/admin da organização) |
+| GET    | `/api/auth/aplicacoes`     | Lista as aplicações clientes do provedor — só quem opera o provedor     |
+| POST   | `/api/auth/aplicacoes`     | Cria aplicação; devolve o `clientSecret` uma única vez                   |
+| PATCH  | `/api/auth/aplicacoes/[id]`| Edita nome/origens/RP ID, ativa ou desativa (desativar derruba as sessões dela) |
+| POST   | `/api/auth/aplicacoes/[id]/segredo` | Gera um `clientSecret` novo e invalida o anterior na hora       |
 | POST   | `/api/cron/limpar-tokens`  | Remove tokens expirados/revogados antigos; exige `Authorization: Bearer CRON_SECRET` |
 
 As rotas `/api/dominio/*` (`/api/dominio/projetos`, `/api/dominio/tarefas`)
@@ -583,6 +597,19 @@ O que separa os dois na prática é um índice: `@@unique([aplicacaoId, email])`
 
 **Como uma requisição descobre a aplicação.** O SDK manda o `clientId` no header `x-aplicacao-id`. Ele seleciona o tenant e nada mais: entra no `where` de toda leitura e no `data` de toda escrita, mas **nunca autoriza** — autorização continua vindo do access token. Ele é público por definição (vive no JavaScript do cliente), então tratá-lo como credencial seria confundir identificação com autenticação.
 
+**Como a aplicação cliente é autenticada** (`autenticarAplicacao`, em `src/lib/aplicacao.ts`), nas rotas públicas de cadastro, login, esqueci-senha e login por passkey:
+
+| Chamada | Exige |
+|---|---|
+| De navegador (tem `Origin`) | Origem cadastrada na aplicação. Lista vazia recusa (403) |
+| De servidor (sem `Origin`) | `x-aplicacao-segredo` com o client secret, comparado por hash em tempo constante (401) |
+
+A aplicação padrão segue a regra antiga. O CORS é resolvido no `src/proxy.ts`: o preflight só recebe resposta pra origens de aplicações ativas, o header do segredo não é liberado (o navegador recusa mandá-lo) e não há `Allow-Credentials` — cliente em outro domínio usa os tokens do corpo e `Authorization: Bearer`. O JWKS tem `Access-Control-Allow-Origin: *`.
+
+**SDK e guia de integração:** `sdk/` (cliente JS + verificador de token de backend) e `docs/integracao.md`.
+
+**E-mails com a marca da aplicação:** assunto e cabeçalho levam o nome da aplicação dona da conta; remetente, logo e endereço base dos links são configuráveis no painel (`contextoEmail` em `src/lib/aplicacao.ts`, envio central em `src/lib/email.ts`). A marca vem sempre da conta, nunca do header da requisição.
+
 Requisição **sem** o header cai na *aplicação padrão* (`padrao = true`, garantida única por índice parcial). É ela que faz o dashboard, as páginas de login/cadastro e o serviço Django continuarem funcionando exatamente como antes.
 
 Rotas autenticadas não usam o header: a aplicação vem de `usuario.aplicacaoId` ou do claim do token. Numa sessão já estabelecida quem manda é a conta, não quem está falando.
@@ -626,27 +653,51 @@ existe UI para promover um usuário a admin ainda; faça direto no banco:
 UPDATE usuarios SET papel = 'admin' WHERE email = 'seu-email@exemplo.com';
 ```
 
-### Suspensão e exclusão de contas (admin)
+### Suspensão e remoção de membros (dono/admin da organização)
 
-Em `/dashboard/usuarios`, admins podem **suspender** (1/7/30 dias ou
-permanente, com motivo opcional) ou **excluir permanentemente** a conta de
-qualquer outro usuário — um admin não consegue suspender/excluir a própria
-conta.
+Em `/dashboard/usuarios`, dono/admin da organização ativa pode **suspender**
+(1/7/30 dias ou permanente, com motivo opcional) ou **remover** outro membro
+dela — ninguém suspende/remove a si mesmo.
 
 - `POST /api/auth/usuarios/[id]/suspender` (`{ dias?, motivo? }` — sem `dias`
   = permanente) e `POST /api/auth/usuarios/[id]/reativar`.
-- `DELETE /api/auth/usuarios/[id]` — irreversível; `TokenAtualizacao` é
-  removido em cascata, `LogAuditoria` não (o histórico sobrevive à exclusão).
-- Suspender **revoga todas as sessões ativas na hora** (mesma lógica de "sair
-  de todos os dispositivos") e bloqueia `POST /api/auth/login` com 403 daí
-  em diante. O access token já emitido (até 15 min) continua valendo até
-  expirar naturalmente — mesmo trade-off já aceito no resto do sistema.
+- `DELETE /api/auth/usuarios/[id]` — remove o vínculo com a organização; a
+  conta continua existindo e seguindo nas outras organizações.
+- A suspensão mora em `Membro` e **vale só naquela organização**: suspender
+  revoga na hora as sessões dessa organização e bloqueia a entrada nela
+  (`/organizacoes/[id]/entrar` responde 403 com prazo e motivo). O login só é
+  recusado quando a pessoa está suspensa em **todas** as organizações de que
+  participa; senão, abre na primeira acessível. O access token já emitido
+  (até 15 min) continua valendo até expirar — mesmo trade-off do resto do
+  sistema.
 - Suspensão temporária expirada (`suspensoAte` no passado) é tratada como
-  inativa automaticamente, sem precisar de reativação manual nem job de
-  limpeza.
-- A checagem de suspensão roda tanto em `POST /api/auth/login` quanto em
-  `POST /api/auth/mfa/verificar` — cobre o caso de um admin suspender a conta
-  durante os até 5 min entre o desafio de MFA e a confirmação do código.
+  inativa automaticamente, sem reativação manual nem job de limpeza.
+- A checagem roda no login por senha, em `mfa/verificar`, `mfa/backup` e no
+  login por passkey — cobre um admin suspender durante os até 5 min entre o
+  desafio de MFA e a confirmação do código.
+- Renovar uma sessão revogada por suspensão ou remoção é só recusado: **não**
+  conta como reuso de refresh token (que derrubaria as sessões da pessoa em
+  todas as organizações e mandaria alerta de invasão).
+- As colunas `Usuario.suspenso`/`suspensoAte`/`suspensoMotivo` são legado sem
+  uso — a migration `20260914120000_suspensao_por_membro` copiou as suspensões
+  ativas pra cada `Membro`; as colunas saem num deploy posterior.
+
+### Gestão de aplicações (quem opera o provedor)
+
+`/dashboard/aplicacoes` lista, cria, edita, desativa/reativa e rotaciona o
+`clientSecret` das aplicações clientes. Acesso: admin de sistema
+(`Usuario.papel = admin`) com conta **na aplicação padrão** — um admin dentro
+de uma aplicação cliente não enxerga as outras.
+
+- O `clientSecret` é mostrado uma única vez (criação ou rotação); só o hash
+  SHA-256 é gravado. Ainda **nenhuma rota exige** o segredo.
+- Origens: só esquema+host (`https://app.cliente.com`), `http` só em
+  localhost. O RP ID de passkey precisa cobrir todas as origens, e trocar o RP
+  ID com passkeys registradas é recusado (409).
+- Não há exclusão. Desativar derruba as sessões dos usuários finais daquela
+  aplicação; outras instâncias da função podem levar até 30s (cache de
+  `src/lib/aplicacao.ts`) pra recusar login. A aplicação padrão não pode ser
+  desativada.
 
 ### Autoatendimento LGPD (exportar/excluir a própria conta)
 
@@ -692,7 +743,42 @@ que revoga só uma. Como o token de acesso é um JWT stateless de vida curta
 (15 min), outros dispositivos continuam "logados" com o token de acesso que
 já tinham até ele expirar naturalmente — só a **renovação** (refresh) é
 bloqueada imediatamente. Esse é o trade-off inerente a JWT sem blocklist, não
-uma falha da funcionalidade.
+uma falha da funcionalidade. A ação fica registrada na auditoria
+(`todas_sessoes_encerradas`).
+
+### Renovação de sessão e detecção de reuso
+
+Cada refresh token vale uma vez: `/api/auth/atualizar` revoga o usado e emite
+outro. Reapresentar um token **revogado pela rotação** é o sinal clássico de
+roubo e derruba todas as sessões da pessoa, com e-mail de alerta.
+
+Toda revogação grava o motivo (`TokenAtualizacao.revogadoMotivo`, ver
+`src/lib/revogacao.ts`): rotação, logout, troca ou redefinição de senha,
+troca de e-mail, suspensão, remoção de organização, desativação da aplicação,
+limite de sessões. **Só a rotação conta como roubo.** Nos outros casos o
+navegador reapresentar o token é o esperado, e a renovação é só recusada.
+Antes, trocar a senha no notebook fazia o celular derrubar a sessão nova do
+notebook e mandar um alerta de invasão falso.
+
+Concorrência: a rotação só acontece se o token ainda estiver ativo (`updateMany`
+com `revogadoEm: null` dentro da transação); quem perde a corrida recebe 401.
+Para isso não virar logout falso com várias abas abertas, o navegador serializa
+as renovações entre abas com Web Locks (`tentarAtualizarToken` em
+`src/lib/clienteAuth.ts`), e dentro de uma aba as chamadas simultâneas
+compartilham uma renovação só.
+
+### Login com código de backup
+
+Na segunda etapa do login, "Perdi o autenticador — usar um código de backup"
+troca o campo de 6 dígitos pelo código `XXXXX-XXXXX` e chama
+`/api/auth/mfa/backup`. Com 3 códigos ou menos restantes, a tela avisa pra
+gerar novos.
+
+### Saúde do serviço
+
+`GET /api/saude` responde 200 com `{ status, banco, chaveAssinatura }` quando o
+banco responde e existe chave de assinatura, e 503 caso contrário, sem detalhe
+de erro. É o alvo do monitor externo (ver `docs/operacao.md`).
 
 ### Tipo de dispositivo e localização nas sessões ativas
 
@@ -860,21 +946,33 @@ disso, o fluxo normal nem sabe que o CAPTCHA existe.
   trava quem passar do limite: com a secret key mas sem a site key, o widget
   nunca renderiza e ninguém consegue gerar um token válido. As duas vêm do
   mesmo widget em https://dash.cloudflare.com/?to=/:account/turnstile.
-- CSP (`next.config.ts`) libera `challenges.cloudflare.com` em `script-src`,
+- CSP (`src/lib/csp.ts`) libera `challenges.cloudflare.com` em `script-src`,
   `connect-src` e `frame-src` — sem isso o script é bloqueado, ou carrega e o
   iframe do desafio fica em branco.
 
 ### Headers de segurança HTTP
 
-`next.config.ts` define, pra toda rota: `Content-Security-Policy` (default-src
-'self', com `unsafe-inline` em script/style — um CSP totalmente estrito exigiria
-nonce por requisição via `proxy.ts`, mais invasivo; ver comentário no arquivo),
-`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy:
+`next.config.ts` define, pra toda rota: `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy:
 strict-origin-when-cross-origin`, `Permissions-Policy` (bloqueia câmera/
 microfone/geolocalização) e `Strict-Transport-Security`. `poweredByHeader:
-false` remove o `X-Powered-By: Next.js`. Em desenvolvimento, o CSP libera
-`unsafe-eval` porque o React usa `eval()` pra reconstruir call stacks em modo
-dev — nunca em produção, então isso não enfraquece o CSP real.
+false` remove o `X-Powered-By: Next.js`.
+
+O `Content-Security-Policy` vem de dois lugares (`src/lib/csp.ts`):
+
+- **Páginas**: montado no `src/proxy.ts` com um **nonce novo por requisição**
+  e `'strict-dynamic'` — sem `'unsafe-inline'` em `script-src`. O Next lê o
+  nonce do header da requisição e o carimba nos próprios scripts. Por isso o
+  layout raiz chama `await connection()`: toda página renderiza por requisição
+  (uma página pré-gerada no build sairia sem nonce e com os scripts bloqueados
+  em produção — em dev tudo já é dinâmico e o problema não aparece). `style-src`
+  mantém `'unsafe-inline'` (atributo `style=""` não aceita nonce). Em
+  desenvolvimento entra `'unsafe-eval'`, que o React usa só em modo dev.
+- **Rotas de API**: política fixa fechada (`default-src 'none'`), via
+  `next.config.ts` — JSON não precisa carregar nada.
+
+Pra conferir uma mudança no CSP, teste num build de produção (`next build` +
+`next start`), não só no `next dev`.
 
 O serviço Django não expõe `/admin/` — o app não tem model de `Usuario` nem
 login próprio do Django (só a classe de autenticação JWT customizada), então
@@ -886,8 +984,9 @@ Padrão *double-submit cookie*: `src/lib/csrf.ts` (Next.js) e
 `comum/autenticacao.py::ProtegidoContraCsrf` (Django) exigem que o header
 `X-CSRF-Token` bata com o valor do cookie `csrfToken` (não-httpOnly, o
 cliente lê via `document.cookie`) em toda mutação — exceto quando a
-requisição não tem esse cookie (cliente não-navegador, ex. Bearer/curl, onde
-CSRF não se aplica). Ficou necessário de verdade a partir do momento em que
+requisição não tem cookie nenhum de sessão nem CSRF (cliente não-navegador,
+ex. Bearer/curl, onde CSRF não se aplica). Cookie de sessão presente sem o
+cookie CSRF é recusado: é a forma de um ataque, não de um cliente sem navegador. Ficou necessário de verdade a partir do momento em que
 o access token virou cookie: antes, com o token só em `sessionStorage`, um
 site atacante não conseguia forjar o header `Authorization` sozinho. A
 comparação em si usa `crypto.timingSafeEqual` (não `===`), para não vazar
@@ -1068,6 +1167,17 @@ mudanças de schema exigem aplicar a migration na `DATABASE_URL` de produção
 antes (`manage.py migrate`) — esse lado não roda migration sozinho no
 deploy.
 
+**Portão de migrations do Django.** Esse lado não tinha nenhum, e custou caro:
+o código do multi-tenant subiu sem a migration `0002` aplicada no banco de
+produção, e a tela de projetos respondeu 500 em todo acesso autenticado
+(`column tarefas_projeto.organizacao_id does not exist`). Agora:
+
+- antes de todo deploy, com as variáveis do banco de destino:
+  `DATABASE_URL=... DATABASE_SCHEMA=dominio python scripts/checar_migrations.py && npx vercel deploy --prod`.
+  O script sai com código 1 e lista o que falta;
+- em produção, `GET /api/dominio/saude` responde 503 com `migrationsPendentes`
+  enquanto faltar migration — aponte o monitor externo pra ele também.
+
 O projeto também teve "Vercel Authentication" (proteção SSO de deployment)
 desativada — com ela ligada, qualquer visitante sem login no time Vercel
 recebia 401 antes mesmo de chegar no Next.js, inviabilizando o uso público
@@ -1091,5 +1201,6 @@ npx vercel link --project auth-gateway-django
 #   3. vercel env add DATABASE_SCHEMA production   (= "dominio")
 #   4. vercel env add DJANGO_DEBUG production      (= "False")
 #   5. DATABASE_URL=... DATABASE_SCHEMA=dominio python manage.py migrate
-#   6. vercel deploy --prod
+#   6. DATABASE_URL=... DATABASE_SCHEMA=dominio python scripts/checar_migrations.py
+#   7. vercel deploy --prod
 ```

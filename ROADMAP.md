@@ -5,11 +5,13 @@
 > Atualizado em 2026-08-31 (varredura de segurança — 1ª leva: senha na troca de e-mail, `userVerification: required` nas passkeys, `.max` no nome, CSP libera Rollbar, hardening do Django, upgrade de deps com CVE. 2ª leva: export LGPD exige senha + vira POST, limite por e-mail no `esqueci-senha`, `iss`/`aud` no access token, retenção da auditoria, CSP com `object-src 'none'`, export de auditoria em PDF). A fonte única de verdade do roadmap agora é `src/data/roadmap.ts` (renderizada em `/roadmap`); este arquivo é um retrato resumido.
 >
 > Atualizado em 2026-09-14 (Turnstile ativado em produção com chaves reais da Cloudflare; corrigido também um `.vercelignore` desatualizado que fazia `vercel deploy` local subir `node_modules`/`.next` inteiros por ignorar o `.gitignore`. Depois: contador de rate limit dedicado — tabela `limites_taxa` substitui o `count()` sobre `LogAuditoria`. Depois: observabilidade no Django — recurso Rollbar próprio via Vercel Marketplace + `RollbarNotifierMiddleware`, fechando o último item pendente da varredura de 08-31 que não era um trade-off deliberado. Depois: integrações Neon desconectadas dos dois projetos (rollback pós-migração pro Supabase, confirmado estável) — achado no processo: a seção "Deploy (Vercel)" do `README.md` ainda dizia que o Django "continua na Neon", desatualizada desde a migração de 08-29; corrigida. Depois: **multi-tenant (organizações)** — `Organizacao`/`Membro`/`ConviteOrganizacao` novos, organização ativa vira claim no access token (`organizacaoId`/`papelOrganizacao`), troca de organização sem reautenticar, Django isolado por `organizacao_id`, RBAC de admin escopado por organização (não mais só o `papel` de sistema), convites por e-mail com aceite idempotente, seletor de organização e tela `/dashboard/organizacoes` no frontend — implementado em 5 fases, cada uma revisada e corrigida antes da próxima. Depois: achado no processo de deploy — os dois endpoints de autoatendimento LGPD (`/minha-conta/exportar` e `/minha-conta` DELETE) tinham ficado pra trás do multi-tenant: o export não incluía organizações/convites, e excluir a própria conta deixava a organização pessoal órfã (Membro cascade-deleta, Organizacao não) e não bloqueava quem era única pessoa dona de uma organização com outros membros; os dois corrigidos. **Implantado em produção em 2026-09-08** — o deploy tinha ficado 7 dias em `ERROR` sem ninguém notar: o `next build` morre em "Collecting page data" porque `src/lib/token.ts` faz `throw` na avaliação do módulo quando falta qualquer segredo, e a `JWT_CONVITE_ORGANIZACAO_SECRET` (nova, do multi-tenant) nunca foi criada no ambiente de produção — o CI do GitHub Actions passava verde porque lá a variável existe. Como o `npm run build` roda `prisma migrate deploy` ANTES do `next build`, os builds que falharam já tinham aplicado as migrations: produção ficou com schema novo e código velho. Destravado na ordem schema → dados → código nos dois serviços (backfill do Next.js: 3 organizações criadas; migrate + backfill do Django: 0 falhas). Depois: **Fase 00 do provedor (identidade por aplicação + JWKS)** — `Aplicacao` e `ChaveAssinatura` novos, e-mail único por aplicação em vez de global, `kid` no access token, `/.well-known/jwks.json`, Django validando por JWKS, rate limit e passkeys escopados por aplicação, rotação de chave sem deploy coordenado. Implementado na branch `fase-00-identidade-por-aplicacao` e **implantado em produção em 2026-09-08** (Next.js 17:40, Django 17:41), junto com a correção do incidente descrita a seguir. Depois, no mesmo dia: **incidente e correção de causa raiz** — o build de *preview* do PR da Fase 00 aplicou as migrations no banco de **produção** (Preview e Production dividem a mesma instância Supabase, e `prisma migrate deploy` rodava dentro do `build`, antes do `next build`); produção ficou com schema novo e código velho e o cadastro caiu com 500 até o merge. O `build` agora roda `scripts/checar-migrations.mjs`, que **verifica e nunca aplica**: em Production, migration pendente ou banco inacessível interrompe o build; em Preview e local, avisa e segue. Aplicar migration virou passo deliberado, igual ao lado Django. Contagens de teste: **236 no total** — 194 Vitest + 6 E2E Playwright + 36 Django.
+>
+> Atualizado em 2026-09-15: suspensão por organização, cadastro sem enumeração, CSP com nonce e gestão de aplicações (14/09); depois, pente fino no projeto inteiro e o que falta de código para vender — autenticação da aplicação cliente, CORS, SDK, e-mails com marca, endpoint de saúde e documentos de operação, segurança e jurídico. Ver "Pente fino" e "Pronto para integrar" abaixo.
 
 ## ✅ Feito
 
 ### Backend / API (`src/app/api/auth/`)
-- `POST /cadastro` — cria usuário com senha hasheada (bcrypt, 12 rounds), valida com Zod, trata e-mail duplicado (409); gera token de verificação de e-mail (link logado no console) e registra auditoria
+- `POST /cadastro` — cria usuário com senha hasheada (bcrypt, 12 rounds), valida com Zod; gera token de verificação de e-mail (link logado no console) e registra auditoria. **Anti-enumeração**: e-mail já cadastrado recebe a mesma resposta (201, mesmo corpo) de um cadastro novo, e o dono do endereço recebe um e-mail avisando da tentativa, com os links de login e recuperação (teto de 3 avisos/h por endereço)
 - `POST /login` — valida credenciais, emite access token (JWT, 15 min) + refresh token (JWT, 30 dias) ou, se o usuário tiver MFA ativado, devolve um desafio (`mfaObrigatorio`); registra auditoria (sucesso/falha)
 - `POST /atualizar` — renova tokens com **rotação de refresh token** (revoga o antigo, emite novo em transação), aceita token via cookie ou body; protegido por CSRF; erros inesperados do Prisma tratados/logados
 - `POST /logout` — revoga o refresh token no banco e limpa os cookies (atualização, acesso, CSRF); protegido por CSRF; registra auditoria
@@ -29,6 +31,8 @@
 - `GET /organizacoes/convites`, `POST /organizacoes/convites` — lista convites pendentes da organização ativa / cria convite por e-mail (restrito a dono/admin; rate limit por IP e por e-mail alvo)
 - `DELETE /organizacoes/convites/[id]` — revoga um convite pendente
 - `POST /organizacoes/aceitar-convite` — aceita um convite (autenticado, idempotente sob aceite concorrente)
+- `POST /usuarios/[id]/suspender`, `POST /usuarios/[id]/reativar` — suspende/reativa um membro **dentro da organização ativa** (dono/admin); a pessoa segue entrando nas outras organizações
+- `GET /aplicacoes`, `POST /aplicacoes`, `PATCH /aplicacoes/[id]`, `POST /aplicacoes/[id]/segredo` — gestão das aplicações clientes do provedor (ver "Gestão de aplicações" abaixo), restrita a quem opera o provedor
 
 ### Lib (`src/lib/`)
 - `token.ts` — geração/verificação de JWT (jose): acesso (RS256, claims `papel`/`organizacaoId`/`papelOrganizacao`, `iss` fixo validado aqui e no Django), atualização, desafio MFA, verificação de e-mail, redefinição de senha e convite de organização (cada um com segredo próprio), hash SHA-256 do refresh token
@@ -66,7 +70,7 @@
 - `next.config.ts` encaminha `/api/dominio/*` para o Django via rewrite (mesma origem, sem CORS) — cookies (acesso e CSRF) são repassados transparentemente
 - **Postgres compartilhado** — mesma instância local do Next.js, database própria (`autenticacao_dominio`)
 - `ProtegidoContraCsrf` (`comum/autenticacao.py`) — mesma proteção CSRF double-submit-cookie do lado Next.js, aplicada nas mutações de `ProjetoViewSet`/`TarefaViewSet`
-- **Testes automatizados** (`pytest-django`): `comum/tests/test_autenticacao.py` (token válido/expirado/adulterado/confusão de algoritmo/via cookie/claims `papel`/`organizacao_id` + `ProtegidoContraCsrf` em tempo constante) e `tarefas/tests/test_views.py` (CRUD + isolamento por organização + CSRF ponta a ponta) — 36 testes
+- **Testes automatizados** (`pytest-django`): `comum/tests/test_autenticacao.py` (token válido/expirado/adulterado/confusão de algoritmo/via cookie/claims `papel`/`organizacao_id` + `ProtegidoContraCsrf` em tempo constante) e `tarefas/tests/test_views.py` (CRUD + isolamento por organização + CSRF ponta a ponta) e `comum/tests/test_saude.py` (migration pendente responde 503) — 40 testes
 
 ### Multi-tenant (organizações)
 > Implementado em 5 fases (schema/backfill → sessão/token → Django → RBAC → convites/UI), cada fase revisada e corrigida antes da seguinte. **Em produção desde 2026-09-08** — ver a nota do cabeçalho sobre os 7 dias de deploy quebrado.
@@ -74,7 +78,7 @@
 - A organização **ativa** da sessão é um claim no próprio access token (`organizacaoId`/`papelOrganizacao`), não resolvida por parâmetro de rota a cada requisição — decisão deliberada pra preservar o princípio de que o Django nunca consulta as tabelas do Next.js, só confia no JWT
 - Trocar de organização ativa (`POST /api/auth/organizacoes/[id]/entrar`) reemite tokens sem pedir senha de novo, mesmo padrão que a conclusão de MFA já usa; trade-off aceito: uma organização ativa por sessão de navegador (trocar numa aba troca em todas)
 - Django isolado por `organizacao_id`: `Projeto`/`Tarefa` só aparecem pra quem é membro da mesma organização; sessão sem organização ativa é rejeitada (403) em vez de vazar linhas órfãs pra quem estiver sem organização
-- RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização — dono/admin da organização A não enxerga nem afeta contas da organização B; suspender ainda é por conta inteira, não por organização (trade-off documentado em "O que falta" abaixo)
+- RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização — dono/admin da organização A não enxerga nem afeta contas da organização B; desde 2026-09-14 a **suspensão também é por organização** (`Membro.suspenso`): login abre na primeira organização em que a pessoa não está suspensa e só é recusado se ela estiver suspensa em todas
 - Convites por e-mail: token JWT stateless com segredo próprio (`JWT_CONVITE_ORGANIZACAO_SECRET`), reconvidar o mesmo e-mail atualiza o convite pendente em vez de duplicar, aceite exige estar autenticado com a conta dona do e-mail convidado e é idempotente sob aceite concorrente (corrida tratada, sem 500)
 - Rate limit dedicado: criar organização (10/h por IP) e enviar convite (30/h por IP + 5/h por e-mail alvo), mesmo padrão do resto do projeto
 - Cadastro cria a organização pessoal do usuário numa transação (`Usuario` + `Organizacao` + `Membro` dono) — sem organização órfã se algo falhar no meio
@@ -96,18 +100,28 @@
 - `scripts/backfill-aplicacoes.mjs` (cria a aplicação padrão, atribui as linhas existentes, importa a chave do ambiente) e `scripts/rotacionar-chave-assinatura.mjs` (gerar → ativar → remover, na ordem que não derruba sessão)
 - A migration destrutiva faz o próprio backfill em SQL, idempotente: o build da Vercel aplica todas as migrations pendentes de uma vez, então depender de um script externo ter rodado no meio quebraria o deploy — a lição de 08/09 aplicada como código
 
+### Gestão de aplicações (Fase 01 do provedor)
+> Implementada em 2026-09-14. Antes, criar uma aplicação cliente era INSERT à mão no banco.
+- `/dashboard/aplicacoes` + `/api/auth/aplicacoes`: criar, editar (nome, origens, RP ID de passkey), desativar/reativar e rotacionar o `clientSecret`
+- Acesso só pra quem **opera o provedor**: admin de sistema com conta na aplicação padrão — um admin de sistema dentro de uma aplicação cliente não enxerga as outras (`src/lib/gestaoAplicacoes.ts`)
+- `clientSecret` mostrado uma única vez, gravado só como hash SHA-256; rotacionar invalida o anterior na hora
+- Validação contra configuração que nunca funciona: origem só esquema+host, `http` só em localhost, RP ID precisa cobrir todas as origens (regra do WebAuthn); trocar o RP ID com passkeys registradas é recusado (409)
+- Sem exclusão (o `Restrict` nas contas é proposital); desativar derruba na hora as sessões dos usuários finais daquela aplicação; a aplicação padrão não pode ser desativada
+- Ainda não feito: nenhuma rota exige o `clientSecret` (ver "O que falta")
+
 ### Frontend
 - Páginas: home, `/login` (com segunda etapa de código MFA e link "Esqueci minha senha"), `/cadastro`, `/dashboard` (protegida, com seções de Segurança: sessões ativas e MFA), `/verificar-email`, `/esqueci-senha`, `/redefinir-senha`
 - `/dashboard/projetos` e `/dashboard/projetos/[id]` — CRUD de projetos e tarefas consumindo o serviço Django via rewrite (`src/lib/clienteDominio.ts`)
 - `/dashboard/organizacoes` e `/aceitar-convite` — gestão de organizações e aceite de convite (ver "Multi-tenant" acima)
-- `proxy.ts` faz checagem otimista de sessão via cookie e redireciona rotas protegidas/somente-visitante
+- `/dashboard/aplicacoes` — gestão das aplicações clientes, visível só pra quem opera o provedor (ver "Gestão de aplicações" acima)
+- `proxy.ts` faz checagem otimista de sessão via cookie e redireciona rotas protegidas/somente-visitante, e monta o CSP de cada página com um nonce novo por requisição (`src/lib/csp.ts`)
 - Sem `sessionStorage` — access token e CSRF token viajam via cookie, o cliente não guarda nenhum token manualmente
 - `login`/`cadastro` com o mesmo padrão de formulário (`autoFocus`, `autoComplete`, `CampoSenha` compartilhado com mostrar/ocultar senha)
 
 ### Testes automatizados (Next.js)
 - **Vitest contra servidor `next dev` real** (não mocka `next/headers`), database dedicada `autenticacao_test` na mesma instância Postgres, `tests/globalSetup.ts` sobe/derruba o servidor e aplica as migrations
-- 194 testes em `tests/api/*.test.ts` + `tests/lib/*.test.ts`: cadastro, login, sessões, MFA (códigos TOTP reais e backup), RBAC (sistema e por organização), recuperação/troca/alteração de e-mail e senha, verificação de e-mail, CSRF, rate limiting, viagem impossível, passkeys, organizações/convites, cron de limpeza, criptografia em repouso e comparação em tempo constante
-- 6 testes E2E de navegador (Playwright): cadastro/login, dashboard protegido e passkeys via virtual authenticator
+- 237 testes em `tests/api/*.test.ts`, `tests/lib/*.test.ts` e `tests/sdk/*.test.ts` (SDK contra o servidor real): autenticação da aplicação cliente e CORS, motivo de revogação e renovação concorrente, cadastro (incluindo anti-enumeração), gestão de aplicações, suspensão por organização, CSP com nonce, login, sessões, MFA (códigos TOTP reais e backup), RBAC (sistema e por organização), recuperação/troca/alteração de e-mail e senha, verificação de e-mail, CSRF, rate limiting, viagem impossível, passkeys, organizações/convites, cron de limpeza, criptografia em repouso e comparação em tempo constante
+- 8 testes E2E de navegador (Playwright): cadastro/login, dashboard protegido, passkeys via virtual authenticator, login com código de backup e renovação de sessão com várias abas
 
 ### Segurança já presente
 - Senha hasheada (bcrypt)
@@ -133,24 +147,57 @@
 - Dependências com CVE atualizadas: Next.js 16.2.10 → 16.3.4 (bypass de middleware/proxy, SSRF em rewrites, cache confusion), Django 5.2.16 → 5.2.17, `cryptography` 43 → 50, DRF 3.15 → 3.18
 - Export LGPD (`POST /api/auth/minha-conta/exportar`) exige a senha atual + CSRF + rate limit (era GET só com o cookie de acesso)
 - `esqueci-senha` com limite por e-mail (3/h), sem quebrar a resposta anti-enumeração
-- Access token carrega `iss`, validado no Next.js e no Django (`options={require:[exp,iss]}`) — `aud` foi removido em 2026-09-01 (quebrava consumidores que ainda não tinham sido atualizados)
+- Access token carrega `iss`, validado no Next.js e no Django (`options={require:[exp,iss]}`), e `aud` = a aplicação — removido em 2026-09-01 por quebrar um consumidor, reintroduzido na Fase 00 junto com `kid` + JWKS (ver "Identidade por aplicação")
 - Retenção da trilha de auditoria: `POST /api/cron/limpar-tokens` poda `LogAuditoria` > 365 dias e `DesafioMfaConsumido` expirado (índice `criadoEm` novo)
 - CSP com `object-src 'none'` e `upgrade-insecure-requests`
+- **CSP sem `'unsafe-inline'` em `script-src`** (2026-09-14): nonce por requisição + `'strict-dynamic'` nas páginas, política fechada (`default-src 'none'`) nas rotas de API. Toda página passa a renderizar por requisição (`await connection()` no layout raiz), custo aceito. Verificado num build de produção: todo `<script>` sai com o nonce, zero violações no Chromium, Turnstile carregando sob o CSP novo
+- Sessão revogada administrativamente (suspender/remover de organização, desativar aplicação) não dispara mais a detecção de **reuso de refresh token** — antes, renovar a sessão de uma organização da qual a pessoa foi removida derrubava as sessões dela em todas as outras e mandava um alerta falso de invasão
 - Exportação da auditoria em PDF pra admins (jsPDF carregado sob demanda no clique)
 - CAPTCHA (Turnstile) ativo em produção: `TURNSTILE_SECRET_KEY`/`NEXT_PUBLIC_TURNSTILE_SITE_KEY` configuradas na Vercel — fricção progressiva a partir da 5ª falha de login/cadastro por IP passa a exigir o desafio de verdade (fail-closed, confirmado em prod)
 - Contador de rate limit dedicado (`limites_taxa`): uma linha por chave (ip/e-mail + evento), incrementada com `INSERT ... ON CONFLICT DO UPDATE` em janela fixa — substitui o `count()` sobre `LogAuditoria` que rodava a cada tentativa de login/cadastro/redefinição; `LogAuditoria` segue intacta para auditoria e detecção de dispositivo novo
 - Observabilidade no Django: recurso Rollbar próprio (Vercel Marketplace, projeto `auth-gateway-django`) + `RollbarNotifierMiddleware` — mesmo provedor do Next.js, um 500 não tratado no serviço de domínio agora chega ao mesmo dashboard
 
+### Pente fino (2026-09-15)
+Leitura do projeto inteiro (lib, rotas, telas críticas, Django, scripts, CI, configuração). Corrigido, cada um com teste de regressão:
+- **Aceitar convite** deixava uma conta de outra aplicação entrar na organização (o e-mail só é único por aplicação)
+- **Chave pública removida** do JWKS seguia aceita em instâncias aquecidas (cache sem expiração)
+- **CSRF** era dispensado quando só o cookie CSRF faltava, mesmo com cookie de sessão — Next.js e Django
+- **Reconfirmar o MFA** gerava mais 10 códigos de backup sem invalidar os antigos
+- **MFA e código de backup** concluíam login em aplicação desativada durante o desafio
+- **Alarme de reuso de token** disparava em revogações legítimas (troca de senha em outro aparelho, logout, limite de sessões, suspensão), derrubando a sessão nova da pessoa e mandando alerta falso. Toda revogação grava o motivo; só a rotação conta como roubo
+- **Renovação concorrente** do mesmo token abria duas sessões e podia sobrescrever uma suspensão. Rotação só com o token ativo; o navegador serializa renovações entre abas (Web Locks)
+- **Tela de login sem código de backup:** a API existia e os códigos não serviam pra entrar
+- **`/roadmap` público** expunha contagem de contas, admins e sessões de produção
+- **Conta sem organização** dava 500 sem corpo no login (caso real em produção). Agora ganha a organização pessoal; `backfill-organizacoes.mjs` voltou a funcionar depois da Fase 00
+- **Erro 500 cru na tela** ("Unexpected end of JSON input") — os clientes do navegador leem corpo vazio com segurança
+- 500 em aceitar convite estando suspenso, verificar e-mail de conta excluída, passkey duplicada e `?projeto=abc` no Django
+- Datas deslocadas em Postgres fora de UTC (sessão do banco agora sempre em UTC)
+- Rewrite do Django inválido sem `DJANGO_SERVICE_URL` quebrava todo build de Preview
+- Exclusão de conta sumia da auditoria do cliente; "sair de todos os dispositivos" não era auditado; sem aviso de `EMAIL_FROM` no sandbox do Resend
+- Limpeza: `.gitignore` duplicado (a última linha re-ignorava o `.env.example`), comentários desatualizados, testes dependentes de contadores de rate limit persistidos, 3.093 organizações órfãs no banco de teste
+
+### Pronto para integrar (2026-09-15)
+- **Autenticação da aplicação cliente:** navegador precisa de origem cadastrada (lista vazia recusa); servidor precisa do client secret (`x-aplicacao-segredo`)
+- **CORS** por aplicação no `proxy.ts`, sem liberar o header do segredo nem cookies entre domínios; JWKS público
+- **Logout** aceita o refresh token no corpo
+- **SDK** em `sdk/` (cliente JS + verificador de token de backend) e guia em `docs/integracao.md`
+- **E-mails com a marca** da aplicação: nome no assunto, remetente, logo e endereço dos links configuráveis
+- **`GET /api/saude`** para monitoramento
+- **Documentos para venda:** `docs/operacao.md` (infraestrutura), `docs/seguranca/escopo-pentest.md`, `docs/juridico/` (rascunhos para advogado)
+
 ## 🔧 O que falta / pode fazer
 
-Da varredura de segurança de 2026-08-31, ainda em aberto (prioridade decrescente):
+Os itens em aberto da varredura de segurança de 2026-08-31 (CSP com `'unsafe-inline'`, enumeração no cadastro) e o trade-off do multi-tenant (suspensão por conta inteira) foram resolvidos em 2026-09-14 — ver as seções acima.
 
-- **CSP com `script-src 'unsafe-inline'`** em produção — nonce por request força renderização dinâmica em todas as páginas (perde a otimização estática de `/`, `/login`, etc. e o cache de CDN); SRI hash-based é experimental. Adiado até valer o custo.
-- **Enumeração de contas no cadastro** (409 "e-mail já cadastrado") — mantido de propósito: a alternativa tem custo de UX real pra quem esqueceu que já tem conta, e login/recuperação (os fluxos que importam) já não enumeram.
+Em aberto:
 
-Do multi-tenant (2026-09-01), trade-off aceito por enquanto:
-
-- **Suspensão de conta é por conta inteira, não por organização** — `suspenso`/`suspensoAte`/`suspensoMotivo` continuam campos globais do `Usuario`; um dono/admin que suspende alguém bloqueia o login em QUALQUER organização de que a pessoa participe, não só na organização ativa de quem suspendeu. Mover suspensão pra dentro de `Membro` é escopo maior (schema novo, refazer `estaSuspenso()` e todos os pontos de login) — não crítico o bastante pra ter bloqueado o multi-tenant por causa disso.
+- **Infraestrutura para cliente pagante** — domínio próprio, e-mail verificado, planos pagos, backup testado, alertas. Não é código: `docs/operacao.md`.
+- **Pentest externo e revisão jurídica** — escopo em `docs/seguranca/escopo-pentest.md`, rascunhos em `docs/juridico/`.
+- **Banco próprio pro ambiente Preview** — banco criado e migrado; falta semear, apontar o `DATABASE_URL` do Preview e criar as env vars (`docs/operacao.md`, item 6).
+- **Excluir projetos e tarefas no Django junto com a organização** — hoje ficam órfãos quando a conta é excluída.
+- **Remover as colunas de suspensão legadas de `Usuario`** — ficaram sem uso, de propósito, pra não quebrar o login na janela entre a migration e o deploy; saem num deploy posterior.
+- **Auditoria da gestão de aplicações sem o alvo** — os eventos registram quem agiu, mas `LogAuditoria` não tem campo pra dizer qual aplicação foi alterada.
+- **Publicar o SDK no npm** — hoje é consumido direto da fonte.
 
 Itens fora de escopo intencional (rate limiting distribuído/Redis, envio real de e-mail) seguem documentados no `README.md`.
 
