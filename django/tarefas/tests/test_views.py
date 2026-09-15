@@ -32,6 +32,13 @@ def test_requisicao_sem_credenciais_retorna_401_nao_403():
     assert resposta["WWW-Authenticate"] == "Bearer"
 
 
+def test_filtro_de_projeto_nao_numerico_responde_400_nao_500():
+    client = cliente_autenticado("usuario-a")
+    resposta = client.get("/api/dominio/tarefas?projeto=abc")
+
+    assert resposta.status_code == 400
+
+
 def test_criar_e_listar_projeto():
     client = cliente_autenticado("usuario-a")
 

@@ -1,4 +1,4 @@
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
 
@@ -52,7 +52,11 @@ class TarefaViewSet(ModelViewSet):
         queryset = Tarefa.objects.filter(organizacao_id=organizacao_id)
         projeto_id = self.request.query_params.get("projeto")
         if projeto_id:
-            queryset = queryset.filter(projeto_id=projeto_id)
+            # Id de projeto é inteiro; um valor como "abc" ia direto pro
+            # filtro e o Django levantava ValueError — 500 em vez de 400.
+            if not projeto_id.isdigit():
+                raise ValidationError({"projeto": "Informe o id numérico do projeto."})
+            queryset = queryset.filter(projeto_id=int(projeto_id))
         return queryset
 
     def perform_create(self, serializer):

@@ -217,6 +217,14 @@ def test_csrf_sem_cookie_pula_a_checagem():
     assert ProtegidoContraCsrf().has_permission(request, None) is True
 
 
+def test_csrf_cookie_de_sessao_sem_cookie_csrf_bloqueia():
+    # Autenticada pelo cookie de acesso mas sem o par CSRF: é a forma de um
+    # ataque CSRF, não de um cliente sem navegador.
+    request = _requisicao_csrf("post")
+    request.COOKIES["tokenAcesso"] = "qualquer-token"
+    assert ProtegidoContraCsrf().has_permission(request, None) is False
+
+
 def test_csrf_token_batendo_libera():
     request = _requisicao_csrf("post", cookie="token-abc", header="token-abc")
     assert ProtegidoContraCsrf().has_permission(request, None) is True

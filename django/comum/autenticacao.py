@@ -147,9 +147,11 @@ class ProtegidoContraCsrf(BasePermission):
     Desde que o access token virou cookie httpOnly, mutações em
     /api/dominio/* passam a ser alcançáveis só com o cookie ambiente — sem
     isso, um site atacante em outra origem poderia forjar um POST/DELETE
-    aqui. Métodos seguros (GET/HEAD/OPTIONS) não são checados. Se não existe
-    cookie csrfToken na requisição (cliente sem navegador, ex. Bearer via
-    curl/testes), não há sessão baseada em cookie e a checagem é pulada.
+    aqui. Métodos seguros (GET/HEAD/OPTIONS) não são checados. Sem cookie
+    csrfToken, a checagem só é dispensada quando também não há cookie de
+    sessão (cliente sem navegador, ex. Bearer via curl/testes) — uma mutação
+    autenticada pelo cookie tokenAcesso sem o par CSRF é a forma de um ataque,
+    não de um cliente sem navegador. Mesma regra de src/lib/csrf.ts.
     """
 
     def has_permission(self, request, view):
@@ -158,7 +160,7 @@ class ProtegidoContraCsrf(BasePermission):
 
         valor_cookie = request.COOKIES.get("csrfToken")
         if not valor_cookie:
-            return True
+            return "tokenAcesso" not in request.COOKIES
 
         cabecalho = request.headers.get("X-CSRF-Token")
         if not cabecalho:
