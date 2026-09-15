@@ -62,12 +62,20 @@ model Aplicacao {
   // índice único parcial criado à mão na migration (o Prisma não expressa
   // índice parcial no schema).
   padrao   Boolean @default(false)
+  // Self-service: a organização (da aplicação padrão, ou seja, um cliente do
+  // provedor com conta no painel) que criou e gerencia esta aplicação. Nulo =
+  // criada por quem opera o provedor, ou a própria aplicação padrão. SetNull:
+  // se a organização dona some (conta excluída), a aplicação continua no ar
+  // pros usuários finais dela e passa a ser gerida só pelo operador.
+  organizacaoDonaId String?
+  organizacaoDona   Organizacao? @relation("AplicacoesDaOrganizacao", fields: [organizacaoDonaId], references: [id], onDelete: SetNull)
   criadoEm DateTime @default(now()) @db.Timestamptz(3)
   atualizadoEm DateTime @updatedAt @db.Timestamptz(3)
 
   usuarios     Usuario[]
-  organizacoes Organizacao[]
+  organizacoes Organizacao[] @relation("OrganizacoesDaAplicacao")
 
+  @@index([organizacaoDonaId])
   @@map("aplicacoes")
 }
 
@@ -368,11 +376,16 @@ model LimiteTaxa {
 // MESMA transação que apaga a organização e só some quando o Django confirma
 // a exclusão — se ele estiver fora do ar, o job de limpeza tenta de novo. Sem
 // isso, excluir a conta deixava dado pessoal órfão do outro lado (LGPD).
+//
+// `alvo` é "organizacao:<id>" (projetos e tarefas da organização) ou
+// "usuario:<id>" (projetos e tarefas LEGADOS da conta, de antes do
+// multi-tenant, que ficaram sem organizacao_id e não seriam alcançados pela
+// organização).
 model ExclusaoDominioPendente {
-  organizacaoId String   @id
-  tentativas    Int      @default(0)
-  ultimoErro    String?
-  criadoEm      DateTime @default(now()) @db.Timestamptz(3)
+  alvo       String   @id
+  tentativas Int      @default(0)
+  ultimoErro String?
+  criadoEm   DateTime @default(now()) @db.Timestamptz(3)
 
   @@map("exclusoes_dominio_pendentes")
 }
@@ -392,7 +405,7 @@ model Organizacao {
   // isolamento do provedor: a aplicação (o cliente que paga) e, dentro dela,
   // as organizações dos usuários finais desse cliente.
   aplicacaoId String
-  aplicacao   Aplicacao @relation(fields: [aplicacaoId], references: [id], onDelete: Restrict)
+  aplicacao   Aplicacao @relation("OrganizacoesDaAplicacao", fields: [aplicacaoId], references: [id], onDelete: Restrict)
   nome     String
   // Usado em URLs/exibição — único DENTRO da aplicação, não globalmente:
   // senão o cliente A que registrasse "acme" impediria o cliente B de usar o
@@ -404,6 +417,8 @@ model Organizacao {
   membros  Membro[]
   convites ConviteOrganizacao[]
   sessoes  TokenAtualizacao[]
+  // Aplicações clientes que esta organização criou pelo painel (self-service).
+  aplicacoesProprias Aplicacao[] @relation("AplicacoesDaOrganizacao")
 
   @@unique([aplicacaoId, slug])
   @@index([aplicacaoId])

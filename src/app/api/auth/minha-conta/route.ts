@@ -6,7 +6,7 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf, removerCookieAcesso, removerCookieAtualizacao, removerCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { enviarEmailContaExcluida } from "@/lib/email";
-import { agendarExclusaoDominio, processarExclusoesDominio } from "@/lib/exclusaoDominio";
+import { agendarExclusaoDominio, alvosDaExclusao, processarExclusoesDominio } from "@/lib/exclusaoDominio";
 import {
   limiteExcedido,
   limiteExcedidoPorEmail,
@@ -141,23 +141,21 @@ export async function DELETE(req: Request) {
     }
   }
 
+  // Projetos e tarefas dessas organizações (e os legados da conta, sem
+  // organização) vivem no Django: o pedido de exclusão entra na mesma
+  // transação (ver exclusaoDominio.ts).
+  const exclusaoDominio = { organizacoes: organizacoesParaExcluir, usuarioId: usuario.id };
   await prisma.$transaction([
     prisma.usuario.delete({ where: { id: usuario.id } }),
     ...(organizacoesParaExcluir.length > 0
-      ? [
-          prisma.organizacao.deleteMany({ where: { id: { in: organizacoesParaExcluir } } }),
-          // Projetos e tarefas dessas organizações vivem no Django: o pedido
-          // de exclusão entra na mesma transação (ver exclusaoDominio.ts).
-          agendarExclusaoDominio(prisma, organizacoesParaExcluir),
-        ]
+      ? [prisma.organizacao.deleteMany({ where: { id: { in: organizacoesParaExcluir } } })]
       : []),
+    agendarExclusaoDominio(prisma, exclusaoDominio),
   ]);
-  if (organizacoesParaExcluir.length > 0) {
-    // Depois da resposta: com o Django lento ou fora do ar, a pessoa não
-    // espera o tempo limite pra ver a conta excluída. O que falhar fica na
-    // fila pro job de limpeza.
-    after(() => processarExclusoesDominio(organizacoesParaExcluir));
-  }
+  // Depois da resposta: com o Django lento ou fora do ar, a pessoa não espera
+  // o tempo limite pra ver a conta excluída. O que falhar fica na fila pro
+  // job de limpeza.
+  after(() => processarExclusoesDominio(alvosDaExclusao(exclusaoDominio)));
   await registrarEvento({
     req,
     evento: "conta_excluida_pelo_titular",

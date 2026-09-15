@@ -447,7 +447,7 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "exclusao-dados-dominio",
     titulo: "Excluir os projetos e tarefas no Django junto com a organização",
     descricao:
-      "Excluir a própria conta apagava a organização pessoal no Next.js, mas os projetos e tarefas dela no serviço Django (schema dominio, sem FK entre os serviços) ficavam órfãos — direito ao esquecimento incompleto. Agora o pedido de exclusão entra numa fila (exclusoes_dominio_pendentes) na MESMA transação que apaga a organização, e o gateway chama POST /api/dominio/interno/excluir-organizacoes logo depois da resposta, com um token de serviço RS256 de 2 min (mesma chave do JWKS, audiência própria, organizações dentro do token e não no corpo). O que falhar com o Django fora do ar o job diário de limpeza reenvia. O token de serviço é recusado como token de usuário nos dois serviços.",
+      "Excluir a própria conta apagava a organização pessoal no Next.js, mas os projetos e tarefas dela no serviço Django (schema dominio, sem FK entre os serviços) ficavam órfãos — direito ao esquecimento incompleto. Agora o pedido de exclusão entra numa fila (exclusoes_dominio_pendentes) na MESMA transação que apaga a conta, e o gateway chama POST /api/dominio/interno/excluir-dados logo depois da resposta, em lotes, com um token de serviço RS256 de 2 min (mesma chave do JWKS, audiência própria, escopo dentro do token e não no corpo). Vão as organizações apagadas e também a conta, pros projetos e tarefas legados de antes do multi-tenant que ficaram sem organização. O que falhar com o Django fora do ar o job diário de limpeza reenvia. O token de serviço é recusado como token de usuário nos dois serviços.",
     categoria: "Multi-tenant",
     prioridade: "media",
     status: "feito",

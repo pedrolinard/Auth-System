@@ -3,31 +3,77 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { gerarTokenServicoDominio } from "@/lib/token";
 
-// Quantas organizações por chamada ao Django — o endpoint recusa listas
-// maiores (django/tarefas/views_interno.py).
+// Quantos alvos por chamada ao Django — o endpoint recusa listas maiores
+// (django/tarefas/views_interno.py).
 const LOTE = 100;
 const TEMPO_LIMITE_MS = 8000;
 
 type Transacao = Pick<typeof prisma, "exclusaoDominioPendente">;
 
+const PREFIXO_ORGANIZACAO = "organizacao:";
+const PREFIXO_USUARIO = "usuario:";
+
 /**
- * Marca organizações cujos projetos e tarefas no Django precisam sair. Chamar
- * DENTRO da transação que apaga as organizações: ou as duas coisas acontecem,
- * ou nenhuma — nunca uma organização apagada sem o pedido de exclusão do
- * outro lado.
+ * Marca o que precisa sair do Django. Chamar DENTRO da transação que apaga a
+ * conta e as organizações: ou as duas coisas acontecem, ou nenhuma — nunca
+ * uma organização apagada sem o pedido de exclusão do outro lado.
+ *
+ * `usuarioId` cobre os projetos e tarefas LEGADOS da conta (de antes do
+ * multi-tenant, sem organizacao_id), que a organização não alcança.
  */
-export function agendarExclusaoDominio(tx: Transacao, organizacoes: string[]) {
+export function agendarExclusaoDominio(
+  tx: Transacao,
+  dados: { organizacoes: string[]; usuarioId: string },
+) {
   return tx.exclusaoDominioPendente.createMany({
-    data: organizacoes.map((organizacaoId) => ({ organizacaoId })),
+    data: [
+      ...dados.organizacoes.map((id) => ({ alvo: `${PREFIXO_ORGANIZACAO}${id}` })),
+      { alvo: `${PREFIXO_USUARIO}${dados.usuarioId}` },
+    ],
     skipDuplicates: true,
   });
 }
 
+export function alvosDaExclusao(dados: { organizacoes: string[]; usuarioId: string }): string[] {
+  return [
+    ...dados.organizacoes.map((id) => `${PREFIXO_ORGANIZACAO}${id}`),
+    `${PREFIXO_USUARIO}${dados.usuarioId}`,
+  ];
+}
+
+async function enviarLote(base: string, alvos: string[]): Promise<boolean> {
+  const organizacoes = alvos.filter((a) => a.startsWith(PREFIXO_ORGANIZACAO)).map((a) => a.slice(PREFIXO_ORGANIZACAO.length));
+  const usuarios = alvos.filter((a) => a.startsWith(PREFIXO_USUARIO)).map((a) => a.slice(PREFIXO_USUARIO.length));
+  try {
+    const token = await gerarTokenServicoDominio({ acao: "excluir_dados", organizacoes, usuarios });
+    const resposta = await fetch(`${base}/api/dominio/interno/excluir-dados`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: "{}",
+      signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
+    });
+    if (!resposta.ok) throw new Error(`Django respondeu ${resposta.status}`);
+    await prisma.exclusaoDominioPendente.deleteMany({ where: { alvo: { in: alvos } } });
+    return true;
+  } catch (erro) {
+    const mensagem = erro instanceof Error ? erro.message : String(erro);
+    console.error("Falha ao excluir dados no Django:", mensagem);
+    await prisma.exclusaoDominioPendente
+      .updateMany({
+        where: { alvo: { in: alvos } },
+        data: { tentativas: { increment: 1 }, ultimoErro: mensagem.slice(0, 500) },
+      })
+      .catch(() => {});
+    return false;
+  }
+}
+
 /**
- * Pede ao Django a exclusão dos dados das organizações pendentes e tira da
- * fila as que ele confirmou. Best-effort: nunca lança. Chamado logo depois da
- * exclusão da conta (pra na maioria das vezes resolver na hora) e pelo job de
- * limpeza (pra o que falhou por o Django estar fora do ar).
+ * Pede ao Django a exclusão dos dados pendentes e tira da fila o que ele
+ * confirmou, em lotes, até acabar ou até a primeira falha (com o Django fora
+ * do ar não adianta insistir agora). Best-effort: nunca lança. Chamado logo
+ * depois da exclusão da conta (pra quase sempre resolver na hora) e pelo job
+ * de limpeza (pro que falhou).
  *
  * Sem DJANGO_SERVICE_URL não há pra quem pedir: a fila fica esperando.
  */
@@ -37,35 +83,26 @@ export async function processarExclusoesDominio(
   const base = process.env.DJANGO_SERVICE_URL?.replace(/\/+$/, "");
   if (!base) return { excluidas: 0, falhas: 0 };
 
-  const pendentes = await prisma.exclusaoDominioPendente.findMany({
-    where: somente ? { organizacaoId: { in: somente } } : {},
-    orderBy: { criadoEm: "asc" },
-    take: LOTE,
-    select: { organizacaoId: true },
-  });
-  if (pendentes.length === 0) return { excluidas: 0, falhas: 0 };
-  const organizacoes = pendentes.map((p) => p.organizacaoId);
-
-  try {
-    const token = await gerarTokenServicoDominio({ acao: "excluir_organizacoes", organizacoes });
-    const resposta = await fetch(`${base}/api/dominio/interno/excluir-organizacoes`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ organizacoes }),
-      signal: AbortSignal.timeout(TEMPO_LIMITE_MS),
+  let excluidas = 0;
+  const tentados = new Set<string>();
+  for (;;) {
+    const pendentes = await prisma.exclusaoDominioPendente.findMany({
+      where: {
+        ...(somente ? { alvo: { in: somente } } : {}),
+        // Nunca reenvia na mesma rodada o que já foi tentado: sem isso, um
+        // lote que o Django aceitasse mas cuja remoção da fila falhasse
+        // viraria laço infinito.
+        ...(tentados.size > 0 ? { NOT: { alvo: { in: [...tentados] } } } : {}),
+      },
+      orderBy: { criadoEm: "asc" },
+      take: LOTE,
+      select: { alvo: true },
     });
-    if (!resposta.ok) throw new Error(`Django respondeu ${resposta.status}`);
-    await prisma.exclusaoDominioPendente.deleteMany({ where: { organizacaoId: { in: organizacoes } } });
-    return { excluidas: organizacoes.length, falhas: 0 };
-  } catch (erro) {
-    const mensagem = erro instanceof Error ? erro.message : String(erro);
-    console.error("Falha ao excluir dados de organizações no Django:", mensagem);
-    await prisma.exclusaoDominioPendente
-      .updateMany({
-        where: { organizacaoId: { in: organizacoes } },
-        data: { tentativas: { increment: 1 }, ultimoErro: mensagem.slice(0, 500) },
-      })
-      .catch(() => {});
-    return { excluidas: 0, falhas: organizacoes.length };
+    if (pendentes.length === 0) return { excluidas, falhas: 0 };
+
+    const alvos = pendentes.map((p) => p.alvo);
+    alvos.forEach((a) => tentados.add(a));
+    if (!(await enviarLote(base, alvos))) return { excluidas, falhas: alvos.length };
+    excluidas += alvos.length;
   }
 }

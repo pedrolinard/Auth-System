@@ -182,12 +182,13 @@ export const AUDIENCIA_SERVICO_DOMINIO = "dominio-interno";
 /**
  * Token de serviço de vida curta: mesma chave RS256 do access token, então o
  * Django valida pelo JWKS que já usa, sem segredo compartilhado novo pra
- * configurar nos dois projetos. Escopo fechado na `acao` e na lista de
- * organizações — não autoriza nada além disso.
+ * configurar nos dois projetos. Escopo fechado na `acao` e nas listas de
+ * organizações e contas — não autoriza nada além disso.
  */
 export async function gerarTokenServicoDominio(dados: {
-  acao: "excluir_organizacoes";
+  acao: "excluir_dados";
   organizacoes: string[];
+  usuarios: string[];
 }) {
   const { kid, privada } = await obterChaveAtiva();
   return new SignJWT(dados)

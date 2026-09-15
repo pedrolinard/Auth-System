@@ -193,9 +193,10 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     // mesma transação. Aqui o Django não está rodando, então o pedido fica
     // pendente pro job de limpeza (o envio em si é testado em
     // tests/lib/exclusaoDominio.test.ts).
-    const pendente = await prisma.exclusaoDominioPendente.findUnique({ where: { organizacaoId } });
-    expect(pendente).not.toBeNull();
-    await prisma.exclusaoDominioPendente.delete({ where: { organizacaoId } });
+    const alvos = [`organizacao:${organizacaoId}`, `usuario:${registro.id}`];
+    const pendentes = await prisma.exclusaoDominioPendente.findMany({ where: { alvo: { in: alvos } } });
+    expect(pendentes.map((p) => p.alvo).sort()).toEqual(alvos.sort());
+    await prisma.exclusaoDominioPendente.deleteMany({ where: { alvo: { in: alvos } } });
   });
 
   it("bloqueia exclusão sendo a única pessoa dona de uma organização com outros membros", async () => {

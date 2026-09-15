@@ -224,11 +224,11 @@ ALTER TABLE "logs_auditoria" ADD COLUMN IF NOT EXISTS "alvo" TEXT;
 
 -- 20260916100000_exclusoes_dominio
 CREATE TABLE IF NOT EXISTS "exclusoes_dominio_pendentes" (
-    "organizacaoId" TEXT NOT NULL,
+    "alvo" TEXT NOT NULL,
     "tentativas" INTEGER NOT NULL DEFAULT 0,
     "ultimoErro" TEXT,
     "criadoEm" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "exclusoes_dominio_pendentes_pkey" PRIMARY KEY ("organizacaoId")
+    CONSTRAINT "exclusoes_dominio_pendentes_pkey" PRIMARY KEY ("alvo")
 );
 
 -- Registro pro Prisma considerar aplicadas
@@ -236,7 +236,7 @@ INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, log
 SELECT gen_random_uuid()::text, v.checksum, now(), v.nome, NULL, NULL, now(), 1
 FROM (VALUES
   ('20260916090000_alvo_auditoria',     'e7cc2f97b097871ffa908b8acf0bfd9bec674757579005ecea93bb8b37e1872a'),
-  ('20260916100000_exclusoes_dominio',  'e4a06a2feb43bc932466da450b5179046a2ccbdb9c3bd4e13c7f3a5684903762')
+  ('20260916100000_exclusoes_dominio',  'aac1120683a87572a935615be581339da95f3f99ddd8a6e1885a97e561ab5b7d')
 ) AS v(nome, checksum)
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = v.nome);
 ```
@@ -246,7 +246,7 @@ WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = 
 Merge da branch em `main`, push, e deploy do Django como no passo 4.
 
 **Ordem Django × Next nesta publicação:** o Django novo traz
-`POST /api/dominio/interno/excluir-organizacoes`. Se o Next subir antes, uma
+`POST /api/dominio/interno/excluir-dados`. Se o Next subir antes, uma
 conta excluída nesse intervalo só deixa o pedido na fila
 (`exclusoes_dominio_pendentes`), e o job diário de limpeza reenvia depois do
 deploy do Django. Nada se perde; mesmo assim, faça os dois em seguida.

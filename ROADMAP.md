@@ -200,7 +200,7 @@ Leitura do projeto inteiro (lib, rotas, telas críticas, Django, scripts, CI, co
 
 ### Rumo à venda (2026-09-16)
 - **Auditoria com alvo:** eventos de gestão de aplicações dizem qual aplicação foi alterada (`LogAuditoria.alvo`)
-- **Exclusão dos dados do Django junto com a organização (LGPD):** fila na mesma transação + `POST /api/dominio/interno/excluir-organizacoes` com token de serviço RS256 de audiência própria; o job diário reenvia o que falhou
+- **Exclusão dos dados do Django junto com a organização (LGPD):** fila na mesma transação + `POST /api/dominio/interno/excluir-dados` (organizações apagadas e registros legados da conta sem organização) com token de serviço RS256 de audiência própria; o job diário reenvia o que falhou
 
 ## 🔧 O que falta / pode fazer
 

@@ -20,7 +20,7 @@ _PUBLICA_PEM = _CHAVE.public_key().public_bytes(
     serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
 ).decode()
 
-URL = "/api/dominio/interno/excluir-organizacoes"
+URL = "/api/dominio/interno/excluir-dados"
 
 
 @pytest.fixture(autouse=True)
@@ -35,18 +35,23 @@ def _token(**sobrescrever):
         "aud": AUDIENCIA_SERVICO_DOMINIO,
         "sub": "servico:auth-gateway",
         "exp": int(time.time()) + 120,
-        "acao": "excluir_organizacoes",
+        "acao": "excluir_dados",
         "organizacoes": ["org-apagada"],
+        "usuarios": [],
         **sobrescrever,
     }
     return jwt.encode(corpo, _PRIVADA_PEM, algorithm="RS256")
 
 
+def _projeto(nome, organizacao_id, usuario_id):
+    projeto = Projeto.objects.create(nome=nome, organizacao_id=organizacao_id, usuario_id=usuario_id)
+    Tarefa.objects.create(titulo=nome, projeto=projeto, organizacao_id=organizacao_id, usuario_id=usuario_id)
+    return projeto
+
+
 def _dados():
-    apagado = Projeto.objects.create(nome="Some", organizacao_id="org-apagada", usuario_id="u1")
-    Tarefa.objects.create(titulo="Some também", projeto=apagado, organizacao_id="org-apagada", usuario_id="u1")
-    fica = Projeto.objects.create(nome="Fica", organizacao_id="org-viva", usuario_id="u2")
-    Tarefa.objects.create(titulo="Fica também", projeto=fica, organizacao_id="org-viva", usuario_id="u2")
+    _projeto("Some", "org-apagada", "u1")
+    _projeto("Fica", "org-viva", "u2")
 
 
 def _post(token):
@@ -63,6 +68,20 @@ def test_apaga_so_as_organizacoes_do_token():
     assert list(Tarefa.objects.values_list("organizacao_id", flat=True)) == ["org-viva"]
 
 
+def test_usuario_apaga_so_os_registros_legados_sem_organizacao():
+    # Legado da conta (antes do multi-tenant): sai. Projeto da mesma pessoa
+    # numa organização que continua existindo: é da organização, fica.
+    _projeto("Legado", None, "u-excluido")
+    _projeto("Da organização", "org-viva", "u-excluido")
+    _projeto("Legado de outra pessoa", None, "u-outro")
+
+    resposta = _post(_token(organizacoes=[], usuarios=["u-excluido"]))
+
+    assert resposta.status_code == 200
+    assert resposta.data == {"projetosExcluidos": 1, "tarefasExcluidas": 1}
+    assert sorted(Projeto.objects.values_list("nome", flat=True)) == ["Da organização", "Legado de outra pessoa"]
+
+
 def test_repetir_o_pedido_nao_da_erro():
     _dados()
     assert _post(_token()).status_code == 200
@@ -71,7 +90,7 @@ def test_repetir_o_pedido_nao_da_erro():
     assert segunda.data == {"projetosExcluidos": 0, "tarefasExcluidas": 0}
 
 
-def test_organizacoes_do_corpo_sao_ignoradas():
+def test_listas_do_corpo_sao_ignoradas():
     _dados()
     resposta = APIClient().post(
         URL, {"organizacoes": ["org-viva"]}, format="json", HTTP_AUTHORIZATION=f"Bearer {_token()}"
@@ -95,11 +114,12 @@ def test_recusa_token_que_nao_e_o_de_servico(sobrescrever):
     assert Projeto.objects.count() == 2
 
 
-def test_recusa_sem_token_e_lista_invalida():
+def test_recusa_sem_token_e_listas_invalidas():
     assert APIClient().post(URL, {}, format="json").status_code == 401
-    assert _post(_token(organizacoes=[])).status_code == 400
+    assert _post(_token(organizacoes=[], usuarios=[])).status_code == 400
     assert _post(_token(organizacoes=["x" * 41])).status_code == 400
-    assert _post(_token(organizacoes=[f"o{i}" for i in range(101)])).status_code == 400
+    assert _post(_token(organizacoes="org-apagada")).status_code == 400
+    assert _post(_token(organizacoes=[f"o{i}" for i in range(60)], usuarios=[f"u{i}" for i in range(41)])).status_code == 400
 
 
 def test_token_de_servico_nao_autentica_nas_rotas_de_usuario():
