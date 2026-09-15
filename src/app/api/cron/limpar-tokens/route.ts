@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { compararEmTempoConstante } from "@/lib/cripto";
+import { processarExclusoesDominio } from "@/lib/exclusaoDominio";
 import { limparTokensExpirados } from "@/lib/limpezaTokens";
 
 // Rota pensada para ser chamada por um agendador, não pelo navegador — por
@@ -32,12 +33,15 @@ async function limpar(req: Request) {
   }
 
   const resultado = await limparTokensExpirados();
+  // Reenvia ao Django as exclusões de dados que falharam na hora (serviço
+  // fora do ar quando a conta foi excluída) — ver exclusaoDominio.ts.
+  const exclusoesDominio = await processarExclusoesDominio();
   // `removidos` continua sendo o total (compat com quem só olha o número);
   // o detalhamento por tabela vai junto pra observabilidade do job.
   return NextResponse.json({
     removidos:
       resultado.tokens + resultado.auditoria + resultado.desafiosMfa + resultado.limitesTaxa,
-    detalhe: resultado,
+    detalhe: { ...resultado, exclusoesDominio },
   });
 }
 

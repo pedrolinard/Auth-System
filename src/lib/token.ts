@@ -173,6 +173,34 @@ export async function gerarTokenAcesso(payload: PayloadTokenAcesso) {
     .sign(privada);
 }
 
+// Audiência do token de SERVIÇO que este gateway usa para pedir coisas ao
+// Django (ver src/lib/exclusaoDominio.ts). Nunca é o id de uma aplicação
+// (esses são cuid), então um access token de usuário não serve no endpoint
+// interno — e o Django recusa este token nas rotas de usuário.
+export const AUDIENCIA_SERVICO_DOMINIO = "dominio-interno";
+
+/**
+ * Token de serviço de vida curta: mesma chave RS256 do access token, então o
+ * Django valida pelo JWKS que já usa, sem segredo compartilhado novo pra
+ * configurar nos dois projetos. Escopo fechado na `acao` e na lista de
+ * organizações — não autoriza nada além disso.
+ */
+export async function gerarTokenServicoDominio(dados: {
+  acao: "excluir_organizacoes";
+  organizacoes: string[];
+}) {
+  const { kid, privada } = await obterChaveAtiva();
+  return new SignJWT(dados)
+    .setProtectedHeader({ alg: "RS256", kid })
+    .setIssuedAt()
+    .setIssuer(EMISSOR_TOKEN_ACESSO)
+    .setSubject("servico:auth-gateway")
+    .setAudience(AUDIENCIA_SERVICO_DOMINIO)
+    .setJti(crypto.randomUUID())
+    .setExpirationTime("2m")
+    .sign(privada);
+}
+
 export async function verificarTokenAcesso(token: string) {
   try {
     // A chave sai do conjunto pelo `kid` do próprio token, em vez de ser uma
@@ -192,6 +220,11 @@ export async function verificarTokenAcesso(token: string) {
         issuer: EMISSOR_TOKEN_ACESSO,
       },
     );
+    // Mesma chave e emissor do token de serviço (gerarTokenServicoDominio):
+    // sem esta recusa, ele passaria como access token de um "usuário"
+    // servico:auth-gateway nas rotas daqui.
+    const audiencias = [payload.aud].flat();
+    if (audiencias.includes(AUDIENCIA_SERVICO_DOMINIO)) return null;
     return payload;
   } catch (erro) {
     if (erro instanceof errors.JOSEError) return null;

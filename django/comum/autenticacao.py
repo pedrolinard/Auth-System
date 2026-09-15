@@ -9,6 +9,12 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
+
+# Audiência do token de SERVIÇO do gateway (src/lib/token.ts). Só vale no
+# endpoint interno (tarefas/views_interno.py); nas rotas de usuário é recusado.
+AUDIENCIA_SERVICO_DOMINIO = "dominio-interno"
+
+
 @dataclass
 class UsuarioRemoto:
     """Identidade derivada do JWT emitido pelo gateway Next.js.
@@ -114,6 +120,14 @@ class AutenticacaoJWT(BaseAuthentication):
             raise AuthenticationFailed("Token expirado.")
         except jwt.InvalidTokenError:
             # Cobre assinatura, iss errado, claims obrigatórios ausentes.
+            raise AuthenticationFailed("Token inválido.")
+
+        # O token de serviço usa a mesma chave e o mesmo emissor; sem esta
+        # recusa ele autenticaria como um "usuário" servico:auth-gateway.
+        audiencia = payload.get("aud")
+        if audiencia == AUDIENCIA_SERVICO_DOMINIO or (
+            isinstance(audiencia, list) and AUDIENCIA_SERVICO_DOMINIO in audiencia
+        ):
             raise AuthenticationFailed("Token inválido.")
 
         sub = payload.get("sub")

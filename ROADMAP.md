@@ -198,6 +198,10 @@ Leitura do projeto inteiro (lib, rotas, telas críticas, Django, scripts, CI, co
 - **`DATABASE_CA_CERT`** (Next.js e Django) para TLS com verificação do certificado do banco; `DATABASE_POOL_MAX` opcional
 - **Esqueleto de carregamento** na navegação do painel
 
+### Rumo à venda (2026-09-16)
+- **Auditoria com alvo:** eventos de gestão de aplicações dizem qual aplicação foi alterada (`LogAuditoria.alvo`)
+- **Exclusão dos dados do Django junto com a organização (LGPD):** fila na mesma transação + `POST /api/dominio/interno/excluir-organizacoes` com token de serviço RS256 de audiência própria; o job diário reenvia o que falhou
+
 ## 🔧 O que falta / pode fazer
 
 Os itens em aberto da varredura de segurança de 2026-08-31 (CSP com `'unsafe-inline'`, enumeração no cadastro) e o trade-off do multi-tenant (suspensão por conta inteira) foram resolvidos em 2026-09-14 — ver as seções acima.
@@ -208,7 +212,6 @@ Em aberto:
 - **Pentest externo e revisão jurídica** — escopo em `docs/seguranca/escopo-pentest.md`, rascunhos em `docs/juridico/`.
 - **Ligar TLS verificado no banco e separar o usuário do Django** — o código aceita `DATABASE_CA_CERT`, mas ligar exige testar o certificado contra o pooler antes; SQL do usuário separado em `docs/operacao.md`, itens 7 e 8.
 - **Banco próprio pro ambiente Preview** — banco criado e migrado; falta semear, apontar o `DATABASE_URL` do Preview e criar as env vars (`docs/operacao.md`, item 6).
-- **Excluir projetos e tarefas no Django junto com a organização** — hoje ficam órfãos quando a conta é excluída.
 - **Remover as colunas de suspensão legadas de `Usuario`** — ficaram sem uso, de propósito, pra não quebrar o login na janela entre a migration e o deploy; saem num deploy posterior.
 - **Auditoria da gestão de aplicações sem o alvo** — os eventos registram quem agiu, mas `LogAuditoria` não tem campo pra dizer qual aplicação foi alterada.
 - **Publicar o SDK no npm** — hoje é consumido direto da fonte.

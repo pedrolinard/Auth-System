@@ -363,6 +363,20 @@ model LimiteTaxa {
   @@map("limites_taxa")
 }
 
+// Organização excluída aqui cujos projetos e tarefas ainda precisam sair do
+// serviço Django (schema dominio, sem FK entre os serviços). A linha nasce na
+// MESMA transação que apaga a organização e só some quando o Django confirma
+// a exclusão — se ele estiver fora do ar, o job de limpeza tenta de novo. Sem
+// isso, excluir a conta deixava dado pessoal órfão do outro lado (LGPD).
+model ExclusaoDominioPendente {
+  organizacaoId String   @id
+  tentativas    Int      @default(0)
+  ultimoErro    String?
+  criadoEm      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("exclusoes_dominio_pendentes")
+}
+
 // Multi-tenant: uma conta (Usuario) pode pertencer a várias organizações
 // (Membro), cada uma com seus próprios dados (Projeto/Tarefa no Django,
 // isolados por organizacao_id — ver django/tarefas/models.py) e seu próprio

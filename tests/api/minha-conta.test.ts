@@ -188,6 +188,14 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
       where: { id: organizacaoId },
     });
     expect(organizacaoRestante).toBeNull();
+
+    // Os projetos e tarefas dela no Django entram na fila de exclusão, na
+    // mesma transação. Aqui o Django não está rodando, então o pedido fica
+    // pendente pro job de limpeza (o envio em si é testado em
+    // tests/lib/exclusaoDominio.test.ts).
+    const pendente = await prisma.exclusaoDominioPendente.findUnique({ where: { organizacaoId } });
+    expect(pendente).not.toBeNull();
+    await prisma.exclusaoDominioPendente.delete({ where: { organizacaoId } });
   });
 
   it("bloqueia exclusão sendo a única pessoa dona de uma organização com outros membros", async () => {
