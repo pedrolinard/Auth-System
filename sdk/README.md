@@ -9,6 +9,11 @@ Sem dependências além de `jose`, usado só pelo verificador de backend.
 - `criarVerificadorDeToken`: valida o access token no backend da aplicação
   pelo JWKS público, com emissor, audiência e algoritmo fixos.
 
+**No navegador:** marque a aplicação como **Cliente público** no painel e não
+passe `clientSecret`. Aplicação confidencial (o padrão) só renova tokens com o
+segredo; sem marcar, a renovação é recusada e o SDK avisa no console.
+**No backend:** passe `clientSecret` e deixe a aplicação confidencial.
+
 Guia completo, com o que cadastrar no painel e a referência das rotas:
 [`docs/integracao.md`](../docs/integracao.md).
 

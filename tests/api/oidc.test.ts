@@ -292,6 +292,9 @@ describe("OpenID Connect — código e tokens", () => {
       body: JSON.stringify({ tokenAtualizacao: refresh_token }),
     });
     expect(atualizarSemSegredo.status).toBe(401);
+    const recusa = await atualizarSemSegredo.json();
+    expect(recusa.clienteConfidencial).toBe(true);
+    expect(recusa.erro).toContain("cliente confidencial");
 
     // Com o segredo, renova (e a tentativa sem segredo não gastou o token).
     const atualizarComSegredo = await fetch(`${BASE_URL}/api/auth/atualizar`, {

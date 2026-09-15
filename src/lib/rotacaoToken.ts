@@ -41,6 +41,9 @@ const TOLERANCIA_REAPRESENTACAO_MS = 30 * 1000;
 
 const RESPOSTA_TOKEN_INVALIDO = { erro: "Token de atualização inválido ou expirado." };
 
+export const MENSAGEM_CLIENTE_CONFIDENCIAL =
+  "Esta aplicação é um cliente confidencial: renove pelo backend com o client secret, ou marque-a como cliente público no painel (SPA ou app sem backend).";
+
 export type ResultadoRotacao =
   | { tipo: "recusa"; status: number; corpo: Record<string, unknown> }
   | {
@@ -111,7 +114,10 @@ export async function rotacionarTokenAtualizacao(
   }
   if (opcoes.clienteAutorizado && !(await opcoes.clienteAutorizado(registroToken.usuario.aplicacaoId))) {
     await registrarTentativaIp({ ip, evento: "atualizar_falha", janelaMs: JANELA_ATUALIZAR_MS });
-    return recusa(401, { erro: "Credencial da aplicação ausente ou inválida." });
+    // Mensagem própria: o erro mais provável é um SDK no navegador numa
+    // aplicação confidencial, e sem dizer isso a pessoa só é deslogada em
+    // silêncio quando o access token vence. Nada aqui revela o token.
+    return recusa(401, { erro: MENSAGEM_CLIENTE_CONFIDENCIAL, clienteConfidencial: true });
   }
 
   // Aplicação desativada não renova sessão — inclusive uma que tenha escapado

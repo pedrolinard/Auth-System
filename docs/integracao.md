@@ -149,6 +149,12 @@ Endpoints: `GET /autorizar`, `POST /api/oidc/token` (`authorization_code` e
 
 ## 3.1. Formulários próprios (SDK)
 
+> **SDK no navegador exige marcar "Cliente público" no painel.** Aplicação
+> confidencial (o padrão) só renova tokens com o client secret, que não pode
+> ir pro navegador. Sem marcar, a primeira renovação é recusada (401,
+> `clienteConfidencial: true`) e o SDK avisa no console. No backend, use o SDK
+> com `clientSecret` e deixe a aplicação confidencial.
+
 ```ts
 import { ClienteAuthGateway } from "auth-gateway-sdk";
 

@@ -300,6 +300,10 @@ conta excluída nesse intervalo só deixa o pedido na fila
 (`exclusoes_dominio_pendentes`), e o job diário de limpeza reenvia depois do
 deploy do Django. Nada se perde; mesmo assim, faça os dois em seguida.
 
+**Tipo de cliente:** toda aplicação existente fica **confidencial** (o padrão).
+Se alguma aplicação de teste usa o SDK no navegador, marque "Cliente público"
+nela no painel logo depois do deploy — senão a renovação passa a ser recusada.
+
 **Antes do merge, confira a aplicação padrão:** a regra de origem dela mudou.
 Antes, lista de origens vazia aceitava qualquer origem; agora aceita a própria
 origem do provedor (mesmo host da requisição), chamadas sem `Origin` e as

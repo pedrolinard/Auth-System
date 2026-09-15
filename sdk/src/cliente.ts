@@ -71,6 +71,12 @@ export class ErroAuthGateway extends Error {
     readonly captchaNecessario = false,
     /** Sitekey pública pra renderizar o widget do Turnstile quando `captchaNecessario`. */
     readonly turnstileSiteKey: string | null = null,
+    /**
+     * A renovação foi recusada porque a aplicação é um cliente confidencial e
+     * a chamada veio sem o client secret (típico: SDK no navegador sem marcar
+     * "Cliente público" no painel).
+     */
+    readonly clienteConfidencial = false,
   ) {
     super(mensagem);
     this.name = "ErroAuthGateway";
@@ -80,6 +86,7 @@ export class ErroAuthGateway extends Error {
 type CorpoErro = {
   erro?: string;
   captchaNecessario?: boolean;
+  clienteConfidencial?: boolean;
   turnstileSiteKey?: string | null;
   detalhes?: { fieldErrors?: Record<string, string[]> };
 };
@@ -89,6 +96,7 @@ export class ClienteAuthGateway {
   private readonly armazenamento: ArmazenamentoTokens;
   private readonly fetch: typeof fetch;
   private renovacaoEmAndamento: Promise<boolean> | null = null;
+  private avisouClienteConfidencial = false;
 
   constructor(private readonly opcoes: OpcoesCliente) {
     this.urlBase = opcoes.urlBase.replace(/\/+$/, "");
@@ -127,6 +135,7 @@ export class ClienteAuthGateway {
         resposta.status,
         dados.captchaNecessario === true,
         dados.turnstileSiteKey ?? null,
+        dados.clienteConfidencial === true,
       );
     }
     return dados;
@@ -232,6 +241,15 @@ export class ClienteAuthGateway {
             );
             return true;
           } catch (erro) {
+            if (erro instanceof ErroAuthGateway && erro.status === 401 && erro.clienteConfidencial) {
+              // Erro de integração, não de sessão: o token continua válido.
+              // Não apaga nada; avisa uma vez com o que fazer.
+              if (!this.avisouClienteConfidencial) {
+                this.avisouClienteConfidencial = true;
+                console.warn(`[auth-gateway] ${erro.message}`);
+              }
+              return false;
+            }
             if (erro instanceof ErroAuthGateway && erro.status === 401) {
               // Só esquece a sessão se ninguém gravou um par novo enquanto
               // esta renovação estava no ar — senão apagaria o par que outra
