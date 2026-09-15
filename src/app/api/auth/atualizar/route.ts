@@ -12,7 +12,7 @@ import {
 import { csrfValido, gerarTokenCsrf } from "@/lib/csrf";
 import { obterGeo } from "@/lib/geo";
 import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
-import { aplicacaoEstaAtiva, contextoEmail } from "@/lib/aplicacao";
+import { aceitarIpDoUsuarioFinal, aplicacaoEstaAtiva, contextoEmail } from "@/lib/aplicacao";
 import { revogacao, revogacaoIndicaRoubo } from "@/lib/revogacao";
 import { bloqueioPorSuspensao, resolverOrganizacaoAtiva } from "@/lib/sessao";
 import { estaSuspenso } from "@/lib/suspensao";
@@ -32,6 +32,16 @@ import { esquemaAtualizacao } from "@/lib/validacao";
 const MAX_FALHAS_ATUALIZAR = 20;
 const JANELA_ATUALIZAR_MS = 15 * 60 * 1000;
 
+// Tolerância pra reapresentar um token que ACABOU de ser rotacionado. O
+// servidor rotaciona, mas a resposta pode não chegar (rede móvel caindo, aba
+// fechada no meio, timeout) — o cliente tenta de novo com o token antigo,
+// porque o cookie/armazenamento novo nunca foi gravado. Sem esta janela, essa
+// falha de rede comum era tratada como roubo: derrubava todas as sessões da
+// pessoa e mandava e-mail de atividade suspeita. Dentro dela a reapresentação
+// só é recusada. O custo é não detectar um ladrão que use o token nestes
+// mesmos segundos — o mesmo trade-off do "reuse interval" do Auth0.
+const TOLERANCIA_REAPRESENTACAO_MS = 30 * 1000;
+
 const RESPOSTA_TOKEN_INVALIDO = { erro: "Token de atualização inválido ou expirado." };
 
 export async function POST(req: Request) {
@@ -39,6 +49,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
   }
 
+  // Backend cliente renovando por vários usuários: com o segredo, o limite de
+  // falhas conta o IP de cada usuário, não o do servidor do cliente inteiro.
+  await aceitarIpDoUsuarioFinal(req);
   const ip = obterIp(req);
   if (
     await limiteExcedido({
@@ -108,7 +121,17 @@ export async function POST(req: Request) {
     if (!revogacaoIndicaRoubo(registroToken.revogadoMotivo)) {
       return recusarTokenInvalido();
     }
-    // Revogado pela ROTAÇÃO e reapresentado: o sinal clássico de roubo. A
+    // Rotacionado agora há pouco: retentativa de uma resposta perdida, não
+    // roubo (ver TOLERANCIA_REAPRESENTACAO_MS). Recusa sem contar no rate
+    // limit — é o mesmo cliente legítimo, igual ao caminho de "perdeu a
+    // corrida" lá embaixo.
+    if (
+      registroToken.revogadoMotivo === "rotacao" &&
+      Date.now() - registroToken.revogadoEm.getTime() < TOLERANCIA_REAPRESENTACAO_MS
+    ) {
+      return NextResponse.json(RESPOSTA_TOKEN_INVALIDO, { status: 401 });
+    }
+    // Revogado pela ROTAÇÃO e reapresentado depois da tolerância: o sinal clássico de roubo. A
     // rotação já emitiu um substituto, então só existem duas explicações — o
     // dono legítimo reusou uma cópia antiga por engano, ou um atacante está
     // com o token vazado. Não dá pra distinguir, então a resposta segura é

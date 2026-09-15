@@ -13,6 +13,7 @@ const CONFIG_COMPLETA: Record<string, string> = {
   NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157: "cli",
   CRON_SECRET: "cron",
   DJANGO_SERVICE_URL: "https://dominio.example.com",
+  DATABASE_CA_CERT: "-----BEGIN CERTIFICATE-----\nabc\n-----END CERTIFICATE-----",
 };
 
 describe("Checagem de config de produção (src/lib/configProducao.ts)", () => {

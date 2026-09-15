@@ -23,6 +23,17 @@ async function atualizar(cabecalhos: Record<string, string>) {
   });
 }
 
+// Reapresentar um token rotacionado há menos de 30s é tratado como retentativa
+// de resposta perdida, não roubo (TOLERANCIA_REAPRESENTACAO_MS na rota). Os
+// testes de reuso "de verdade" empurram a rotação pra fora dessa janela.
+async function envelhecerRotacoes(email: string) {
+  const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email } });
+  await prisma.tokenAtualizacao.updateMany({
+    where: { usuarioId: usuarioDb.id, revogadoMotivo: "rotacao" },
+    data: { revogadoEm: new Date(Date.now() - 60 * 1000) },
+  });
+}
+
 describe("POST /api/auth/atualizar — rotação e detecção de reuso", () => {
   afterAll(async () => {
     await apagarUsuariosTeste(emailsCriados);
@@ -58,6 +69,7 @@ describe("POST /api/auth/atualizar — rotação e detecção de reuso", () => {
 
     // Reusa o token antigo (já revogado pela rotação acima) — deve ser
     // detectado como reuso e derrubar a família inteira, não só esse token.
+    await envelhecerRotacoes(usuario.email);
     const respostaReuso = await atualizar(loginInicial.cabecalhos);
     expect(respostaReuso.status).toBe(401);
 
@@ -71,6 +83,36 @@ describe("POST /api/auth/atualizar — rotação e detecção de reuso", () => {
       where: { usuarioId: usuarioDb!.id, evento: "reuso_token_detectado" },
     });
     expect(logReuso).not.toBeNull();
+  });
+
+  it("retentativa logo após a rotação (resposta perdida) só é recusada: não derruba sessões nem dispara alarme", async () => {
+    const usuario = await criarUsuarioTeste("atualizar-resposta-perdida");
+    emailsCriados.push(usuario.email);
+    const login = await loginTeste(usuario.email, usuario.senha);
+
+    const rotacao = await atualizar(login.cabecalhos);
+    expect(rotacao.status).toBe(200);
+    const cookiesNovos = extrairTodosCookies(rotacao);
+
+    // A resposta "não chegou": o cliente tenta de novo com o token antigo.
+    expect((await atualizar(login.cabecalhos)).status).toBe(401);
+
+    // O par que a rotação emitiu continua valendo, e nada foi tratado como roubo.
+    const comTokenNovo = await atualizar({
+      Cookie: cabecalhoCookie(cookiesNovos),
+      "X-CSRF-Token": cookiesNovos.csrfToken,
+    });
+    expect(comTokenNovo.status).toBe(200);
+    const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
+    const alarme = await prisma.logAuditoria.findFirst({
+      where: { usuarioId: usuarioDb.id, evento: "reuso_token_detectado" },
+    });
+    expect(alarme).toBeNull();
+    const motivos = await prisma.tokenAtualizacao.findMany({
+      where: { usuarioId: usuarioDb.id },
+      select: { revogadoMotivo: true },
+    });
+    expect(motivos.map((m) => m.revogadoMotivo)).not.toContain("reuso_detectado");
   });
 
   it("token revogado por troca de senha em OUTRO aparelho não dispara o alarme de reuso", async () => {
@@ -107,6 +149,7 @@ describe("POST /api/auth/atualizar — rotação e detecção de reuso", () => {
     const outraSessao = await loginTeste(usuario.email, usuario.senha);
 
     expect((await atualizar(login.cabecalhos)).status).toBe(200); // rotaciona
+    await envelhecerRotacoes(usuario.email);
     expect((await atualizar(login.cabecalhos)).status).toBe(401); // reapresenta o rotacionado → reuso
 
     const usuarioDb = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });

@@ -11,6 +11,18 @@ export function turnstileConfigurado(): boolean {
   return Boolean(process.env.TURNSTILE_SECRET_KEY);
 }
 
+// Corpo do 400 que pede o captcha. Leva a sitekey pública junto: uma
+// aplicação cliente em outro domínio não tem como adivinhar com qual chave
+// renderizar o widget — e o widget só aparece se o domínio dela estiver
+// liberado nessa sitekey no painel da Cloudflare (docs/integracao.md).
+export function respostaCaptchaNecessario() {
+  return {
+    erro: "Verificação anti-automação necessária.",
+    captchaNecessario: true,
+    turnstileSiteKey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? null,
+  };
+}
+
 // Verifica um token do Cloudflare Turnstile contra a API oficial de
 // siteverify. Fail-closed quando configurado: qualquer problema (token
 // ausente, resposta negativa, erro de rede) reprova — diferente do envio de

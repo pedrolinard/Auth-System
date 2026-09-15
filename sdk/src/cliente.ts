@@ -39,6 +39,13 @@ export type OpcoesCliente = {
    * pra qualquer um; ali quem autentica a aplicação é a origem cadastrada.
    */
   clientSecret?: string;
+  /**
+   * IP do usuário final, SÓ em código de servidor e junto do clientSecret.
+   * Sem ele, todos os usuários chegam ao provedor com o IP do seu backend e
+   * dividem o mesmo limite de tentativas e o mesmo limiar de captcha. Crie um
+   * cliente por requisição do usuário para informar o IP dele.
+   */
+  ipUsuarioFinal?: string;
   armazenamento?: ArmazenamentoTokens;
   fetch?: typeof fetch;
 };
@@ -62,13 +69,20 @@ export class ErroAuthGateway extends Error {
     mensagem: string,
     readonly status: number,
     readonly captchaNecessario = false,
+    /** Sitekey pública pra renderizar o widget do Turnstile quando `captchaNecessario`. */
+    readonly turnstileSiteKey: string | null = null,
   ) {
     super(mensagem);
     this.name = "ErroAuthGateway";
   }
 }
 
-type CorpoErro = { erro?: string; captchaNecessario?: boolean; detalhes?: { fieldErrors?: Record<string, string[]> } };
+type CorpoErro = {
+  erro?: string;
+  captchaNecessario?: boolean;
+  turnstileSiteKey?: string | null;
+  detalhes?: { fieldErrors?: Record<string, string[]> };
+};
 
 export class ClienteAuthGateway {
   private readonly urlBase: string;
@@ -92,6 +106,9 @@ export class ClienteAuthGateway {
       "Content-Type": "application/json",
       "x-aplicacao-id": this.opcoes.clientId,
       ...(this.opcoes.clientSecret ? { "x-aplicacao-segredo": this.opcoes.clientSecret } : {}),
+      ...(this.opcoes.clientSecret && this.opcoes.ipUsuarioFinal
+        ? { "x-usuario-ip": this.opcoes.ipUsuarioFinal }
+        : {}),
       ...extra,
     };
   }
@@ -109,6 +126,7 @@ export class ClienteAuthGateway {
         primeiroCampo?.[0] ?? dados.erro ?? `Falha na requisição (${resposta.status}).`,
         resposta.status,
         dados.captchaNecessario === true,
+        dados.turnstileSiteKey ?? null,
       );
     }
     return dados;
@@ -190,31 +208,53 @@ export class ClienteAuthGateway {
   }
 
   /**
-   * Troca o refresh token por um par novo. Chamadas simultâneas compartilham
-   * uma renovação só: o provedor aceita cada refresh token uma única vez.
+   * Troca o refresh token por um par novo. O provedor aceita cada refresh
+   * token uma única vez, então as renovações são serializadas: chamadas
+   * simultâneas na mesma instância compartilham uma só, e instâncias que
+   * dividem o mesmo armazenamento (várias abas com localStorage) fazem fila
+   * pela Web Locks API quando ela existe.
+   *
+   * `tokenAtualizacaoVisto` é o token com que o chamador falhou; se outra aba
+   * já trocou o par nesse meio-tempo, não renova de novo — só usa o novo.
    */
-  async renovar(): Promise<boolean> {
+  async renovar(tokenAtualizacaoVisto?: string): Promise<boolean> {
     if (!this.renovacaoEmAndamento) {
       this.renovacaoEmAndamento = (async () => {
-        const tokens = await this.armazenamento.ler();
-        if (!tokens) return false;
-        try {
-          await this.guardarSessao(
-            await this.postar("/api/auth/atualizar", { tokenAtualizacao: tokens.tokenAtualizacao }),
-          );
-          return true;
-        } catch (erro) {
-          if (erro instanceof ErroAuthGateway && erro.status === 401) {
-            await this.armazenamento.gravar(null);
-            return false;
+        const visto = tokenAtualizacaoVisto ?? (await this.armazenamento.ler())?.tokenAtualizacao;
+        if (!visto) return false;
+        return this.comTravaDeRenovacao(async () => {
+          const atuais = await this.armazenamento.ler();
+          if (!atuais) return false;
+          if (atuais.tokenAtualizacao !== visto) return true;
+          try {
+            await this.guardarSessao(
+              await this.postar("/api/auth/atualizar", { tokenAtualizacao: atuais.tokenAtualizacao }),
+            );
+            return true;
+          } catch (erro) {
+            if (erro instanceof ErroAuthGateway && erro.status === 401) {
+              // Só esquece a sessão se ninguém gravou um par novo enquanto
+              // esta renovação estava no ar — senão apagaria o par que outra
+              // aba acabou de receber e deslogaria as duas.
+              const agora = await this.armazenamento.ler();
+              if (agora && agora.tokenAtualizacao !== atuais.tokenAtualizacao) return true;
+              await this.armazenamento.gravar(null);
+              return false;
+            }
+            throw erro;
           }
-          throw erro;
-        }
+        });
       })().finally(() => {
         this.renovacaoEmAndamento = null;
       });
     }
     return this.renovacaoEmAndamento;
+  }
+
+  private async comTravaDeRenovacao<T>(executar: () => Promise<T>): Promise<T> {
+    const locks = (globalThis as { navigator?: { locks?: LockManager } }).navigator?.locks;
+    if (!locks?.request) return executar();
+    return locks.request(`auth-gateway:renovar:${this.opcoes.clientId}`, executar) as Promise<T>;
   }
 
   /** Encerra a sessão no provedor (revoga o refresh token) e apaga os tokens locais. */
@@ -242,7 +282,7 @@ export class ClienteAuthGateway {
         ...((init.headers as Record<string, string>) ?? {}),
       },
     });
-    if (resposta.status === 401 && tokens && !jaRenovou && (await this.renovar())) {
+    if (resposta.status === 401 && tokens && !jaRenovou && (await this.renovar(tokens.tokenAtualizacao))) {
       return this.requisicao(caminho, init, true);
     }
     return resposta;

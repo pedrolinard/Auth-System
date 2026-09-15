@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { aplicacaoEstaAtiva } from "@/lib/aplicacao";
+import { aceitarIpDoUsuarioFinal, aplicacaoEstaAtiva } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { definirCookieDispositivoConfiavel } from "@/lib/cookies";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { criarDispositivoConfiavel } from "@/lib/dispositivoConfiavel";
 import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
-import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
+import {
+  limiteExcedido,
+  limiteExcedidoPorEmail,
+  obterIp,
+  registrarTentativaEmail,
+  registrarTentativaIp,
+} from "@/lib/rateLimit";
 import { bloqueioPorSuspensao, criarSessao } from "@/lib/sessao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaVerificacaoMfa } from "@/lib/validacao";
@@ -14,7 +20,15 @@ import { esquemaVerificacaoMfa } from "@/lib/validacao";
 const MAX_TENTATIVAS_MFA = 5;
 const JANELA_MFA_MS = 5 * 60 * 1000;
 
+// Limite por CONTA, além do por IP: só por IP, quem já tem a senha tentava os
+// códigos de 6 dígitos a partir de muitos IPs (e um backend cliente com o
+// segredo vazado declararia um IP novo a cada tentativa). A pessoa legítima
+// não erra 10 códigos em 15 minutos.
+const MAX_FALHAS_MFA_CONTA = 10;
+const JANELA_MFA_CONTA_MS = 15 * 60 * 1000;
+
 export async function POST(req: Request) {
+  await aceitarIpDoUsuarioFinal(req);
   const ip = obterIp(req);
   if (
     await limiteExcedido({
@@ -63,6 +77,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
   }
 
+  const contaMfa = { aplicacaoId: usuario.aplicacaoId, email: usuario.email, evento: "mfa_codigo_falha_conta" };
+  if (await limiteExcedidoPorEmail({ ...contaMfa, maximo: MAX_FALHAS_MFA_CONTA })) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
   let codigoValido: boolean;
   try {
     codigoValido = await verificarCodigoMfaSemReplay(
@@ -83,6 +105,7 @@ export async function POST(req: Request) {
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
     await registrarTentativaIp({ ip, evento: "mfa_codigo_falha", janelaMs: JANELA_MFA_MS });
+    await registrarTentativaEmail({ ...contaMfa, janelaMs: JANELA_MFA_CONTA_MS });
     return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
   }
 

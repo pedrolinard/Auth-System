@@ -38,11 +38,11 @@ export const atualizadoEm = "2026-09-15";
 export const metricas = {
   rotasApi: 44,
   migracoesPrisma: 24,
-  modulosLib: 38,
+  modulosLib: 39,
   tabelas: 13,
-  testesVitest: 237,
+  testesVitest: 248,
   testesE2e: 8,
-  testesDjango: 40,
+  testesDjango: 46,
 };
 
 export const concluido: GrupoConcluido[] = [
@@ -385,6 +385,25 @@ export const proximosPassos: ItemProximoPasso[] = [
     prioridade: "alta",
     status: "feito",
     concluidoEm: "2026-09-15",
+  },
+  {
+    id: "revisao-seguranca-infra-2026-09-15",
+    titulo: "Revisão de segurança, front end e infraestrutura",
+    descricao:
+      "Segunda rodada, sobre problemas reais levantados depois do pente fino. (1) Resposta perdida virava \"roubo\": o servidor rotacionava o refresh token, a resposta não chegava (rede móvel, aba fechada) e a retentativa com o token antigo derrubava todas as sessões e mandava e-mail de invasão — agora reapresentar um token rotacionado há menos de 30 s só é recusado. (2) O SDK com armazenamento persistente deslogava as abas: a que perdia a corrida da renovação apagava o par novo da outra — Web Locks entre instâncias, releitura do armazenamento e só limpa se o token guardado ainda for o enviado. (3) Client secret errado passava quando vinha junto uma Origin cadastrada — o segredo agora decide sempre que vier, e a documentação deixou de vender a origem como barreira contra script. (4) Na integração pelo servidor todo usuário chegava com o IP do backend do cliente e dividia limite e captcha — x-usuario-ip aceito só com o secret conferido. (5) MFA só tinha limite por IP: força bruta distribuída dos códigos de 6 dígitos — limite por conta (10 falhas em 15 min). (6) Captcha sem saída pra aplicação em outro domínio — a resposta traz a sitekey e o guia explica liberar o domínio na Cloudflare. (7) A limpeza de tokens nunca rodava em produção (nada agendava a rota) — vercel.json com Vercel Cron diário. (8) Nenhum monitor de disponibilidade — workflow do GitHub Actions a cada 15 min nos dois endpoints de saúde. (9) API do Django sem limite de requisições — 300/min por usuário, mensagem em português. (10) Conexão com o banco sem verificar certificado — suporte a DATABASE_CA_CERT nos dois serviços (ligar segue o teste de docs/operacao.md). (11) Navegação no painel sem retorno visual desde que toda página renderiza por requisição — esqueleto de carregamento.",
+    categoria: "Segurança",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-15",
+  },
+  {
+    id: "banco-tls-e-usuario-django",
+    titulo: "Ligar TLS verificado no banco e separar o usuário do Django",
+    descricao:
+      "O código já aceita DATABASE_CA_CERT, mas produção segue com sslmode=no-verify até alguém testar o certificado do Supabase contra o host do pooler e ligar a variável (Preview primeiro; um CA que não bata derruba toda conexão). E o Django provavelmente usa o mesmo usuário do banco que o Next.js, então quem o comprometer lê hashes de senha e segredos de MFA. SQL e ordem segura em docs/operacao.md, itens 7 e 8.",
+    categoria: "Infraestrutura",
+    prioridade: "alta",
+    status: "pendente",
   },
   {
     id: "django-migration-pendente-producao",

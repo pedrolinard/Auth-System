@@ -13,8 +13,22 @@ import { prisma } from "@/lib/db";
 //    vez de substituir, então o item à esquerda é controlado pelo cliente e
 //    daria pra girar valores (furar o limite) ou plantar o IP de outra
 //    pessoa (bloquear ela). Por isso ele vem por último, não primeiro.
+//
+// Antes dos três, o IP do usuário final DECLARADO pelo backend de uma
+// aplicação cliente (header x-usuario-ip), mas só depois que o client secret
+// da requisição conferiu — ver aceitarIpDoUsuarioFinal em aplicacao.ts. Numa
+// integração servidor-a-servidor todo usuário chega com o IP do backend do
+// cliente; sem isso, poucas falhas somadas bloqueavam ou pediam captcha pra
+// todos os usuários daquela aplicação.
+const ipsDeclarados = new WeakMap<Request, string>();
+
+export function registrarIpDeclarado(req: Request, ip: string) {
+  ipsDeclarados.set(req, ip);
+}
+
 export function obterIp(req: Request): string | null {
   return (
+    ipsDeclarados.get(req) ||
     req.headers.get("x-vercel-forwarded-for")?.trim() ||
     req.headers.get("x-real-ip")?.trim() ||
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||

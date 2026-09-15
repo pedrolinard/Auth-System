@@ -40,4 +40,12 @@ describe("POST /api/cron/limpar-tokens", () => {
     const corpo = await resposta.json();
     expect(typeof corpo.removidos).toBe("number");
   });
+
+  // O Vercel Cron (vercel.json) chama com GET e o mesmo Bearer.
+  it("GET do Vercel Cron: 401 sem o segredo, 200 com ele", async () => {
+    expect((await fetch(ROTA)).status).toBe(401);
+    const resposta = await fetch(ROTA, { headers: { Authorization: `Bearer ${CRON_SECRET}` } });
+    expect(resposta.status).toBe(200);
+    expect(typeof (await resposta.json()).removidos).toBe("number");
+  });
 });

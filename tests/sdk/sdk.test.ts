@@ -84,6 +84,49 @@ describe("SDK (sdk/src)", () => {
     expect(await sdk.usuarioAtual()).not.toBeNull();
   });
 
+  it("duas instâncias com o mesmo armazenamento (duas abas) renovando juntas não se deslogam", async () => {
+    // Antes: a instância que perdia a corrida recebia 401 e apagava o par novo
+    // que a outra tinha acabado de gravar — as duas abas saíam.
+    const aplicacao = await novaAplicacao();
+    const aba1 = cliente(aplicacao);
+    const email = gerarEmailTeste("sdk-duas-abas");
+    await aba1.sdk.cadastrar({ nome: "Pessoa do SDK", email, senha: SENHA_TESTE });
+    await aba1.sdk.entrar({ email, senha: SENHA_TESTE });
+
+    let tokens = aba1.tokens();
+    const compartilhado = {
+      ler: () => tokens,
+      gravar: (t: Tokens | null) => {
+        tokens = t;
+      },
+    };
+    const ip = ipAleatorio();
+    const abas = [0, 1].map(
+      () =>
+        new ClienteAuthGateway({
+          urlBase: BASE_URL,
+          clientId: aplicacao.clientId,
+          clientSecret: aplicacao.clientSecret,
+          armazenamento: compartilhado,
+          fetch: (url, init) =>
+            fetch(url, { ...init, headers: { ...(init?.headers as Record<string, string>), "X-Forwarded-For": ip } }),
+        }),
+    );
+
+    const antes = tokens!.tokenAtualizacao;
+    expect(await Promise.all(abas.map((aba) => aba.renovar()))).toEqual([true, true]);
+    expect(tokens).not.toBeNull();
+    expect(tokens!.tokenAtualizacao).not.toBe(antes);
+    expect(await abas[0].usuarioAtual()).not.toBeNull();
+    expect(await abas[1].usuarioAtual()).not.toBeNull();
+
+    const conta = await prisma.usuario.findFirstOrThrow({ where: { email, aplicacaoId: aplicacao.id } });
+    const alarme = await prisma.logAuditoria.findFirst({
+      where: { usuarioId: conta.id, evento: "reuso_token_detectado" },
+    });
+    expect(alarme).toBeNull();
+  });
+
   it("o verificador de backend aceita o token da aplicação e recusa o de outra", async () => {
     const aplicacaoA = await novaAplicacao();
     const aplicacaoB = await novaAplicacao();

@@ -297,6 +297,30 @@ describe("Fluxo de MFA (TOTP)", () => {
     expect(corpoErro.erro).toBe("Código inválido.");
   });
 
+  it("limita as falhas de código por conta, mesmo vindo de IPs diferentes", async () => {
+    const usuario = await criarUsuarioTeste("mfa-limite-conta");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+    const { segredo } = await (await chamar("/api/auth/mfa/iniciar", cabecalhos)).json();
+    await chamar("/api/auth/mfa/confirmar", cabecalhos, { codigo: gerarCodigoTotp(segredo) });
+
+    const login = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio() },
+      body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
+    });
+    const { mfaToken } = await login.json();
+
+    // Cada tentativa de um IP novo: o limite por IP (5) nunca é atingido.
+    const codigoErrado = gerarCodigoTotp(segredo, -10);
+    for (let i = 0; i < 10; i++) {
+      const falha = await chamar("/api/auth/mfa/verificar", {}, { mfaToken, codigo: codigoErrado });
+      expect(falha.status).toBe(401);
+    }
+    const bloqueada = await chamar("/api/auth/mfa/verificar", {}, { mfaToken, codigo: gerarCodigoTotp(segredo, 1) });
+    expect(bloqueada.status).toBe(429);
+  }, 45000);
+
   it("rejeita no login um código TOTP expirado (fora da janela de tolerância de ±30s)", async () => {
     const usuario = await criarUsuarioTeste("mfa-login-expirado");
     emailsCriados.push(usuario.email);

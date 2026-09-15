@@ -85,6 +85,69 @@ describe("Autenticação da aplicação cliente", () => {
     expect(resposta.status).toBe(401);
   });
 
+  it("client secret errado é 401 mesmo com uma origem cadastrada no header", async () => {
+    // Fora do navegador o Origin é só texto: ele não pode passar na frente de
+    // um segredo que veio e não confere.
+    const app = await criarAplicacao("Cliente origem + segredo errado", { origens: ["https://app.segredo-errado.com"] });
+    const resposta = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        ...cabecalhosAplicacao({ clientId: app.clientId, clientSecret: "sec_errado" }),
+        Origin: "https://app.segredo-errado.com",
+      },
+      body: JSON.stringify({ email: gerarEmailTeste("origem-segredo-errado"), senha: SENHA_TESTE }),
+    });
+    expect(resposta.status).toBe(401);
+  });
+
+  it("IP do usuário final declarado pelo backend vale só com o client secret", async () => {
+    const app = await criarAplicacao("Cliente IP declarado", { origens: ["https://app.ip-declarado.com"] });
+    const email = gerarEmailTeste("ip-declarado");
+    emailsCriados.push(email);
+    expect((await cadastrar(email, app.clientId)).status).toBe(201);
+
+    // Servidor com segredo: a sessão nasce com o IP declarado.
+    const doServidor = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { ...cabecalhosDaAplicacao(app.clientId, ipAleatorio()), "x-usuario-ip": "203.0.113.77" },
+      body: JSON.stringify({ email, senha: SENHA_TESTE }),
+    });
+    expect(doServidor.status).toBe(200);
+    const { tokenAtualizacao } = await doServidor.json();
+
+    // Renovação pelo backend também usa o IP declarado.
+    const renovada = await fetch(`${BASE_URL}/api/auth/atualizar`, {
+      method: "POST",
+      headers: { ...cabecalhosDaAplicacao(app.clientId, ipAleatorio()), "x-usuario-ip": "203.0.113.78" },
+      body: JSON.stringify({ tokenAtualizacao }),
+    });
+    expect(renovada.status).toBe(200);
+
+    // Navegador (origem, sem segredo): o header é ignorado.
+    const ipReal = ipAleatorio();
+    const doNavegador = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Forwarded-For": ipReal,
+        "x-aplicacao-id": app.clientId,
+        Origin: "https://app.ip-declarado.com",
+        "x-usuario-ip": "203.0.113.99",
+      },
+      body: JSON.stringify({ email, senha: SENHA_TESTE }),
+    });
+    expect(doNavegador.status).toBe(200);
+
+    const conta = await prisma.usuario.findFirstOrThrow({ where: { email, aplicacaoId: app.id } });
+    const ips = (
+      await prisma.tokenAtualizacao.findMany({ where: { usuarioId: conta.id }, select: { ip: true } })
+    ).map((s) => s.ip);
+    expect(ips).toContain("203.0.113.77");
+    expect(ips).toContain("203.0.113.78");
+    expect(ips).toContain(ipReal);
+    expect(ips).not.toContain("203.0.113.99");
+  });
+
   it("chamada de navegador precisa vir de uma origem cadastrada — lista vazia recusa", async () => {
     const semOrigens = await criarAplicacao("Cliente sem origens");
     const comOrigem = await criarAplicacao("Cliente com origem", { origens: ["https://app.cliente-teste.com"] });

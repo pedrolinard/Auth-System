@@ -112,5 +112,13 @@ export function checarConfigProducao(env: Env): ResultadoConfig {
     );
   }
 
+  // DATABASE_CA_CERT: sem ela a conexão com o banco é cifrada mas não confere
+  // o certificado do servidor (sslmode=no-verify) — ver src/lib/configBanco.ts.
+  if (!definida(env, "DATABASE_CA_CERT")) {
+    avisos.push(
+      "DATABASE_CA_CERT não definida — a conexão com o banco não verifica o certificado do servidor (um intermediário na rede poderia se passar pelo banco).",
+    );
+  }
+
   return { erros, avisos };
 }

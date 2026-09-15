@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { compararEmTempoConstante } from "@/lib/cripto";
 import { limparTokensExpirados } from "@/lib/limpezaTokens";
 
-// Rota pensada para ser chamada por um agendador externo (cron job do SO,
-// Task Scheduler, Vercel Cron, etc.), não pelo navegador — por isso a
-// autorização é por segredo compartilhado em vez de sessão de usuário.
-export async function POST(req: Request) {
+// Rota pensada para ser chamada por um agendador, não pelo navegador — por
+// isso a autorização é por segredo compartilhado em vez de sessão de usuário.
+// Em produção quem chama é o Vercel Cron (vercel.json), que faz GET e manda
+// `Authorization: Bearer $CRON_SECRET` sozinho; o POST continua pra quem
+// agenda por fora (scripts/limpar-tokens.mjs, cron do SO).
+async function limpar(req: Request) {
   const segredoConfigurado = process.env.CRON_SECRET;
   if (!segredoConfigurado) {
     return NextResponse.json(
@@ -38,3 +40,6 @@ export async function POST(req: Request) {
     detalhe: resultado,
   });
 }
+
+export const GET = limpar;
+export const POST = limpar;

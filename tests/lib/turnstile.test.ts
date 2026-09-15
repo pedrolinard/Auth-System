@@ -77,4 +77,19 @@ describe("Verificação server-side de CAPTCHA (src/lib/turnstile.ts)", () => {
 
     expect(resultado).toBe(false);
   });
+
+  it("o pedido de captcha leva a sitekey pública (aplicação em outro domínio precisa dela)", async () => {
+    vi.resetModules();
+    const original = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "sitekey-publica";
+    const { respostaCaptchaNecessario } = await import("@/lib/turnstile");
+
+    expect(respostaCaptchaNecessario()).toEqual({
+      erro: "Verificação anti-automação necessária.",
+      captchaNecessario: true,
+      turnstileSiteKey: "sitekey-publica",
+    });
+    if (original === undefined) delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    else process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = original;
+  });
 });

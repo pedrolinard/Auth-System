@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { aplicacaoEstaAtiva } from "@/lib/aplicacao";
+import { aceitarIpDoUsuarioFinal, aplicacaoEstaAtiva } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { consumirCodigoBackup, contarCodigosRestantes } from "@/lib/backupMfa";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
-import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
+import {
+  limiteExcedido,
+  limiteExcedidoPorEmail,
+  obterIp,
+  registrarTentativaEmail,
+  registrarTentativaIp,
+} from "@/lib/rateLimit";
 import { bloqueioPorSuspensao, criarSessao } from "@/lib/sessao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaCodigoBackup } from "@/lib/validacao";
@@ -12,10 +18,15 @@ import { esquemaCodigoBackup } from "@/lib/validacao";
 const MAX_TENTATIVAS_MFA = 5;
 const JANELA_MFA_MS = 5 * 60 * 1000;
 
+// Limite por conta, mesmo motivo de /mfa/verificar.
+const MAX_FALHAS_MFA_CONTA = 10;
+const JANELA_MFA_CONTA_MS = 15 * 60 * 1000;
+
 // Login com um código de backup: mesmo desafio de MFA de /mfa/verificar,
 // mas consumindo um recovery code em vez do TOTP — caminho pra quando o
 // usuário perdeu o autenticador.
 export async function POST(req: Request) {
+  await aceitarIpDoUsuarioFinal(req);
   const ip = obterIp(req);
   if (
     await limiteExcedido({
@@ -65,10 +76,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Aplicação inválida ou desativada." }, { status: 400 });
   }
 
+  const contaMfa = { aplicacaoId: usuario.aplicacaoId, email: usuario.email, evento: "mfa_backup_falha_conta" };
+  if (await limiteExcedidoPorEmail({ ...contaMfa, maximo: MAX_FALHAS_MFA_CONTA })) {
+    return NextResponse.json(
+      { erro: "Muitas tentativas. Tente novamente mais tarde." },
+      { status: 429 },
+    );
+  }
+
   const codigoValido = await consumirCodigoBackup(usuario.id, codigo);
   if (!codigoValido) {
     await registrarEvento({ req, evento: "mfa_backup_falha", usuarioId: usuario.id });
     await registrarTentativaIp({ ip, evento: "mfa_backup_falha", janelaMs: JANELA_MFA_MS });
+    await registrarTentativaEmail({ ...contaMfa, janelaMs: JANELA_MFA_CONTA_MS });
     return NextResponse.json({ erro: "Código de backup inválido." }, { status: 401 });
   }
 

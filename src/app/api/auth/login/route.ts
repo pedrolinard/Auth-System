@@ -16,7 +16,7 @@ import {
 import { verificarSenha } from "@/lib/senha";
 import { bloqueioPorSuspensao, criarSessao } from "@/lib/sessao";
 import { gerarTokenDesafioMfa } from "@/lib/token";
-import { verificarTurnstile } from "@/lib/turnstile";
+import { respostaCaptchaNecessario, verificarTurnstile } from "@/lib/turnstile";
 import { esquemaLogin } from "@/lib/validacao";
 
 // IP não é sinônimo de pessoa: várias contas atrás do mesmo NAT (rede
@@ -107,10 +107,7 @@ export async function POST(req: Request) {
   if (falhasIp >= LIMITE_FALHAS_ANTES_DE_CAPTCHA) {
     const captchaValido = await verificarTurnstile(turnstileToken, ip);
     if (!captchaValido) {
-      return NextResponse.json(
-        { erro: "Verificação anti-automação necessária.", captchaNecessario: true },
-        { status: 400 },
-      );
+      return NextResponse.json(respostaCaptchaNecessario(), { status: 400 });
     }
   }
 

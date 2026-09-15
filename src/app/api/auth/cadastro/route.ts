@@ -15,7 +15,7 @@ import { criarOrganizacaoPessoal } from "@/lib/organizacao";
 import { gerarHashSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { gerarTokenVerificacaoEmail } from "@/lib/token";
-import { verificarTurnstile } from "@/lib/turnstile";
+import { respostaCaptchaNecessario, verificarTurnstile } from "@/lib/turnstile";
 import { esquemaCadastro } from "@/lib/validacao";
 
 const MAX_TENTATIVAS_CADASTRO = 5;
@@ -73,10 +73,7 @@ export async function POST(req: Request) {
   if (tentativasIp >= LIMITE_TENTATIVAS_ANTES_DE_CAPTCHA) {
     const captchaValido = await verificarTurnstile(turnstileToken, ip);
     if (!captchaValido) {
-      return NextResponse.json(
-        { erro: "Verificação anti-automação necessária.", captchaNecessario: true },
-        { status: 400 },
-      );
+      return NextResponse.json(respostaCaptchaNecessario(), { status: 400 });
     }
   }
 

@@ -1,0 +1,31 @@
+name: Monitor de saúde (produção)
+
+# Consulta os endpoints de saúde de produção a cada 15 minutos. Se algum não
+# responder 200 (banco fora, chave de assinatura ilegível, migration pendente
+# no Django), o job falha e o GitHub avisa por e-mail quem configurou o
+# workflow. Antes não havia monitor nenhum: o Rollbar só avisa de erro, não de
+# queda, e a tela de projetos ficou dias em 500 sem ninguém saber.
+#
+# Limitações do agendamento do GitHub, pra não confiar mais do que ele dá:
+# atrasos de alguns minutos em horário de pico, e agendamentos de repositório
+# público são pausados depois de 60 dias sem atividade no repositório. Um
+# monitor externo dedicado (docs/operacao.md) continua sendo o recomendado
+# pra cliente pagante.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  saude:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Next.js — /api/saude
+        run: curl --fail-with-body --silent --show-error --max-time 30 --retry 2 --retry-delay 10 https://auth-gateway-kappa.vercel.app/api/saude
+      - name: Django — /api/dominio/saude
+        if: always()
+        run: curl --fail-with-body --silent --show-error --max-time 30 --retry 2 --retry-delay 10 https://auth-gateway-kappa.vercel.app/api/dominio/saude

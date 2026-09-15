@@ -1,10 +1,12 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 
 import { compararEmTempoConstante } from "@/lib/cripto";
 import { prisma } from "@/lib/db";
 import type { MarcaEmail } from "@/lib/email";
+import { registrarIpDeclarado } from "@/lib/rateLimit";
 
 // Header que o SDK manda com o clientId da aplicação. Ele SELECIONA o tenant
 // e nada mais: entra no `where` de toda leitura e no `data` de toda escrita,
@@ -16,6 +18,12 @@ export const HEADER_APLICACAO = "x-aplicacao-id";
 // Header com o client secret — o que AUTENTICA a aplicação numa chamada de
 // servidor (ver autenticarAplicacao). Nunca vai no navegador.
 export const HEADER_SEGREDO_APLICACAO = "x-aplicacao-segredo";
+
+// IP do usuário final, declarado pelo backend de uma aplicação cliente. Só é
+// levado em conta junto de um client secret que confere (ver
+// aceitarIpDoUsuarioFinal) — sem isso, qualquer um escolheria o próprio IP e
+// furaria o rate limit.
+export const HEADER_IP_USUARIO = "x-usuario-ip";
 
 export type AplicacaoResolvida = {
   id: string;
@@ -183,13 +191,16 @@ export type ResultadoAutenticacaoAplicacao =
  * O clientId sozinho não prova nada: é público. Então, pra uma aplicação
  * cliente:
  *
- * - chamada de NAVEGADOR (tem header Origin): a origem precisa estar
- *   cadastrada. Lista vazia recusa — antes, uma aplicação sem origens aceitava
- *   qualquer site, e qualquer página na internet podia montar um formulário
- *   de login falando em nome dela.
- * - chamada de SERVIDOR (sem Origin): exige o client secret. Sem origem não
- *   há navegador pra conferir, e era exatamente o caso que a allowlist de
- *   origens deixava passar sem checagem nenhuma.
+ * - veio o client SECRET: ele é conferido e decide sozinho, com ou sem
+ *   Origin. Segredo errado é 401 mesmo com uma origem cadastrada — antes a
+ *   origem passava na frente e o segredo nem era olhado.
+ * - chamada de NAVEGADOR (tem Origin, sem segredo): a origem precisa estar
+ *   cadastrada. Lista vazia recusa. ATENÇÃO ao que isso protege: o navegador
+ *   não deixa uma página mentir a própria origem, então a allowlist impede um
+ *   site qualquer de montar um login em nome da aplicação. Fora do navegador
+ *   o header Origin é só texto — um script manda a origem que quiser. Pra
+ *   abuso automatizado a barreira é o rate limit + Turnstile, não a origem.
+ * - chamada de SERVIDOR (sem Origin): exige o client secret.
  *
  * A aplicação padrão (o próprio painel) segue a regra anterior: é quem serve
  * as páginas deste projeto e o serviço Django, na mesma origem.
@@ -206,6 +217,14 @@ export async function autenticarAplicacao(req: Request): Promise<ResultadoAutent
       : { ok: false, status: 403, erro: "Origem não autorizada para esta aplicação." };
   }
 
+  if (req.headers.has(HEADER_SEGREDO_APLICACAO)) {
+    if (!segredoConfere(aplicacao, req)) {
+      return { ok: false, status: 401, erro: "Credencial da aplicação ausente ou inválida." };
+    }
+    declararIpDoUsuarioFinal(req);
+    return { ok: true, aplicacao };
+  }
+
   const origem = req.headers.get("origin");
   if (origem) {
     return aplicacao.origens.includes(origem)
@@ -213,17 +232,41 @@ export async function autenticarAplicacao(req: Request): Promise<ResultadoAutent
       : { ok: false, status: 403, erro: "Origem não autorizada para esta aplicação." };
   }
 
+  return { ok: false, status: 401, erro: "Credencial da aplicação ausente ou inválida." };
+}
+
+function segredoConfere(aplicacao: AplicacaoResolvida, req: Request): boolean {
   const segredo = req.headers.get(HEADER_SEGREDO_APLICACAO);
-  const segredoConfere =
+  return (
     !!segredo &&
     !!aplicacao.clientSecretHash &&
     compararEmTempoConstante(
       createHash("sha256").update(segredo).digest("hex"),
       aplicacao.clientSecretHash,
-    );
-  return segredoConfere
-    ? { ok: true, aplicacao }
-    : { ok: false, status: 401, erro: "Credencial da aplicação ausente ou inválida." };
+    )
+  );
+}
+
+function declararIpDoUsuarioFinal(req: Request) {
+  const ip = req.headers.get(HEADER_IP_USUARIO)?.trim();
+  if (ip && isIP(ip)) registrarIpDeclarado(req, ip);
+}
+
+/**
+ * Pras rotas que um backend cliente chama sem passar por autenticarAplicacao
+ * (renovação, conclusão do MFA): se a requisição traz o client secret da
+ * aplicação do header x-aplicacao-id e ele confere, o IP declarado em
+ * x-usuario-ip passa a ser o IP da requisição (rate limit, Turnstile,
+ * auditoria, lista de sessões). Sem segredo não faz nada nem consulta o banco
+ * — o navegador nunca manda esse header.
+ *
+ * Tem que rodar ANTES do primeiro obterIp da rota.
+ */
+export async function aceitarIpDoUsuarioFinal(req: Request): Promise<void> {
+  if (!req.headers.has(HEADER_SEGREDO_APLICACAO) || !req.headers.has(HEADER_IP_USUARIO)) return;
+  const aplicacao = await resolverAplicacao(req);
+  if (!aplicacao || aplicacao.padrao || !segredoConfere(aplicacao, req)) return;
+  declararIpDoUsuarioFinal(req);
 }
 
 /**
