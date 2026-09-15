@@ -27,10 +27,38 @@ migration nova no Django.
 
 ## 0. Antes de começar
 
-- [ ] **Tela de projetos:** se ainda não rodou, rode o SQL da migration
-      `tarefas.0002` do Django (ver `src/data/roadmap.ts`, item
-      `django-migration-pendente-producao`). Sem ele, a tela de projetos segue em
-      500 independentemente desta publicação.
+- [ ] **Tela de projetos:** se ainda não rodou, rode o SQL abaixo (migration
+      `tarefas.0002` do Django) no SQL Editor do Supabase. Sem ele, a tela de
+      projetos segue em 500 independentemente desta publicação. É idempotente:
+      rodar duas vezes não faz mal.
+
+```sql
+-- tarefas.0002 (gerado por `manage.py sqlmigrate tarefas 0002`), no schema dominio
+ALTER TABLE dominio.tarefas_projeto ADD COLUMN IF NOT EXISTS organizacao_id varchar(40) NULL;
+ALTER TABLE dominio.tarefas_tarefa  ADD COLUMN IF NOT EXISTS organizacao_id varchar(40) NULL;
+CREATE INDEX IF NOT EXISTS tarefas_projeto_organizacao_id_470fd324      ON dominio.tarefas_projeto (organizacao_id);
+CREATE INDEX IF NOT EXISTS tarefas_projeto_organizacao_id_470fd324_like ON dominio.tarefas_projeto (organizacao_id varchar_pattern_ops);
+CREATE INDEX IF NOT EXISTS tarefas_tarefa_organizacao_id_3b512317       ON dominio.tarefas_tarefa (organizacao_id);
+CREATE INDEX IF NOT EXISTS tarefas_tarefa_organizacao_id_3b512317_like  ON dominio.tarefas_tarefa (organizacao_id varchar_pattern_ops);
+
+-- Dados antigos: cada projeto/tarefa vai pra organização pessoal de quem criou
+-- (a mais antiga em que a pessoa é dona). Sem isso, eles somem da tela.
+UPDATE dominio.tarefas_projeto p SET organizacao_id = (
+  SELECT m."organizacaoId" FROM public.membros m
+  JOIN public.organizacoes o ON o.id = m."organizacaoId"
+  WHERE m."usuarioId" = p.usuario_id AND m.papel = 'dono'
+  ORDER BY o."criadoEm" LIMIT 1
+) WHERE p.organizacao_id IS NULL;
+UPDATE dominio.tarefas_tarefa t SET organizacao_id = p.organizacao_id
+FROM dominio.tarefas_projeto p
+WHERE t.projeto_id = p.id AND t.organizacao_id IS NULL;
+
+INSERT INTO dominio.django_migrations (app, name, applied)
+SELECT 'tarefas', '0002_projeto_organizacao_id_tarefa_organizacao_id', now()
+WHERE NOT EXISTS (
+  SELECT 1 FROM dominio.django_migrations WHERE app = 'tarefas' AND name = '0002_projeto_organizacao_id_tarefa_organizacao_id'
+);
+```
 - [ ] **Não suspenda nem reative ninguém** entre o passo 1 e o passo 4. A
       migration de suspensão copia o estado de `usuarios` para `membros` no
       momento em que roda; o código antigo, ainda no ar, só grava em `usuarios`.
