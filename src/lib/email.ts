@@ -2,6 +2,7 @@ import "server-only";
 
 import { Resend } from "resend";
 
+import { prisma } from "@/lib/db";
 import { consumirCota } from "@/lib/rateLimit";
 
 // Sem RESEND_API_KEY (dev local sem provedor configurado): cai de volta pro
@@ -81,6 +82,18 @@ function notaEmNomeDe(marca: MarcaEmail) {
   return `<p ${ESTILO_NOTA}>Enviado por ${escaparHtml(NOME_PROVEDOR)} em nome de ${escaparHtml(marca.nome)}.${aviso}</p>`;
 }
 
+// O login não exige e-mail verificado: sem esta checagem, bastava cadastrar
+// contas com endereços de terceiros, entrar com a senha escolhida e disparar
+// alertas (MFA ativado, senha alterada...) em laço, fora da cota. Um alerta só
+// fica fora dela quando o endereço já provou ser de quem tem a conta.
+async function destinatarioVerificado(aplicacaoId: string, email: string): Promise<boolean> {
+  const conta = await prisma.usuario.findFirst({
+    where: { aplicacaoId, email: email.toLowerCase(), emailVerificado: true },
+    select: { id: true },
+  });
+  return conta !== null;
+}
+
 async function dentroDaCota(marca: NonNullable<MarcaEmail>): Promise<boolean> {
   return consumirCota({
     chave: `cota_email:${marca.aplicacaoId}`,
@@ -106,13 +119,15 @@ async function enviar(dados: {
   // o que dá pra usar pra mandar e-mail a terceiros, então conta na cota.
   // Os alertas de segurança vão pro dono da conta e nascem de eventos dela —
   // ficam FORA da cota, senão quem gastasse a cota com cadastros falsos
-  // calaria "sua senha foi alterada" e "reuso de token detectado".
+  // calaria "sua senha foi alterada" e "reuso de token detectado". Mas só
+  // quando o endereço é de uma conta VERIFICADA (ver destinatarioVerificado).
   contaNaCota?: boolean;
 }) {
   const { destinatario, assunto, corpoHtml, marca, descricao } = dados;
 
   try {
-    if (marca && dados.contaNaCota && !(await dentroDaCota(marca))) {
+    const naCota = marca && (dados.contaNaCota || !(await destinatarioVerificado(marca.aplicacaoId, destinatario)));
+    if (marca && naCota && !(await dentroDaCota(marca))) {
       console.warn(`Cota de e-mails da aplicação ${marca.aplicacaoId} esgotada: ${descricao} não enviado.`);
       return;
     }

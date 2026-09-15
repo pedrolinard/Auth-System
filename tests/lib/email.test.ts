@@ -150,24 +150,40 @@ describe("Notificações de segurança por e-mail (src/lib/email.ts)", () => {
     expect(html).toContain("ainda não verificou este aplicativo");
   });
 
-  it("cota de e-mails a endereços escolhidos por quem pede: o que passa dela não sai, alerta de segurança sai", async () => {
+  it("cota: e-mail a endereço escolhido por quem pede conta; alerta só fica fora com e-mail verificado", async () => {
     const { enviarEmailVerificacao, enviarEmailSenhaAlterada, COTA_EMAIL_POR_HORA } =
       await carregarEmailComResendConfigurado();
-    const marca = {
-      aplicacaoId: `app-email-cota-${Date.now()}`,
-      verificada: false,
-      nome: "Cliente novo",
-      remetente: null,
-      logoUrl: null,
-    };
-    for (let i = 0; i < COTA_EMAIL_POR_HORA.naoVerificada + 5; i++) {
-      await enviarEmailVerificacao(`usuario${i}@teste.local`, "https://provedor/verificar", marca);
-    }
-    expect(enviarMock).toHaveBeenCalledTimes(COTA_EMAIL_POR_HORA.naoVerificada);
+    const { prisma } = await import("@/lib/db");
+    const aplicacao = await prisma.aplicacao.create({
+      data: { nome: "Cliente novo", clientId: `app_email_cota_${Date.now()}` },
+    });
+    const sufixo = Date.now();
+    await prisma.usuario.createMany({
+      data: [
+        { aplicacaoId: aplicacao.id, nome: "Verificado", email: `verificado-${sufixo}@teste.local`, senhaHash: "x", emailVerificado: true },
+        { aplicacaoId: aplicacao.id, nome: "Não verificado", email: `nao-verificado-${sufixo}@teste.local`, senhaHash: "x" },
+      ],
+    });
+    const marca = { aplicacaoId: aplicacao.id, verificada: false, nome: "Cliente novo", remetente: null, logoUrl: null };
 
-    // Com a cota esgotada, o aviso de segurança da conta continua saindo.
-    await enviarEmailSenhaAlterada("dono@teste.local", marca);
-    expect(enviarMock).toHaveBeenCalledTimes(COTA_EMAIL_POR_HORA.naoVerificada + 1);
+    try {
+      for (let i = 0; i < COTA_EMAIL_POR_HORA.naoVerificada + 5; i++) {
+        await enviarEmailVerificacao(`usuario${i}@teste.local`, "https://provedor/verificar", marca);
+      }
+      expect(enviarMock).toHaveBeenCalledTimes(COTA_EMAIL_POR_HORA.naoVerificada);
+
+      // Cota esgotada: o alerta pra conta com endereço NÃO verificado não sai
+      // (senão era só criar contas com e-mails de terceiros e disparar alertas)...
+      await enviarEmailSenhaAlterada(`nao-verificado-${sufixo}@teste.local`, marca);
+      expect(enviarMock).toHaveBeenCalledTimes(COTA_EMAIL_POR_HORA.naoVerificada);
+
+      // ...e o da conta verificada continua saindo.
+      await enviarEmailSenhaAlterada(`verificado-${sufixo}@teste.local`, marca);
+      expect(enviarMock).toHaveBeenCalledTimes(COTA_EMAIL_POR_HORA.naoVerificada + 1);
+    } finally {
+      await prisma.usuario.deleteMany({ where: { aplicacaoId: aplicacao.id } });
+      await prisma.aplicacao.delete({ where: { id: aplicacao.id } });
+    }
   });
 
   it("sem marca (aplicação padrão): assunto e remetente de sempre", async () => {
