@@ -16,6 +16,7 @@ import { gerarHashSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { gerarTokenVerificacaoEmail } from "@/lib/token";
 import { respostaCaptchaNecessario, verificarTurnstile } from "@/lib/turnstile";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 import { esquemaCadastro } from "@/lib/validacao";
 
 const MAX_TENTATIVAS_CADASTRO = 5;
@@ -106,6 +107,7 @@ export async function POST(req: Request) {
     });
 
     await registrarEvento({ req, evento: "cadastro", usuarioId: usuario.id, email });
+    await emitirEventoWebhook(usuario.aplicacaoId, "usuario.criado", dadosDoUsuario(usuario));
 
     const tokenVerificacao = await gerarTokenVerificacaoEmail(usuario.id);
     await enviarEmailVerificacao(email, `${baseLinks}/verificar-email?token=${tokenVerificacao}`, marca);

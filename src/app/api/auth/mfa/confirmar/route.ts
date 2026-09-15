@@ -10,6 +10,7 @@ import { csrfValido } from "@/lib/csrf";
 import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 
 const MAX_TENTATIVAS_MFA = 5;
 const JANELA_MFA_MS = 5 * 60 * 1000;
@@ -101,6 +102,7 @@ export async function POST(req: Request) {
   // antigos — não existe endpoint de "mostrar de novo".
   const codigosBackup = await persistirCodigosBackup(usuario.id);
   await registrarEvento({ req, evento: "codigos_backup_gerados", usuarioId: usuario.id });
+  await emitirEventoWebhook(usuario.aplicacaoId, "usuario.mfa_ativado", dadosDoUsuario(usuario));
   await enviarEmailMfaAtivado(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({

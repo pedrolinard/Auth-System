@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { compararEmTempoConstante } from "@/lib/cripto";
 import { processarExclusoesDominio } from "@/lib/exclusaoDominio";
 import { limparTokensExpirados } from "@/lib/limpezaTokens";
+import { processarEntregasWebhook } from "@/lib/webhooks";
 
 // Rota pensada para ser chamada por um agendador, não pelo navegador — por
 // isso a autorização é por segredo compartilhado em vez de sessão de usuário.
@@ -36,12 +37,14 @@ async function limpar(req: Request) {
   // Reenvia ao Django as exclusões de dados que falharam na hora (serviço
   // fora do ar quando a conta foi excluída) — ver exclusaoDominio.ts.
   const exclusoesDominio = await processarExclusoesDominio();
+  // Webhooks que falharam e já chegaram no horário da próxima tentativa.
+  const webhooks = await processarEntregasWebhook();
   // `removidos` continua sendo o total (compat com quem só olha o número);
   // o detalhamento por tabela vai junto pra observabilidade do job.
   return NextResponse.json({
     removidos:
       resultado.tokens + resultado.auditoria + resultado.desafiosMfa + resultado.limitesTaxa,
-    detalhe: { ...resultado, exclusoesDominio },
+    detalhe: { ...resultado, exclusoesDominio, webhooks },
   });
 }
 

@@ -18,6 +18,7 @@ import { revogacao } from "@/lib/revogacao";
 import { gerarHashSenha, verificarSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { hashToken } from "@/lib/token";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 import { esquemaTrocarSenha } from "@/lib/validacao";
 
 // Mesma fricção dos outros endpoints que exigem reprovar uma credencial numa
@@ -139,6 +140,7 @@ export async function PUT(req: Request) {
   await revogarDispositivosConfiaveis(usuario.id);
 
   await registrarEvento({ req, evento: "senha_alterada", usuarioId: usuario.id });
+  await emitirEventoWebhook(usuario.aplicacaoId, "usuario.senha_alterada", dadosDoUsuario(usuario));
   await enviarEmailSenhaAlterada(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({ sucesso: true });

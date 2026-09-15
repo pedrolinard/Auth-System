@@ -7,6 +7,7 @@ import { obterCookieCsrf, removerCookieAcesso, removerCookieAtualizacao, remover
 import { csrfValido } from "@/lib/csrf";
 import { enviarEmailContaExcluida } from "@/lib/email";
 import { agendarExclusaoDominio, alvosDaExclusao, processarExclusoesDominio } from "@/lib/exclusaoDominio";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 import {
   limiteExcedido,
   limiteExcedidoPorEmail,
@@ -167,6 +168,9 @@ export async function DELETE(req: Request) {
     aplicacaoId: usuario.aplicacaoId,
   });
   await enviarEmailContaExcluida(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
+  // Só o id: a conta não existe mais, e o sistema do cliente só precisa saber
+  // qual apagar do lado dele.
+  await emitirEventoWebhook(usuario.aplicacaoId, "usuario.excluido", dadosDoUsuario({ id: usuario.id }));
 
   await removerCookieAtualizacao();
   await removerCookieAcesso();

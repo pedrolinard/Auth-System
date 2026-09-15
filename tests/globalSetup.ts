@@ -20,6 +20,9 @@ export default async function setup() {
     // fazer efeito na requisição seguinte, não 30s depois (ver
     // src/lib/aplicacao.ts).
     APLICACAO_CACHE_TTL_MS: "0",
+    // Os testes de webhook recebem as entregas num servidor em 127.0.0.1.
+    // Nunca em produção (ver src/lib/requisicaoExterna.ts).
+    WEBHOOKS_PERMITIR_REDE_LOCAL: "1",
   };
 
   console.log("[tests] Aplicando migrations na autenticacao_test...");

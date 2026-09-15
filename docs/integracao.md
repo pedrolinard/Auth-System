@@ -197,7 +197,46 @@ aplicação**, quem opera o provedor precisa adicionar o domínio do cliente em
 Cloudflare → Turnstile → (widget do provedor) → Hostname Management. Sem isso,
 o usuário do cliente fica sem como passar do captcha.
 
-## 4. No backend (validar o token)
+## 4. Webhooks
+
+No painel, em cada aplicação → **Webhooks**, cadastre uma URL https (porta
+padrão) e escolha os eventos. O provedor avisa o seu sistema quando algo
+acontece com as contas da sua aplicação. Só aplicações **aprovadas** recebem.
+
+| Evento | Quando | `dados` |
+|---|---|---|
+| `usuario.criado` | cadastro | `usuario.id`, `usuario.email` |
+| `usuario.email_verificado` | primeiro clique no link de verificação | `usuario` |
+| `usuario.email_alterado` | troca de e-mail confirmada | `usuario` (e-mail novo), `emailAnterior` |
+| `usuario.senha_alterada` | troca ou redefinição de senha | `usuario` |
+| `usuario.mfa_ativado` / `usuario.mfa_desativado` | verificação em duas etapas | `usuario` |
+| `usuario.excluido` | a pessoa excluiu a conta | `usuario.id` |
+| `membro.suspenso` / `membro.reativado` | suspensão numa organização | `usuario`, `organizacaoId`, `suspensoAte` |
+
+Cada entrega é um `POST` JSON: `{ "id", "evento", "criadoEm", "dados" }`. O
+`id` é o mesmo em todas as tentativas da entrega: use-o pra ignorar
+duplicatas. Responda `2xx` rápido (em até 10 s); qualquer outra coisa conta
+como falha e o provedor tenta de novo em 1 min, 5 min, 30 min, 2 h e 12 h.
+Cinco entregas seguidas sem sucesso desligam o webhook (religue no painel).
+
+**Confira a assinatura em toda entrega** (o segredo `whsec_...` aparece uma vez
+ao criar ou rotacionar):
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function assinaturaValida(corpoCru: string, cabecalho: string, segredo: string) {
+  const [, t, v1] = /^t=(\d+),v1=([0-9a-f]+)$/.exec(cabecalho) ?? [];
+  if (!t || !v1) return false;
+  // Recuse entregas velhas: impede reenviar uma entrega capturada.
+  if (Math.abs(Date.now() / 1000 - Number(t)) > 5 * 60) return false;
+  const esperado = createHmac("sha256", segredo).update(`${t}.${corpoCru}`).digest("hex");
+  return esperado.length === v1.length && timingSafeEqual(Buffer.from(esperado), Buffer.from(v1));
+}
+// header: x-auth-gateway-assinatura. Use o corpo CRU, antes de fazer JSON.parse.
+```
+
+## 5. No backend (validar o token)
 
 O backend não chama o provedor a cada requisição. Ele valida o JWT localmente
 com as chaves públicas:

@@ -199,6 +199,7 @@ Leitura do projeto inteiro (lib, rotas, telas críticas, Django, scripts, CI, co
 - **Esqueleto de carregamento** na navegação do painel
 
 ### Rumo à venda (2026-09-16)
+- **Webhooks por aplicação:** 9 eventos de conta, assinatura HMAC com timestamp, retentativas com espera crescente, desligamento após falhas seguidas, anti-SSRF (https/443, IPs internos bloqueados, sem rebinding nem redirect); só aplicação aprovada
 - **Login hospedado com OpenID Connect:** discovery, `/autorizar`, `/api/oidc/token` e `/api/oidc/userinfo`; PKCE S256 obrigatório, redirect_uri exato, código de 60 s de uso único (reuso derruba a sessão), id_token RS256 com nonce, só pra aplicação aprovada; sem SSO nesta versão
 - **Aplicações self-service:** dono/admin de organização do painel com e-mail verificado cria e gerencia as aplicações da própria organização (até 3); operador vê todas e é o único que define remetente próprio
 - **Auditoria com alvo:** eventos de gestão de aplicações dizem qual aplicação foi alterada (`LogAuditoria.alvo`)

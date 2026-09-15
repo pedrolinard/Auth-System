@@ -10,6 +10,7 @@ import { csrfValido } from "@/lib/csrf";
 import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
 import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 
 const MAX_TENTATIVAS_MFA = 5;
 const JANELA_MFA_MS = 5 * 60 * 1000;
@@ -95,6 +96,7 @@ export async function POST(req: Request) {
   // novo) deixaria os códigos de backup antigos ainda válidos.
   await invalidarCodigosBackup(usuario.id);
   await registrarEvento({ req, evento: "codigos_backup_invalidados", usuarioId: usuario.id });
+  await emitirEventoWebhook(usuario.aplicacaoId, "usuario.mfa_desativado", dadosDoUsuario(usuario));
   await enviarEmailMfaDesativado(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({ sucesso: true });

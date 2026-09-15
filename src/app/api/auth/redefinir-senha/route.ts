@@ -9,6 +9,7 @@ import { gerarHashSenha } from "@/lib/senha";
 import { senhaFoiVazada } from "@/lib/senhaVazada";
 import { verificarTokenRedefinicaoSenha } from "@/lib/token";
 import { esquemaRedefinirSenha } from "@/lib/validacao";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 
 export async function POST(req: Request) {
   const corpo = await req.json().catch(() => null);
@@ -72,6 +73,7 @@ export async function POST(req: Request) {
   await revogarDispositivosConfiaveis(payload.sub);
 
   await registrarEvento({ req, evento: "senha_redefinida", usuarioId: payload.sub });
+  await emitirEventoWebhook(usuario.aplicacaoId, "usuario.senha_alterada", dadosDoUsuario(usuario));
   await enviarEmailSenhaAlterada(usuario.email, (await contextoEmail(usuario.aplicacaoId)).marca);
 
   return NextResponse.json({ sucesso: true });

@@ -7,6 +7,7 @@ import { csrfValido } from "@/lib/csrf";
 import { obterMembroDaOrganizacao, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
 import { revogacao } from "@/lib/revogacao";
 import { esquemaSuspensao } from "@/lib/validacao";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 
 // Suspende a pessoa DENTRO da organização ativa de quem está agindo — o
 // efeito fica em Membro, não em Usuario. Ela continua entrando nas outras
@@ -99,6 +100,11 @@ export async function POST(
     email: usuario.email,
     autorId: payload.sub,
     autorEmail: payload.email,
+  });
+  await emitirEventoWebhook(usuario.aplicacaoId, "membro.suspenso", {
+    ...dadosDoUsuario(usuario),
+    organizacaoId: payload.organizacaoId,
+    suspensoAte: suspensoAte?.toISOString() ?? null,
   });
 
   return NextResponse.json({ sucesso: true });

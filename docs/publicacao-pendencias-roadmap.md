@@ -276,6 +276,45 @@ ALTER TABLE "aplicacoes" ADD COLUMN IF NOT EXISTS "clientePublico" BOOLEAN NOT N
 ALTER TABLE "tokens_atualizacao" ADD COLUMN IF NOT EXISTS "escopoOidc" TEXT;
 ALTER TABLE "codigos_autorizacao" ADD COLUMN IF NOT EXISTS "reapresentadoEm" TIMESTAMPTZ(3);
 
+-- 20260916150000_webhooks
+CREATE TABLE IF NOT EXISTS "webhooks_aplicacao" (
+    "id" TEXT NOT NULL,
+    "aplicacaoId" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "segredoCifrado" TEXT NOT NULL,
+    "eventos" TEXT[],
+    "ativo" BOOLEAN NOT NULL DEFAULT true,
+    "desativadoMotivo" TEXT,
+    "criadoEm" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "atualizadoEm" TIMESTAMPTZ(3) NOT NULL,
+    CONSTRAINT "webhooks_aplicacao_pkey" PRIMARY KEY ("id")
+);
+CREATE TABLE IF NOT EXISTS "entregas_webhook" (
+    "id" TEXT NOT NULL,
+    "webhookId" TEXT NOT NULL,
+    "evento" TEXT NOT NULL,
+    "payload" JSONB NOT NULL,
+    "tentativas" INTEGER NOT NULL DEFAULT 0,
+    "proximaTentativaEm" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "entregueEm" TIMESTAMPTZ(3),
+    "desistiuEm" TIMESTAMPTZ(3),
+    "ultimoStatus" INTEGER,
+    "ultimoErro" TEXT,
+    "criadoEm" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "entregas_webhook_pkey" PRIMARY KEY ("id")
+);
+CREATE INDEX IF NOT EXISTS "webhooks_aplicacao_aplicacaoId_idx" ON "webhooks_aplicacao"("aplicacaoId");
+CREATE INDEX IF NOT EXISTS "entregas_webhook_webhookId_criadoEm_idx" ON "entregas_webhook"("webhookId", "criadoEm");
+CREATE INDEX IF NOT EXISTS "entregas_webhook_entregueEm_desistiuEm_proximaTentativaEm_idx" ON "entregas_webhook"("entregueEm", "desistiuEm", "proximaTentativaEm");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'webhooks_aplicacao_aplicacaoId_fkey') THEN
+    ALTER TABLE "webhooks_aplicacao" ADD CONSTRAINT "webhooks_aplicacao_aplicacaoId_fkey" FOREIGN KEY ("aplicacaoId") REFERENCES "aplicacoes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'entregas_webhook_webhookId_fkey') THEN
+    ALTER TABLE "entregas_webhook" ADD CONSTRAINT "entregas_webhook_webhookId_fkey" FOREIGN KEY ("webhookId") REFERENCES "webhooks_aplicacao"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
+
 -- Registro pro Prisma considerar aplicadas
 INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
 SELECT gen_random_uuid()::text, v.checksum, now(), v.nome, NULL, NULL, now(), 1
@@ -285,7 +324,8 @@ FROM (VALUES
   ('20260916110000_aplicacao_organizacao_dona', '2d30af7b84cd53d201b2d8df64bc2eaa51d46086a3a07b7a3d2b27edd68894c8'),
   ('20260916120000_aplicacao_aprovacao',        'f2e80679c6ad7bb9274f6e052da952f4f611bf023d75c53aee2f5dc2a3a95cc0'),
   ('20260916130000_oidc',                       '85adfabfdd5006add5bbb741f8a1e9d019598c753285d0817234cbe01a69a28b'),
-  ('20260916140000_oidc_cliente_escopo',        '2dcaf9a86716f28a6969ef1e96933e8f0a8fc7c5e38d095fe70ae17a393f7271')
+  ('20260916140000_oidc_cliente_escopo',        '2dcaf9a86716f28a6969ef1e96933e8f0a8fc7c5e38d095fe70ae17a393f7271'),
+  ('20260916150000_webhooks',                   'e1f693593a141502f2505af06428f6ffc6d01f9163ce0a0bd3eb8c35923eec8f')
 ) AS v(nome, checksum)
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = v.nome);
 ```

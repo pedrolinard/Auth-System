@@ -5,6 +5,7 @@ import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { obterMembroDaOrganizacao, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 
 export async function POST(
   req: Request,
@@ -54,6 +55,10 @@ export async function POST(
     email: usuario.email,
     autorId: payload.sub,
     autorEmail: payload.email,
+  });
+  await emitirEventoWebhook(usuario.aplicacaoId, "membro.reativado", {
+    ...dadosDoUsuario(usuario),
+    organizacaoId: payload.organizacaoId,
   });
 
   return NextResponse.json({ sucesso: true });

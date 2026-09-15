@@ -96,6 +96,7 @@ model Aplicacao {
 
   usuarios     Usuario[]
   organizacoes Organizacao[] @relation("OrganizacoesDaAplicacao")
+  webhooks     WebhookAplicacao[]
 
   @@index([organizacaoDonaId])
   @@map("aplicacoes")
@@ -397,6 +398,52 @@ model LimiteTaxa {
 
   @@index([expiraEm])
   @@map("limites_taxa")
+}
+
+// Webhook de uma aplicação cliente: o provedor avisa o sistema do cliente
+// quando algo acontece com as contas dele (conta criada, senha alterada,
+// suspensão...). Ver src/lib/webhooks.ts.
+model WebhookAplicacao {
+  id          String    @id @default(cuid())
+  aplicacaoId String
+  aplicacao   Aplicacao @relation(fields: [aplicacaoId], references: [id], onDelete: Cascade)
+  url         String
+  // Segredo HMAC que assina cada entrega. Cifrado em repouso (e não só em
+  // hash, como o client secret): o provedor precisa dele em texto pra assinar.
+  segredoCifrado String
+  eventos     String[]
+  ativo       Boolean   @default(true)
+  // Preenchido quando o próprio provedor desligou o webhook (entregas
+  // seguidas desistidas): o painel mostra o motivo e o gestor religa.
+  desativadoMotivo String?
+  criadoEm    DateTime  @default(now()) @db.Timestamptz(3)
+  atualizadoEm DateTime @updatedAt @db.Timestamptz(3)
+  entregas    EntregaWebhook[]
+
+  @@index([aplicacaoId])
+  @@map("webhooks_aplicacao")
+}
+
+// Uma tentativa de avisar um webhook. Persistida antes de enviar: se o sistema
+// do cliente estiver fora do ar, o job de limpeza tenta de novo com espera
+// crescente, e o painel mostra o histórico.
+model EntregaWebhook {
+  id                 String           @id @default(cuid())
+  webhookId          String
+  webhook            WebhookAplicacao @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  evento             String
+  payload            Json
+  tentativas         Int              @default(0)
+  proximaTentativaEm DateTime         @default(now()) @db.Timestamptz(3)
+  entregueEm         DateTime?        @db.Timestamptz(3)
+  desistiuEm         DateTime?        @db.Timestamptz(3)
+  ultimoStatus       Int?
+  ultimoErro         String?
+  criadoEm           DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([webhookId, criadoEm])
+  @@index([entregueEm, desistiuEm, proximaTentativaEm])
+  @@map("entregas_webhook")
 }
 
 // Código de autorização do login hospedado (OpenID Connect, src/lib/oidc.ts).

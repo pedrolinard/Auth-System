@@ -96,6 +96,84 @@ export async function atualizarAplicacao(
   return corpo.aplicacao;
 }
 
+export type EntregaWebhook = {
+  id: string;
+  evento: string;
+  tentativas: number;
+  entregueEm: string | null;
+  desistiuEm: string | null;
+  proximaTentativaEm: string;
+  ultimoStatus: number | null;
+  ultimoErro: string | null;
+  criadoEm: string;
+};
+
+export type Webhook = {
+  id: string;
+  url: string;
+  eventos: string[];
+  ativo: boolean;
+  desativadoMotivo: string | null;
+  criadoEm: string;
+  entregas?: EntregaWebhook[];
+};
+
+async function comCorpo<T>(resposta: Response, padrao: string): Promise<T> {
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, padrao));
+  return corpo as T;
+}
+
+export async function listarWebhooks(aplicacaoId: string) {
+  return comCorpo<{ webhooks: Webhook[]; recebeEventos: boolean }>(
+    await requisicaoAutenticada(`/api/auth/aplicacoes/${aplicacaoId}/webhooks`),
+    "Falha ao carregar webhooks.",
+  );
+}
+
+export async function criarWebhook(aplicacaoId: string, dados: { url: string; eventos: string[] }) {
+  return comCorpo<{ webhook: Webhook; segredo: string }>(
+    await requisicaoAutenticada(`/api/auth/aplicacoes/${aplicacaoId}/webhooks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados),
+    }),
+    "Falha ao criar webhook.",
+  );
+}
+
+export async function atualizarWebhook(aplicacaoId: string, webhookId: string, dados: { ativo?: boolean }) {
+  return comCorpo<{ webhook: Webhook }>(
+    await requisicaoAutenticada(`/api/auth/aplicacoes/${aplicacaoId}/webhooks/${webhookId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados),
+    }),
+    "Falha ao salvar webhook.",
+  );
+}
+
+export async function excluirWebhook(aplicacaoId: string, webhookId: string) {
+  await comCorpo(
+    await requisicaoAutenticada(`/api/auth/aplicacoes/${aplicacaoId}/webhooks/${webhookId}`, { method: "DELETE" }),
+    "Falha ao excluir webhook.",
+  );
+}
+
+export async function testarWebhook(aplicacaoId: string, webhookId: string) {
+  return comCorpo<{ entregue: boolean; status: number | null; erro: string | null }>(
+    await requisicaoAutenticada(`/api/auth/aplicacoes/${aplicacaoId}/webhooks/${webhookId}/teste`, { method: "POST" }),
+    "Falha ao testar webhook.",
+  );
+}
+
+export async function rotacionarSegredoWebhook(aplicacaoId: string, webhookId: string) {
+  return comCorpo<{ segredo: string }>(
+    await requisicaoAutenticada(`/api/auth/aplicacoes/${aplicacaoId}/webhooks/${webhookId}/segredo`, { method: "POST" }),
+    "Falha ao gerar novo segredo.",
+  );
+}
+
 export async function rotacionarSegredoAplicacao(id: string): Promise<string> {
   const resposta = await requisicaoAutenticada(`/api/auth/aplicacoes/${id}/segredo`, {
     method: "POST",

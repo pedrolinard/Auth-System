@@ -64,6 +64,12 @@ export async function limparTokensExpirados(): Promise<ResultadoLimpeza> {
     where: { expiraEm: { lt: new Date(agora.getTime() - 24 * 60 * 60 * 1000) } },
   });
 
+  // Histórico de entregas de webhook: 30 dias bastam pro painel e pra
+  // investigar uma integração; guardar pra sempre é só crescer a tabela.
+  await prisma.entregaWebhook.deleteMany({
+    where: { criadoEm: { lt: new Date(agora.getTime() - 30 * 24 * 60 * 60 * 1000) } },
+  });
+
   return {
     tokens: tokens.count,
     auditoria: auditoria.count,

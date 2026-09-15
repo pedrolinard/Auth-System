@@ -8,6 +8,7 @@ import { enviarEmailEmailAlterado } from "@/lib/email";
 import { revogacao } from "@/lib/revogacao";
 import { verificarTokenAlteracaoEmail } from "@/lib/token";
 import { esquemaConfirmarAlteracaoEmail } from "@/lib/validacao";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 
 export async function POST(req: Request) {
   const corpo = await req.json().catch(() => null);
@@ -95,6 +96,10 @@ export async function POST(req: Request) {
     evento: "email_alterado",
     usuarioId: usuario.id,
     email: emailAntigo,
+  });
+  await emitirEventoWebhook(usuario.aplicacaoId, "usuario.email_alterado", {
+    ...dadosDoUsuario({ id: usuario.id, email: payload.novoEmail }),
+    emailAnterior: emailAntigo,
   });
   await enviarEmailEmailAlterado(
     emailAntigo,

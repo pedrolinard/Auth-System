@@ -11,6 +11,7 @@ import {
   type DadosAplicacao,
 } from "@/lib/clienteAplicacoes";
 import { obterUsuarioAtual } from "@/lib/clienteAuth";
+import { WebhooksDaAplicacao } from "@/components/painel/WebhooksDaAplicacao";
 import { AvisoErro } from "@/components/ui/AvisoErro";
 import { CabecalhoSecao } from "@/components/ui/CabecalhoSecao";
 import { EstadoVazio } from "@/components/ui/EstadoVazio";
@@ -542,6 +543,8 @@ export default function PaginaAplicacoes() {
                         )}
                       </div>
                     )}
+
+                    {!aplicacao.padrao && <WebhooksDaAplicacao aplicacaoId={aplicacao.id} />}
                   </>
                 )}
               </li>

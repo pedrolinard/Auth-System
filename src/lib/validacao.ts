@@ -1,5 +1,8 @@
 import * as z from "zod";
 
+import { EVENTOS_WEBHOOK } from "@/lib/eventosWebhook";
+import { urlDeDestinoAceitavel } from "@/lib/requisicaoExterna";
+
 // bcryptjs trunca silenciosamente qualquer BYTE além do 72º — sem esse
 // limite, "SenhaGigante...(73+ bytes)X" e a mesma senha com o último
 // caractere trocado gerariam o mesmo hash, e o usuário nunca perceberia. A
@@ -299,6 +302,34 @@ export const esquemaAtualizarAplicacao = z
     ativa: z.boolean().optional(),
     // Só quem opera o provedor (a rota recusa no self-service).
     aprovada: z.boolean().optional(),
+  })
+  .refine((dados) => Object.values(dados).some((valor) => valor !== undefined), {
+    error: "Nada para atualizar.",
+  });
+
+const esquemaUrlWebhook = z
+  .string({ error: "Informe a URL do webhook." })
+  .trim()
+  .max(2000, { error: "URL longa demais." })
+  .refine(urlDeDestinoAceitavel, {
+    error: "URL do webhook inválida: use https na porta padrão, sem usuário/senha na URL.",
+  });
+
+const esquemaEventosWebhook = z
+  .array(z.enum(EVENTOS_WEBHOOK, { error: "Evento de webhook desconhecido." }))
+  .min(1, { error: "Escolha pelo menos um evento." })
+  .transform((lista) => [...new Set(lista)]);
+
+export const esquemaCriarWebhook = z.object({
+  url: esquemaUrlWebhook,
+  eventos: esquemaEventosWebhook,
+});
+
+export const esquemaAtualizarWebhook = z
+  .object({
+    url: esquemaUrlWebhook.optional(),
+    eventos: esquemaEventosWebhook.optional(),
+    ativo: z.boolean().optional(),
   })
   .refine((dados) => Object.values(dados).some((valor) => valor !== undefined), {
     error: "Nada para atualizar.",

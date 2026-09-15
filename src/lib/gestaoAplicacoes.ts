@@ -118,6 +118,19 @@ export async function autenticarGestorAplicacoes(
   return { ok: true, gestor: { payload, operador: false, organizacaoDonaId: payload.organizacaoId } };
 }
 
+/** A aplicação que o gestor pode gerenciar com este id, ou null (404). */
+export function carregarAplicacaoDoGestor(gestor: GestorAplicacoes, id: string) {
+  return prisma.aplicacao.findFirst({
+    where: { id, padrao: false, ...escopoDoGestor(gestor) },
+    select: { id: true, clientId: true, nome: true, aprovada: true },
+  });
+}
+
+/** Webhook apontando pro próprio provedor: requisição do provedor pra si mesmo. */
+export function urlEhDoProvedor(req: Request, url: string): boolean {
+  return conflitoComDominioDoProvedor(req, { origens: [new URL(url).origin], passkeyRpId: null }) !== null;
+}
+
 /**
  * Filtro das aplicações que o gestor enxerga. Aplicação de outra organização
  * responde 404 (não 403) nas rotas por id: nem a existência dela vaza.

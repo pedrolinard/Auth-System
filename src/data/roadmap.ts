@@ -417,6 +417,16 @@ export const proximosPassos: ItemProximoPasso[] = [
     concluidoEm: "2026-09-16",
   },
   {
+    id: "webhooks",
+    titulo: "Webhooks por aplicação",
+    descricao:
+      "O sistema de cada cliente é avisado quando algo acontece com as contas dele: usuario.criado, email_verificado, email_alterado, senha_alterada, mfa_ativado/desativado, excluido, membro.suspenso/reativado. Entrega persistida antes de enviar, saída depois da resposta (after) e retentativa pelo job com espera crescente (1 min a 12 h, 6 tentativas); 5 entregas seguidas sem sucesso desligam o webhook. Assinatura HMAC-SHA256 de \"timestamp.corpo\" com segredo por webhook (mostrado uma vez, com rotação e cifrado em repouso), id de entrega estável entre tentativas pra idempotência, payload só com id e e-mail. SSRF: só https na porta 443, DNS resolvido e TODOS os endereços conferidos contra faixas privadas/reservadas (IPv4 mapeado em IPv6 incluso), conexão presa ao endereço validado (sem rebinding), sem seguir redirecionamento, e o painel mostra só status e mensagem de erro, nunca o corpo da resposta. Só aplicação aprovada recebe e testa; até 5 webhooks por aplicação; o domínio do provedor não pode ser destino.",
+    categoria: "Multi-tenant",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-16",
+  },
+  {
     id: "banco-tls-e-usuario-django",
     titulo: "Ligar TLS verificado no banco e separar o usuário do Django",
     descricao:
