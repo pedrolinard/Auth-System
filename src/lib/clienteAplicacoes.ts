@@ -9,6 +9,7 @@ export type Aplicacao = {
   origens: string[];
   passkeyRpId: string | null;
   redirectUris: string[];
+  clientePublico: boolean;
   emailRemetente: string | null;
   urlLinks: string | null;
   logoUrl: string | null;
@@ -27,6 +28,7 @@ export type DadosAplicacao = {
   origens: string[];
   passkeyRpId: string | null;
   redirectUris: string[];
+  clientePublico: boolean;
   // Só quem opera o provedor define; no self-service o campo nem é enviado.
   emailRemetente?: string | null;
   urlLinks: string | null;

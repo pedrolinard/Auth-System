@@ -144,6 +144,8 @@ export async function criarSessao(
     // aplicação nunca pode ganhar cookie de sessão no domínio do provedor —
     // viraria sessão do painel.
     definirCookies?: boolean;
+    // Escopos concedidos no login hospedado (TokenAtualizacao.escopoOidc).
+    escopoOidc?: string;
   } = {},
 ) {
   // Cookie de sessão do painel, por padrão, só pra conta da aplicação padrão:
@@ -161,6 +163,7 @@ export async function criarSessao(
     aplicacaoId: usuario.aplicacaoId,
     organizacaoId,
     papelOrganizacao,
+    ...(opcoes.escopoOidc ? { scope: opcoes.escopoOidc } : {}),
   });
   const { token: tokenAtualizacao, expiraEm } = await gerarTokenAtualizacao(
     usuario.id,
@@ -176,6 +179,7 @@ export async function criarSessao(
       // MESMA organização sem o cliente precisar informar de novo.
       organizacaoId,
       expiraEm,
+      escopoOidc: opcoes.escopoOidc ?? null,
       ip: obterIp(req),
       userAgent: req.headers.get("user-agent"),
       geoCidade: geo.cidade,
@@ -220,8 +224,8 @@ export async function criarSessao(
 }
 
 /** Mesmo que criarSessao, com o id da sessão criada (pra ligar ao código OIDC). */
-export async function criarSessaoSemCookies(usuario: UsuarioParaSessao, req: Request) {
-  const resultado = await criarSessao(usuario, req, undefined, { definirCookies: false });
+export async function criarSessaoSemCookies(usuario: UsuarioParaSessao, req: Request, escopoOidc?: string) {
+  const resultado = await criarSessao(usuario, req, undefined, { definirCookies: false, escopoOidc });
   const sessao = await prisma.tokenAtualizacao.findUniqueOrThrow({
     where: { tokenHash: hashToken(resultado.tokenAtualizacao) },
     select: { id: true, organizacaoId: true },

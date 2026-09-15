@@ -63,6 +63,10 @@ export async function rotacionarTokenAtualizacao(
     // pedindo. Token de outra aplicação é só inválido — sem detecção de reuso
     // nem revogação, que são decisões sobre a sessão de outro cliente.
     aplicacaoId?: string;
+    // Confere a credencial da aplicação dona do token (cliente confidencial
+    // precisa do segredo). Roda antes de qualquer efeito: sem a credencial, o
+    // token vazado não rotaciona nem dispara detecção de reuso.
+    clienteAutorizado?: (aplicacaoId: string) => Promise<boolean>;
   } = {},
 ): Promise<ResultadoRotacao> {
   const ip = obterIp(req);
@@ -104,6 +108,10 @@ export async function rotacionarTokenAtualizacao(
   }
   if (opcoes.aplicacaoId && registroToken.usuario.aplicacaoId !== opcoes.aplicacaoId) {
     return recusarTokenInvalido();
+  }
+  if (opcoes.clienteAutorizado && !(await opcoes.clienteAutorizado(registroToken.usuario.aplicacaoId))) {
+    await registrarTentativaIp({ ip, evento: "atualizar_falha", janelaMs: JANELA_ATUALIZAR_MS });
+    return recusa(401, { erro: "Credencial da aplicação ausente ou inválida." });
   }
 
   // Aplicação desativada não renova sessão — inclusive uma que tenha escapado
@@ -212,6 +220,8 @@ export async function rotacionarTokenAtualizacao(
           usuarioId: registroToken.usuarioId,
           organizacaoId,
           expiraEm: novaExpiracao,
+          // O escopo autorizado no login hospedado passa adiante a cada rotação.
+          escopoOidc: registroToken.escopoOidc,
           ip: obterIp(req),
           userAgent: req.headers.get("user-agent"),
           geoCidade: geo.cidade,
@@ -241,6 +251,7 @@ export async function rotacionarTokenAtualizacao(
     aplicacaoId: registroToken.usuario.aplicacaoId,
     organizacaoId,
     papelOrganizacao: membro.papel,
+    ...(registroToken.escopoOidc ? { scope: registroToken.escopoOidc } : {}),
   });
 
   return {

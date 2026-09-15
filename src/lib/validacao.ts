@@ -265,6 +265,8 @@ const camposAplicacao = {
     .array(esquemaRedirectUri)
     .max(20, { error: "No máximo 20 URLs de retorno por aplicação." })
     .transform((lista) => [...new Set(lista)]),
+  // true = SPA/app sem backend, que não guarda o client secret.
+  clientePublico: z.boolean(),
   emailRemetente: z.preprocess(
     (valor) => (typeof valor === "string" && valor.trim() === "" ? null : valor),
     z.email({ error: "Remetente inválido: informe só o endereço (ex.: seguranca@cliente.com)." }).trim().toLowerCase().nullable(),
@@ -278,6 +280,7 @@ export const esquemaCriarAplicacao = z.object({
   origens: camposAplicacao.origens.default([]),
   passkeyRpId: camposAplicacao.passkeyRpId.optional().default(null),
   redirectUris: camposAplicacao.redirectUris.default([]),
+  clientePublico: camposAplicacao.clientePublico.default(false),
   emailRemetente: camposAplicacao.emailRemetente.optional().default(null),
   urlLinks: camposAplicacao.urlLinks.optional().default(null),
   logoUrl: camposAplicacao.logoUrl.optional().default(null),
@@ -289,6 +292,7 @@ export const esquemaAtualizarAplicacao = z
     origens: camposAplicacao.origens.optional(),
     passkeyRpId: camposAplicacao.passkeyRpId.optional(),
     redirectUris: camposAplicacao.redirectUris.optional(),
+    clientePublico: camposAplicacao.clientePublico.optional(),
     emailRemetente: camposAplicacao.emailRemetente.optional(),
     urlLinks: camposAplicacao.urlLinks.optional(),
     logoUrl: camposAplicacao.logoUrl.optional(),

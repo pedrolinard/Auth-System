@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const { nome, origens, passkeyRpId, redirectUris, emailRemetente, urlLinks, logoUrl } = dados.data;
+  const { nome, origens, passkeyRpId, redirectUris, clientePublico, emailRemetente, urlLinks, logoUrl } = dados.data;
 
   if (!gestor.operador) {
     // O remetente sai do domínio verificado do PROVEDOR no Resend: deixar um
@@ -103,6 +103,7 @@ export async function POST(req: Request) {
       origens,
       passkeyRpId,
       redirectUris,
+      clientePublico,
       emailRemetente,
       urlLinks,
       logoUrl,

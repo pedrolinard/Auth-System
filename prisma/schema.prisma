@@ -48,6 +48,13 @@ model Aplicacao {
   // — um redirect_uri aceito por prefixo é um código entregue a quem controlar
   // qualquer caminho sob aquele domínio.
   redirectUris String[] @default([])
+  // Cliente PÚBLICO (SPA ou app sem backend, que não guarda segredo) ou
+  // CONFIDENCIAL (tem backend e guarda o client secret). Confidencial precisa
+  // do segredo pra trocar código e renovar tokens (/api/oidc/token e
+  // /api/auth/atualizar com token no corpo): sem isso, um refresh token vazado
+  // (log, banco do cliente, proxy) seria resgatado por qualquer um com o
+  // client_id, que é público (RFC 6749 §6). Padrão: confidencial.
+  clientePublico Boolean @default(false)
   // Marca nos e-mails enviados aos usuários finais desta aplicação (ver
   // MarcaEmail em src/lib/email.ts). Todos opcionais: sem eles, os e-mails
   // saem com o nome da aplicação no assunto e o remetente do provedor.
@@ -244,6 +251,11 @@ model TokenAtualizacao {
   // ROTAÇÃO faz a reapresentação do token contar como roubo; nulo = revogada
   // antes desta coluna existir, tratada como rotação.
   revogadoMotivo String?
+  // Escopos concedidos no login hospedado (OpenID Connect) que abriu esta
+  // sessão. Vai no access token (claim `scope`) e passa adiante a cada
+  // rotação, pro /api/oidc/userinfo respeitar o que a pessoa autorizou. Nulo
+  // = sessão fora do OIDC (painel, SDK).
+  escopoOidc String?
 
   @@index([usuarioId])
   @@index([organizacaoId])
@@ -406,6 +418,10 @@ model CodigoAutorizacao {
   autenticadoEm DateTime  @db.Timestamptz(3)
   expiraEm      DateTime  @db.Timestamptz(3)
   usadoEm       DateTime? @db.Timestamptz(3)
+  // Alguém apresentou o código de novo depois de usado. A troca que ainda está
+  // em andamento confere este campo DEPOIS de criar a sessão e a revoga — fecha
+  // a corrida em que a reapresentação chega antes de existir sessão a derrubar.
+  reapresentadoEm DateTime? @db.Timestamptz(3)
   sessaoId      String?
   criadoEm      DateTime  @default(now()) @db.Timestamptz(3)
 

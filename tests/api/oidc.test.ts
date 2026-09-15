@@ -256,31 +256,81 @@ describe("OpenID Connect — código e tokens", () => {
     expect((await deOutra.json()).error).toBe("invalid_grant");
   });
 
-  it("segredo errado é invalid_client; cliente público (sem segredo) troca só com PKCE", async () => {
-    const aplicacao = await novaAplicacao();
-    const email = await novaConta(aplicacao);
-
-    const { codigo, verifier } = await obterCodigo(aplicacao, email);
-    const segredoErrado = await fetch(`${BASE_URL}/api/oidc/token`, {
+  function trocaSemBasic(campos: Record<string, string>) {
+    return fetch(`${BASE_URL}/api/oidc/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": ipAleatorio() },
-      body: new URLSearchParams({
-        grant_type: "authorization_code", code: codigo, redirect_uri: RETORNO, code_verifier: verifier,
-        client_id: aplicacao.clientId, client_secret: "sec_errado",
-      }).toString(),
+      body: new URLSearchParams(campos).toString(),
     });
+  }
+
+  it("cliente confidencial precisa do segredo nos dois grants; segredo errado é invalid_client", async () => {
+    const aplicacao = await novaAplicacao();
+    const email = await novaConta(aplicacao);
+    const { codigo, verifier } = await obterCodigo(aplicacao, email);
+    const base = { grant_type: "authorization_code", code: codigo, redirect_uri: RETORNO, code_verifier: verifier, client_id: aplicacao.clientId };
+
+    const segredoErrado = await trocaSemBasic({ ...base, client_secret: "sec_errado" });
     expect(segredoErrado.status).toBe(401);
     expect((await segredoErrado.json()).error).toBe("invalid_client");
 
-    const publico = await fetch(`${BASE_URL}/api/oidc/token`, {
+    // Só o client_id (público) e o PKCE não bastam pra aplicação confidencial.
+    const semSegredo = await trocaSemBasic(base);
+    expect(semSegredo.status).toBe(401);
+    expect((await semSegredo.json()).error).toBe("invalid_client");
+
+    const comSegredo = await trocaSemBasic({ ...base, client_secret: aplicacao.clientSecret });
+    expect(comSegredo.status).toBe(200);
+    const { refresh_token } = await comSegredo.json();
+
+    // Refresh token vazado de cliente confidencial: sem o segredo, não resgata.
+    const refreshSemSegredo = await trocaSemBasic({ grant_type: "refresh_token", refresh_token, client_id: aplicacao.clientId });
+    expect(refreshSemSegredo.status).toBe(401);
+    const atualizarSemSegredo = await fetch(`${BASE_URL}/api/auth/atualizar`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-Forwarded-For": ipAleatorio() },
-      body: new URLSearchParams({
-        grant_type: "authorization_code", code: codigo, redirect_uri: RETORNO, code_verifier: verifier,
-        client_id: aplicacao.clientId,
-      }).toString(),
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio(), "x-aplicacao-id": aplicacao.clientId },
+      body: JSON.stringify({ tokenAtualizacao: refresh_token }),
     });
-    expect(publico.status).toBe(200);
+    expect(atualizarSemSegredo.status).toBe(401);
+
+    // Com o segredo, renova (e a tentativa sem segredo não gastou o token).
+    const atualizarComSegredo = await fetch(`${BASE_URL}/api/auth/atualizar`, {
+      method: "POST",
+      headers: cabecalhosAplicacao(aplicacao),
+      body: JSON.stringify({ tokenAtualizacao: refresh_token }),
+    });
+    expect(atualizarComSegredo.status).toBe(200);
+  });
+
+  it("cliente público (sem segredo) troca e renova só com PKCE", async () => {
+    const aplicacao = await novaAplicacao();
+    await prisma.aplicacao.update({ where: { id: aplicacao.id }, data: { clientePublico: true } });
+    const email = await novaConta(aplicacao);
+    const { codigo, verifier } = await obterCodigo(aplicacao, email);
+
+    const troca = await trocaSemBasic({
+      grant_type: "authorization_code", code: codigo, redirect_uri: RETORNO, code_verifier: verifier, client_id: aplicacao.clientId,
+    });
+    expect(troca.status).toBe(200);
+    const { refresh_token } = await troca.json();
+    const renovar = await trocaSemBasic({ grant_type: "refresh_token", refresh_token, client_id: aplicacao.clientId });
+    expect(renovar.status).toBe(200);
+  });
+
+  it("userinfo respeita o escopo autorizado, inclusive depois de renovar", async () => {
+    const aplicacao = await novaAplicacao();
+    const email = await novaConta(aplicacao);
+    const { codigo, verifier } = await obterCodigo(aplicacao, email, { scope: "openid offline_access" });
+    const tokens = await (await trocar(aplicacao, {
+      grant_type: "authorization_code", code: codigo, redirect_uri: RETORNO, code_verifier: verifier,
+    })).json();
+
+    const soOpenid = await fetch(`${BASE_URL}/api/oidc/userinfo`, { headers: { Authorization: `Bearer ${tokens.access_token}` } });
+    expect(Object.keys(await soOpenid.json())).toEqual(["sub"]);
+
+    const renovados = await (await trocar(aplicacao, { grant_type: "refresh_token", refresh_token: tokens.refresh_token })).json();
+    const depoisDeRenovar = await fetch(`${BASE_URL}/api/oidc/userinfo`, { headers: { Authorization: `Bearer ${renovados.access_token}` } });
+    expect(Object.keys(await depoisDeRenovar.json())).toEqual(["sub"]);
   });
 
   it("sem offline_access não há refresh_token", async () => {

@@ -33,6 +33,7 @@ export type AplicacaoResolvida = {
   passkeyRpId: string | null;
   padrao: boolean;
   aprovada: boolean;
+  clientePublico: boolean;
   clientSecretHash: string | null;
 };
 
@@ -82,6 +83,7 @@ function selecionar() {
     passkeyRpId: true,
     padrao: true,
     aprovada: true,
+    clientePublico: true,
     clientSecretHash: true,
   } as const;
 }
@@ -253,6 +255,20 @@ export async function autenticarAplicacao(req: Request): Promise<ResultadoAutent
   }
 
   return { ok: false, status: 401, erro: "Credencial da aplicação ausente ou inválida." };
+}
+
+/**
+ * Quem apresenta um refresh token no corpo pode renovar a sessão dessa conta?
+ * Aplicação padrão (o painel usa cookie) e cliente público (SPA, sem segredo):
+ * sim. Cliente confidencial: só com o client secret no header — senão um
+ * refresh token vazado de um backend seria resgatado com o client_id, que é
+ * público.
+ */
+export async function clientePodeRenovar(aplicacaoId: string, req: Request): Promise<boolean> {
+  const aplicacao = await obterAplicacaoPorId(aplicacaoId);
+  if (!aplicacao) return false;
+  if (aplicacao.padrao || aplicacao.clientePublico) return true;
+  return segredoConfere(aplicacao, req);
 }
 
 function segredoConfere(aplicacao: AplicacaoResolvida, req: Request): boolean {

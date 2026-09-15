@@ -5,9 +5,10 @@ import { claimsDoUsuario } from "@/lib/oidc";
 import { verificarTokenAcesso } from "@/lib/token";
 
 // UserInfo do OpenID Connect: os dados da conta dona do access token. Só pelo
-// header Authorization (nunca cookie: quem chama é a aplicação cliente). O
-// access token não carrega escopo, então devolve e-mail e nome, que são os
-// mesmos que o id_token já entrega com email/profile.
+// header Authorization (nunca cookie: quem chama é a aplicação cliente).
+// Token do login hospedado carrega `scope` e só recebe o que foi autorizado;
+// token de sessão fora do OIDC (SDK) não tem escopo e recebe e-mail e nome —
+// a conta é da própria aplicação que pergunta.
 async function responder(req: Request) {
   const cabecalho = req.headers.get("authorization");
   const token = cabecalho?.startsWith("Bearer ") ? cabecalho.slice("Bearer ".length) : null;
@@ -30,7 +31,8 @@ async function responder(req: Request) {
     );
   }
 
-  return NextResponse.json(claimsDoUsuario(usuario, ["email", "profile"]), {
+  const escopos = payload.scope ? payload.scope.split(" ") : ["email", "profile"];
+  return NextResponse.json(claimsDoUsuario(usuario, escopos), {
     headers: { "Cache-Control": "no-store" },
   });
 }

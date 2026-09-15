@@ -121,7 +121,7 @@ e a URL de retorno cadastrada em "URLs de retorno (login hospedado)".
 |---|---|
 | Issuer / Discovery | `https://auth.suaempresa.com.br` (`/.well-known/openid-configuration`) |
 | Client ID | o `app_...` do painel |
-| Client secret | o `sec_...` (backend). SPA sem backend: não use o secret (cliente público) |
+| Client secret | o `sec_...` no backend. SPA ou app sem backend: marque **Cliente público** no painel e não use o secret |
 | Redirect URI | exatamente uma das URLs cadastradas |
 | Scopes | `openid email profile` (+ `offline_access` para receber refresh token) |
 | PKCE | obrigatório, `S256` |
@@ -135,6 +135,14 @@ Regras que o provedor aplica e você não precisa reimplementar:
   Valide com o JWKS do discovery.
 - A resposta de retorno traz `iss` (RFC 9207): confira se é o issuer esperado.
 - Sem sessão única (SSO) por enquanto: cada login passa pela tela.
+- **Cliente confidencial** (padrão, tem backend): o client secret é exigido pra
+  trocar o código, pro `refresh_token` e pra renovar em `/api/auth/atualizar`
+  com o token no corpo (header `x-aplicacao-segredo`). Um refresh token vazado
+  não é resgatado só com o client ID. **Cliente público**: sem segredo, com
+  PKCE.
+- O `refresh_token` devolve `access_token` e um `refresh_token` novo (o
+  anterior deixa de valer), sem `id_token` nem `scope`. O escopo autorizado no
+  login continua valendo no access token renovado e no userinfo.
 
 Endpoints: `GET /autorizar`, `POST /api/oidc/token` (`authorization_code` e
 `refresh_token`), `GET /api/oidc/userinfo`.

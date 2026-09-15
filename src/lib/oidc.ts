@@ -57,9 +57,11 @@ export function emissorOidc(): string {
 // rótulo próprio: sem env var nova pra esquecer em produção, e um token de um
 // tipo nunca verifica como outro.
 function chavePedido(): Uint8Array {
-  return createHmac("sha256", process.env.JWT_REFRESH_SECRET ?? "")
-    .update("oidc:pedido-autorizacao")
-    .digest();
+  const segredo = process.env.JWT_REFRESH_SECRET;
+  // Sem o segredo, a chave seria o HMAC de uma string vazia — conhecida por
+  // qualquer um, e o pedido assinado passaria a ser forjável.
+  if (!segredo) throw new Error("JWT_REFRESH_SECRET precisa estar definida para o login hospedado.");
+  return createHmac("sha256", segredo).update("oidc:pedido-autorizacao").digest();
 }
 
 export type PedidoAutorizacao = {
@@ -229,8 +231,11 @@ export type ErroOAuth = { status: number; error: string; error_description: stri
 
 /**
  * Autenticação do cliente no /token: client_secret_basic, client_secret_post
- * ou nenhuma (cliente público — aí o PKCE, sempre obrigatório, é a prova).
- * Um segredo que veio e não confere é sempre invalid_client.
+ * ou nenhuma — esta última só pra aplicação marcada como cliente PÚBLICO
+ * (SPA/app sem backend), onde o PKCE é a prova. Cliente confidencial sem o
+ * segredo é invalid_client nos dois grants: senão um refresh token vazado
+ * seria resgatado com o client_id, que é público (RFC 6749 §6). Um segredo
+ * que veio e não confere é sempre invalid_client.
  */
 export async function autenticarClienteOidc(
   req: Request,
@@ -263,9 +268,15 @@ export async function autenticarClienteOidc(
 
   const aplicacao = await prisma.aplicacao.findFirst({
     where: { clientId, ativa: true, aprovada: true, padrao: false },
-    select: { id: true, clientSecretHash: true },
+    select: { id: true, clientSecretHash: true, clientePublico: true },
   });
   if (!aplicacao) return { ok: false, erro: falha };
+  if (segredo === null && !aplicacao.clientePublico) {
+    return {
+      ok: false,
+      erro: { ...falha, error_description: "Esta aplicação é um cliente confidencial: envie o client_secret." },
+    };
+  }
   if (segredo !== null) {
     const confere =
       !!aplicacao.clientSecretHash &&
@@ -321,12 +332,8 @@ export async function trocarCodigoPorTokens(
     return { ok: false, erro: CONCESSAO_INVALIDA("Código inválido.") };
   }
   if (registro.usadoEm) {
-    if (registro.sessaoId) {
-      await prisma.tokenAtualizacao.updateMany({
-        where: { id: registro.sessaoId, revogadoEm: null },
-        data: revogacao("codigo_oidc_reapresentado"),
-      });
-    }
+    await prisma.codigoAutorizacao.update({ where: { id: registro.id }, data: { reapresentadoEm: new Date() } });
+    await revogarSessaoDoCodigo(registro);
     return { ok: false, erro: CONCESSAO_INVALIDA("Código já utilizado.") };
   }
   if (registro.expiraEm < new Date()) {
@@ -355,10 +362,22 @@ export async function trocarCodigoPorTokens(
   let tokenAcesso: string;
   let tokenAtualizacao: string | undefined;
   if (escopos.includes("offline_access")) {
-    const sessao = await criarSessaoSemCookies(usuario, req);
+    const sessao = await criarSessaoSemCookies(usuario, req, registro.escopo);
     tokenAcesso = sessao.tokenAcesso;
     tokenAtualizacao = sessao.tokenAtualizacao;
-    await prisma.codigoAutorizacao.update({ where: { id: registro.id }, data: { sessaoId: sessao.sessaoId } });
+    const { reapresentadoEm } = await prisma.codigoAutorizacao.update({
+      where: { id: registro.id },
+      data: { sessaoId: sessao.sessaoId },
+      select: { reapresentadoEm: true },
+    });
+    // Reapresentado enquanto esta troca criava a sessão: não entrega nada.
+    if (reapresentadoEm) {
+      await prisma.tokenAtualizacao.updateMany({
+        where: { id: sessao.sessaoId, revogadoEm: null },
+        data: revogacao("codigo_oidc_reapresentado"),
+      });
+      return { ok: false, erro: CONCESSAO_INVALIDA("Código já utilizado.") };
+    }
   } else {
     // Sem offline_access não há refresh token — nem sessão persistida pra ele.
     const { organizacaoId, papelOrganizacao } = await resolverOrganizacaoAtiva(usuario.id);
@@ -369,6 +388,7 @@ export async function trocarCodigoPorTokens(
       aplicacaoId: usuario.aplicacaoId,
       organizacaoId,
       papelOrganizacao,
+      scope: registro.escopo,
     });
   }
 
@@ -391,6 +411,19 @@ export async function trocarCodigoPorTokens(
       scope: registro.escopo,
     },
   };
+}
+
+/**
+ * Código reapresentado depois de trocado: derruba a sessão emitida com ele.
+ * Se a troca original ainda não gravou o sessaoId (reapresentação no meio
+ * dela), é ela que se revoga ao ver reapresentadoEm (ver trocarCodigoPorTokens).
+ */
+async function revogarSessaoDoCodigo(registro: { sessaoId: string | null }) {
+  if (!registro.sessaoId) return;
+  await prisma.tokenAtualizacao.updateMany({
+    where: { id: registro.sessaoId, revogadoEm: null },
+    data: revogacao("codigo_oidc_reapresentado"),
+  });
 }
 
 /** Claims montados campo a campo, conforme os escopos pedidos. */

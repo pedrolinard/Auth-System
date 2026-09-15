@@ -47,6 +47,7 @@ function FormularioAplicacao({
   const [origens, setOrigens] = useState(inicial?.origens.join("\n") ?? "");
   const [rpId, setRpId] = useState(inicial?.passkeyRpId ?? "");
   const [redirectUris, setRedirectUris] = useState(inicial?.redirectUris.join("\n") ?? "");
+  const [clientePublico, setClientePublico] = useState(inicial?.clientePublico ?? false);
   const [emailRemetente, setEmailRemetente] = useState(inicial?.emailRemetente ?? "");
   const [urlLinks, setUrlLinks] = useState(inicial?.urlLinks ?? "");
   const [logoUrl, setLogoUrl] = useState(inicial?.logoUrl ?? "");
@@ -64,6 +65,7 @@ function FormularioAplicacao({
         origens: linhasDoTexto(origens),
         passkeyRpId: rpId.trim() || null,
         redirectUris: linhasDoTexto(redirectUris),
+        clientePublico,
         ...(permitirRemetente ? { emailRemetente: emailRemetente.trim() || null } : {}),
         urlLinks: urlLinks.trim() || null,
         logoUrl: logoUrl.trim() || null,
@@ -138,6 +140,19 @@ function FormularioAplicacao({
           Só funciona em aplicação aprovada.
         </p>
       </div>
+      <label className="flex items-start gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+        <input
+          type="checkbox"
+          checked={clientePublico}
+          onChange={(e) => setClientePublico(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-black/[.2] accent-[var(--accent)] dark:border-white/[.2]"
+        />
+        <span>
+          Cliente público — app sem backend (SPA, celular), que não consegue guardar o client
+          secret. Deixe desmarcado se o seu servidor guarda o segredo: aí ele passa a ser exigido pra
+          trocar e renovar tokens.
+        </span>
+      </label>
 
       <fieldset className="flex flex-col gap-4 rounded-xl border border-black/[.08] p-3 dark:border-white/[.1]">
         <legend className="px-1 text-sm text-zinc-600 dark:text-zinc-400">E-mails aos usuários</legend>

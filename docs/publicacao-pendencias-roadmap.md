@@ -271,6 +271,11 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- 20260916140000_oidc_cliente_escopo
+ALTER TABLE "aplicacoes" ADD COLUMN IF NOT EXISTS "clientePublico" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "tokens_atualizacao" ADD COLUMN IF NOT EXISTS "escopoOidc" TEXT;
+ALTER TABLE "codigos_autorizacao" ADD COLUMN IF NOT EXISTS "reapresentadoEm" TIMESTAMPTZ(3);
+
 -- Registro pro Prisma considerar aplicadas
 INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
 SELECT gen_random_uuid()::text, v.checksum, now(), v.nome, NULL, NULL, now(), 1
@@ -279,7 +284,8 @@ FROM (VALUES
   ('20260916100000_exclusoes_dominio',  'aac1120683a87572a935615be581339da95f3f99ddd8a6e1885a97e561ab5b7d'),
   ('20260916110000_aplicacao_organizacao_dona', '2d30af7b84cd53d201b2d8df64bc2eaa51d46086a3a07b7a3d2b27edd68894c8'),
   ('20260916120000_aplicacao_aprovacao',        'f2e80679c6ad7bb9274f6e052da952f4f611bf023d75c53aee2f5dc2a3a95cc0'),
-  ('20260916130000_oidc',                       '85adfabfdd5006add5bbb741f8a1e9d019598c753285d0817234cbe01a69a28b')
+  ('20260916130000_oidc',                       '85adfabfdd5006add5bbb741f8a1e9d019598c753285d0817234cbe01a69a28b'),
+  ('20260916140000_oidc_cliente_escopo',        '2dcaf9a86716f28a6969ef1e96933e8f0a8fc7c5e38d095fe70ae17a393f7271')
 ) AS v(nome, checksum)
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = v.nome);
 ```

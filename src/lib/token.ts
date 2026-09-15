@@ -81,6 +81,10 @@ export type PayloadTokenAcesso = {
   // já emitido.
   organizacaoId: string;
   papelOrganizacao: PapelOrganizacao;
+  // Só em tokens de sessão aberta pelo login hospedado (OpenID Connect): os
+  // escopos autorizados, que o /api/oidc/userinfo respeita. Claim a mais é
+  // inofensivo pros consumidores atuais (o Django ignora).
+  scope?: string;
 };
 
 export type PayloadTokenAtualizacao = {

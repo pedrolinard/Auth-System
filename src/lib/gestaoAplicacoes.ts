@@ -171,6 +171,7 @@ export const SELECAO_APLICACAO_PUBLICA = {
   origens: true,
   passkeyRpId: true,
   redirectUris: true,
+  clientePublico: true,
   emailRemetente: true,
   urlLinks: true,
   logoUrl: true,

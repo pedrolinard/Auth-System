@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { aceitarIpDoUsuarioFinal } from "@/lib/aplicacao";
+import { aceitarIpDoUsuarioFinal, clientePodeRenovar } from "@/lib/aplicacao";
 import {
   definirCookieAcesso,
   definirCookieAtualizacao,
@@ -32,7 +32,9 @@ export async function POST(req: Request) {
     (await obterCookieAtualizacao()) ??
     (tokenDoCorpo.success ? tokenDoCorpo.data.tokenAtualizacao : undefined);
 
-  const resultado = await rotacionarTokenAtualizacao(req, tokenRecebido);
+  const resultado = await rotacionarTokenAtualizacao(req, tokenRecebido, {
+    clienteAutorizado: (aplicacaoId) => clientePodeRenovar(aplicacaoId, req),
+  });
   if (resultado.tipo === "recusa") {
     return NextResponse.json(resultado.corpo, { status: resultado.status });
   }
