@@ -231,12 +231,22 @@ CREATE TABLE IF NOT EXISTS "exclusoes_dominio_pendentes" (
     CONSTRAINT "exclusoes_dominio_pendentes_pkey" PRIMARY KEY ("alvo")
 );
 
+-- 20260916110000_aplicacao_organizacao_dona
+ALTER TABLE "aplicacoes" ADD COLUMN IF NOT EXISTS "organizacaoDonaId" TEXT;
+CREATE INDEX IF NOT EXISTS "aplicacoes_organizacaoDonaId_idx" ON "aplicacoes"("organizacaoDonaId");
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'aplicacoes_organizacaoDonaId_fkey') THEN
+    ALTER TABLE "aplicacoes" ADD CONSTRAINT "aplicacoes_organizacaoDonaId_fkey" FOREIGN KEY ("organizacaoDonaId") REFERENCES "organizacoes"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
+
 -- Registro pro Prisma considerar aplicadas
 INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
 SELECT gen_random_uuid()::text, v.checksum, now(), v.nome, NULL, NULL, now(), 1
 FROM (VALUES
   ('20260916090000_alvo_auditoria',     'e7cc2f97b097871ffa908b8acf0bfd9bec674757579005ecea93bb8b37e1872a'),
-  ('20260916100000_exclusoes_dominio',  'aac1120683a87572a935615be581339da95f3f99ddd8a6e1885a97e561ab5b7d')
+  ('20260916100000_exclusoes_dominio',  'aac1120683a87572a935615be581339da95f3f99ddd8a6e1885a97e561ab5b7d'),
+  ('20260916110000_aplicacao_organizacao_dona', '2d30af7b84cd53d201b2d8df64bc2eaa51d46086a3a07b7a3d2b27edd68894c8')
 ) AS v(nome, checksum)
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = v.nome);
 ```

@@ -8,25 +8,62 @@ import { hashToken, type PayloadTokenAcesso } from "@/lib/token";
 // Gestão de aplicações (Fase 01 do provedor): criar, editar, desativar e
 // rotacionar o segredo dos clientes que integram com este provedor.
 
-// Quem opera o provedor: admin de SISTEMA cuja conta vive na aplicação
-// padrão (o próprio painel deste projeto). As duas condições são
-// necessárias. Só `papel === "admin"` não basta: quando um cliente tiver
-// usuários finais com papel de admin de sistema DENTRO da aplicação dele,
-// esse admin não pode enxergar nem editar as aplicações dos outros clientes —
-// seria o equivalente, um nível acima, ao vazamento que o escopo da
-// auditoria por aplicação já fecha.
-export async function autenticarOperadorProvedor(
+// Teto de aplicações por organização no self-service, pra uma conta nova não
+// criar centenas de clientes. Quem opera o provedor não tem teto.
+export const MAX_APLICACOES_POR_ORGANIZACAO = 3;
+
+export type GestorAplicacoes = {
+  payload: PayloadTokenAcesso;
+  // Vê e gerencia todas as aplicações, inclusive a padrão.
+  operador: boolean;
+  // Self-service: a organização cujas aplicações esta sessão gerencia (null
+  // para o operador).
+  organizacaoDonaId: string | null;
+};
+
+/**
+ * Quem pode gerenciar aplicações pelo painel:
+ *
+ * - o OPERADOR do provedor — admin de SISTEMA com conta na aplicação padrão:
+ *   todas. As duas condições são necessárias: um admin de sistema DENTRO da
+ *   aplicação de um cliente não pode enxergar as aplicações dos outros;
+ * - SELF-SERVICE: dono ou admin da organização ativa, com conta na aplicação
+ *   padrão e e-mail verificado: só as aplicações daquela organização. Conta
+ *   de usuário final de um cliente nunca entra aqui — mesmo motivo do
+ *   operador exigir a aplicação padrão. E-mail verificado porque uma conta
+ *   criada com o e-mail de outra pessoa não pode sair emitindo client
+ *   secrets.
+ */
+export async function autenticarGestorAplicacoes(
   req: Request,
-): Promise<
-  | { ok: true; payload: PayloadTokenAcesso }
-  | { ok: false; status: 401 | 403; erro: string }
-> {
+): Promise<{ ok: true; gestor: GestorAplicacoes } | { ok: false; status: 401 | 403; erro: string }> {
   const payload = await autenticarRequisicao(req);
   if (!payload) return { ok: false, status: 401, erro: "Não autenticado." };
-  if (payload.papel !== "admin" || !(await ehAplicacaoPadrao(payload.aplicacaoId))) {
-    return { ok: false, status: 403, erro: "Acesso restrito a quem opera o provedor." };
+  if (!(await ehAplicacaoPadrao(payload.aplicacaoId))) {
+    return { ok: false, status: 403, erro: "Acesso restrito a contas do painel do provedor." };
   }
-  return { ok: true, payload };
+  if (payload.papel === "admin") {
+    return { ok: true, gestor: { payload, operador: true, organizacaoDonaId: null } };
+  }
+  if (payload.papelOrganizacao !== "dono" && payload.papelOrganizacao !== "admin") {
+    return { ok: false, status: 403, erro: "Só dono ou admin da organização gerencia aplicações." };
+  }
+  const usuario = await prisma.usuario.findUnique({
+    where: { id: payload.sub },
+    select: { emailVerificado: true },
+  });
+  if (!usuario?.emailVerificado) {
+    return { ok: false, status: 403, erro: "Verifique seu e-mail antes de criar aplicações." };
+  }
+  return { ok: true, gestor: { payload, operador: false, organizacaoDonaId: payload.organizacaoId } };
+}
+
+/**
+ * Filtro das aplicações que o gestor enxerga. Aplicação de outra organização
+ * responde 404 (não 403) nas rotas por id: nem a existência dela vaza.
+ */
+export function escopoDoGestor(gestor: GestorAplicacoes) {
+  return gestor.operador ? {} : { organizacaoDonaId: gestor.organizacaoDonaId };
 }
 
 export async function ehAplicacaoPadrao(aplicacaoId: string | undefined): Promise<boolean> {

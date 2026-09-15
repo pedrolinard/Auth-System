@@ -10,6 +10,7 @@ import {
   type Aplicacao,
   type DadosAplicacao,
 } from "@/lib/clienteAplicacoes";
+import { obterUsuarioAtual } from "@/lib/clienteAuth";
 import { AvisoErro } from "@/components/ui/AvisoErro";
 import { CabecalhoSecao } from "@/components/ui/CabecalhoSecao";
 import { EstadoVazio } from "@/components/ui/EstadoVazio";
@@ -33,11 +34,14 @@ function FormularioAplicacao({
   rotuloEnviar,
   aoEnviar,
   aoCancelar,
+  permitirRemetente,
 }: {
   inicial?: Aplicacao;
   rotuloEnviar: string;
   aoEnviar: (dados: DadosAplicacao) => Promise<void>;
   aoCancelar?: () => void;
+  // Remetente próprio só quem opera o provedor define (ver aplicacoes/route.ts).
+  permitirRemetente: boolean;
 }) {
   const [nome, setNome] = useState(inicial?.nome ?? "");
   const [origens, setOrigens] = useState(inicial?.origens.join("\n") ?? "");
@@ -58,7 +62,7 @@ function FormularioAplicacao({
         nome,
         origens: origensDoTexto(origens),
         passkeyRpId: rpId.trim() || null,
-        emailRemetente: emailRemetente.trim() || null,
+        ...(permitirRemetente ? { emailRemetente: emailRemetente.trim() || null } : {}),
         urlLinks: urlLinks.trim() || null,
         logoUrl: logoUrl.trim() || null,
       });
@@ -121,22 +125,24 @@ function FormularioAplicacao({
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           Os e-mails já saem com o nome da aplicação no assunto. Os campos abaixo são opcionais.
         </p>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor={`${prefixo}-remetente`} className="text-sm text-zinc-600 dark:text-zinc-400">
-            Remetente
-          </label>
-          <input
-            id={`${prefixo}-remetente`}
-            type="email"
-            value={emailRemetente}
-            onChange={(e) => setEmailRemetente(e.target.value)}
-            placeholder="seguranca@cliente.com"
-            className="input-field font-mono text-xs"
-          />
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Precisa ser de um domínio verificado no Resend do provedor, senão o envio falha.
-          </p>
-        </div>
+        {permitirRemetente && (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor={`${prefixo}-remetente`} className="text-sm text-zinc-600 dark:text-zinc-400">
+              Remetente
+            </label>
+            <input
+              id={`${prefixo}-remetente`}
+              type="email"
+              value={emailRemetente}
+              onChange={(e) => setEmailRemetente(e.target.value)}
+              placeholder="seguranca@cliente.com"
+              className="input-field font-mono text-xs"
+            />
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Precisa ser de um domínio verificado no Resend do provedor, senão o envio falha.
+            </p>
+          </div>
+        )}
         <div className="flex flex-col gap-1.5">
           <label htmlFor={`${prefixo}-links`} className="text-sm text-zinc-600 dark:text-zinc-400">
             Endereço dos links
@@ -234,10 +240,13 @@ export default function PaginaAplicacoes() {
   const [confirmandoRotacaoId, setConfirmandoRotacaoId] = useState<string | null>(null);
   const [processandoId, setProcessandoId] = useState<string | null>(null);
   const [segredo, setSegredo] = useState<{ nome: string; valor: string } | null>(null);
+  const [operador, setOperador] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
-      setAplicacoes(await listarAplicacoes());
+      const [lista, usuario] = await Promise.all([listarAplicacoes(), obterUsuarioAtual()]);
+      setAplicacoes(lista);
+      setOperador(!!usuario?.operadorProvedor);
     } catch (erroCapturado) {
       setErro(mensagem(erroCapturado, "Erro inesperado."));
     }
@@ -295,9 +304,13 @@ export default function PaginaAplicacoes() {
       <div className="flex w-full min-w-0 max-w-3xl flex-col gap-4">
         <CabecalhoSecao
           icone={AppWindow}
-          eyebrow="Provedor"
+          eyebrow={operador ? "Provedor" : "Integração"}
           titulo="Aplicações"
-          descricao="Os clientes que autenticam os próprios usuários por este provedor. Cada um tem contas, organizações e passkeys isoladas dos outros."
+          descricao={
+            operador
+              ? "Os clientes que autenticam os próprios usuários por este provedor. Cada um tem contas, organizações e passkeys isoladas dos outros."
+              : "Os sites e apps da sua organização que usam este provedor pra autenticar os próprios usuários. Cada aplicação tem contas isoladas das outras."
+          }
           acao={
             !criando && (
               <button onClick={() => setCriando(true)} className="btn-secondary-sm gap-1.5">
@@ -321,6 +334,7 @@ export default function PaginaAplicacoes() {
         {criando && (
           <div className="card-surface p-4">
             <FormularioAplicacao
+              permitirRemetente={operador}
               rotuloEnviar="Criar aplicação"
               aoEnviar={aoCriar}
               aoCancelar={() => setCriando(false)}
@@ -344,6 +358,7 @@ export default function PaginaAplicacoes() {
               <li key={aplicacao.id} className="card-surface flex flex-col gap-3 p-4">
                 {editandoId === aplicacao.id ? (
                   <FormularioAplicacao
+                    permitirRemetente={operador}
                     inicial={aplicacao}
                     rotuloEnviar="Salvar"
                     aoEnviar={async (dados) => {

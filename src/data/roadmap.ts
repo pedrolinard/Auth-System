@@ -397,6 +397,16 @@ export const proximosPassos: ItemProximoPasso[] = [
     concluidoEm: "2026-09-15",
   },
   {
+    id: "aplicacoes-self-service",
+    titulo: "Empresas criam as próprias aplicações",
+    descricao:
+      "Antes só quem operava o provedor cadastrava clientes — cada venda dependia de alguém do lado de cá. Agora dono ou admin de uma organização do painel, com e-mail verificado, cria e gerencia as aplicações da própria organização (até 3 por organização; client secret, origens, RP ID, marca dos e-mails). Aplicação de outra organização responde 404 em editar e rotacionar, pra nem a existência vazar. O remetente de e-mail continua só com o operador: ele sai do domínio verificado do provedor, e liberar pra qualquer cliente seria emprestar essa reputação. Aplicacao.organizacaoDonaId com SetNull: se a conta dona some, a aplicação continua no ar pros usuários finais e passa a ser gerida pelo operador.",
+    categoria: "Multi-tenant",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-16",
+  },
+  {
     id: "banco-tls-e-usuario-django",
     titulo: "Ligar TLS verificado no banco e separar o usuário do Django",
     descricao:

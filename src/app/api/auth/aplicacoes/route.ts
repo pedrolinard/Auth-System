@@ -6,24 +6,28 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import {
   alvoAplicacao,
-  autenticarOperadorProvedor,
+  autenticarGestorAplicacoes,
+  escopoDoGestor,
   formatarAplicacao,
   gerarClientId,
   gerarClientSecret,
+  MAX_APLICACOES_POR_ORGANIZACAO,
   origensIncompativeisComRpId,
   SELECAO_APLICACAO_PUBLICA,
 } from "@/lib/gestaoAplicacoes";
 import { esquemaCriarAplicacao } from "@/lib/validacao";
 
-// Lista todas as aplicações clientes do provedor, a padrão incluída (ela é
-// exibida mas protegida contra desativação — ver [id]/route.ts).
+// Lista as aplicações que a sessão gerencia: todas (a padrão incluída, exibida
+// mas protegida contra desativação — ver [id]/route.ts) pro operador; só as da
+// própria organização no self-service.
 export async function GET(req: Request) {
-  const acesso = await autenticarOperadorProvedor(req);
+  const acesso = await autenticarGestorAplicacoes(req);
   if (!acesso.ok) {
     return NextResponse.json({ erro: acesso.erro }, { status: acesso.status });
   }
 
   const aplicacoes = await prisma.aplicacao.findMany({
+    where: escopoDoGestor(acesso.gestor),
     select: SELECAO_APLICACAO_PUBLICA,
     orderBy: [{ padrao: "desc" }, { criadoEm: "asc" }],
   });
@@ -37,10 +41,11 @@ export async function POST(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
     return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
   }
-  const acesso = await autenticarOperadorProvedor(req);
+  const acesso = await autenticarGestorAplicacoes(req);
   if (!acesso.ok) {
     return NextResponse.json({ erro: acesso.erro }, { status: acesso.status });
   }
+  const { gestor } = acesso;
 
   const corpo = await req.json().catch(() => null);
   const dados = esquemaCriarAplicacao.safeParse(corpo);
@@ -52,6 +57,26 @@ export async function POST(req: Request) {
   }
 
   const { nome, origens, passkeyRpId, emailRemetente, urlLinks, logoUrl } = dados.data;
+
+  if (!gestor.operador) {
+    // O remetente sai do domínio verificado do PROVEDOR no Resend: deixar um
+    // cliente escolhê-lo seria emprestar a reputação (e o domínio) do
+    // provedor pra qualquer e-mail que ele quisesse mandar.
+    if (emailRemetente) {
+      return NextResponse.json(
+        { erro: "Remetente próprio é configurado por quem opera o provedor." },
+        { status: 400 },
+      );
+    }
+    const existentes = await prisma.aplicacao.count({ where: escopoDoGestor(gestor) });
+    if (existentes >= MAX_APLICACOES_POR_ORGANIZACAO) {
+      return NextResponse.json(
+        { erro: `Sua organização já tem ${existentes} aplicações, o limite do plano atual.` },
+        { status: 403 },
+      );
+    }
+  }
+
   if (passkeyRpId) {
     const incompativeis = origensIncompativeisComRpId(origens, passkeyRpId);
     if (incompativeis.length > 0) {
@@ -75,8 +100,10 @@ export async function POST(req: Request) {
       emailRemetente,
       urlLinks,
       logoUrl,
-      // `padrao` nunca vem do corpo: a aplicação padrão é única (índice
+      // Nunca vem do corpo: é a organização da SESSÃO (ou nenhuma, pro
+      // operador). `padrao` também não: a aplicação padrão é única (índice
       // parcial) e nasce do backfill, não do painel.
+      organizacaoDonaId: gestor.organizacaoDonaId,
     },
     select: SELECAO_APLICACAO_PUBLICA,
   });
@@ -85,11 +112,11 @@ export async function POST(req: Request) {
   await registrarEvento({
     req,
     evento: "aplicacao_criada",
-    autorId: acesso.payload.sub,
-    autorEmail: acesso.payload.email,
-    // Trilha do OPERADOR: o evento aparece no painel de auditoria da
-    // aplicação padrão, onde quem opera o provedor olha.
-    aplicacaoId: acesso.payload.aplicacaoId,
+    autorId: gestor.payload.sub,
+    autorEmail: gestor.payload.email,
+    // Trilha na aplicação padrão, onde vive a conta de quem agiu.
+    aplicacaoId: gestor.payload.aplicacaoId,
+    organizacaoId: gestor.organizacaoDonaId ?? undefined,
     alvo: alvoAplicacao(aplicacao),
   });
 

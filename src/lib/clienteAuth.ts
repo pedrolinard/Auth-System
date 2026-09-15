@@ -342,6 +342,9 @@ export type UsuarioAtual = {
   // Admin de sistema da aplicação padrão: quem gerencia as aplicações
   // clientes (ver src/lib/gestaoAplicacoes.ts).
   operadorProvedor: boolean;
+  // Operador, ou dono/admin de organização do painel com e-mail verificado
+  // (aplicações self-service da própria organização).
+  podeGerirAplicacoes: boolean;
 };
 
 export async function obterUsuarioAtual(tentouRenovar = false): Promise<UsuarioAtual | null> {

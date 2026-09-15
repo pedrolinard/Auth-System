@@ -199,6 +199,7 @@ Leitura do projeto inteiro (lib, rotas, telas críticas, Django, scripts, CI, co
 - **Esqueleto de carregamento** na navegação do painel
 
 ### Rumo à venda (2026-09-16)
+- **Aplicações self-service:** dono/admin de organização do painel com e-mail verificado cria e gerencia as aplicações da própria organização (até 3); operador vê todas e é o único que define remetente próprio
 - **Auditoria com alvo:** eventos de gestão de aplicações dizem qual aplicação foi alterada (`LogAuditoria.alvo`)
 - **Exclusão dos dados do Django junto com a organização (LGPD):** fila na mesma transação + `POST /api/dominio/interno/excluir-dados` (organizações apagadas e registros legados da conta sem organização) com token de serviço RS256 de audiência própria; o job diário reenvia o que falhou
 

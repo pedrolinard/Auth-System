@@ -4,7 +4,15 @@ Para quem vai colocar o login deste provedor dentro de uma aplicação.
 
 ## 1. Cadastre a aplicação
 
-No painel, em **Aplicações → Nova aplicação** (acesso de quem opera o provedor):
+No painel, em **Aplicações → Nova aplicação**. Quem pode:
+
+- **Você mesmo (self-service):** crie uma conta no painel, verifique o e-mail e,
+  como dono ou admin da sua organização, cadastre até 3 aplicações. Você só
+  enxerga e edita as aplicações da sua organização.
+- **Quem opera o provedor:** vê e gerencia todas, e é o único que define um
+  remetente de e-mail próprio (ele sai do domínio verificado do provedor).
+
+Campos:
 
 | Campo | O que colocar |
 |---|---|
@@ -26,7 +34,7 @@ cabeçalho. Opcionalmente, no painel:
 
 | Campo | Efeito |
 |---|---|
-| Remetente | Endereço de envio, ex.: `seguranca@cliente.com`. Precisa ser de um domínio verificado no Resend do provedor, senão o envio falha |
+| Remetente | Endereço de envio, ex.: `seguranca@cliente.com`. Precisa ser de um domínio verificado no Resend do provedor, senão o envio falha. Só quem opera o provedor define |
 | Endereço dos links | Os links dos e-mails passam a apontar para o seu site, ex.: `https://app.cliente.com/redefinir-senha?token=...` |
 | Logo | Imagem https exibida no topo dos e-mails |
 

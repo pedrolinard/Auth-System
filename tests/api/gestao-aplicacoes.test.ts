@@ -52,7 +52,7 @@ async function criarPeloPainel(cabecalhos: Record<string, string>, dados: Record
 }
 
 describe("Gestão de aplicações — autorização", () => {
-  it("usuário comum recebe 403", async () => {
+  it("usuário comum (sem e-mail verificado) recebe 403", async () => {
     const usuario = await criarUsuarioTeste("gestao-app-comum");
     emailsCriados.push(usuario.email);
     const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
@@ -104,6 +104,106 @@ describe("Gestão de aplicações — autorização", () => {
     const semCsrf = { Cookie: cabecalhos.Cookie };
     const { resposta } = await criarPeloPainel(semCsrf, { nome: "Sem CSRF" });
     expect(resposta.status).toBe(403);
+  });
+});
+
+describe("Gestão de aplicações — self-service", () => {
+  // Dono da organização pessoal, na aplicação padrão, com e-mail verificado.
+  async function sessaoCliente(prefixo: string) {
+    const conta = await criarUsuarioTeste(prefixo);
+    emailsCriados.push(conta.email);
+    await prisma.usuario.updateMany({ where: { email: conta.email }, data: { emailVerificado: true } });
+    const login = await loginTeste(conta.email, conta.senha);
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: conta.email } });
+    const membro = await prisma.membro.findFirstOrThrow({ where: { usuarioId: registro.id } });
+    return { ...login, organizacaoId: membro.organizacaoId, usuarioId: registro.id };
+  }
+
+  it("conta sem e-mail verificado não gerencia aplicações", async () => {
+    const conta = await criarUsuarioTeste("self-service-nao-verificado");
+    emailsCriados.push(conta.email);
+    const { cabecalhos } = await loginTeste(conta.email, conta.senha);
+
+    const { resposta, corpo } = await criarPeloPainel(cabecalhos, { nome: "Sem verificar" });
+    expect(resposta.status).toBe(403);
+    expect(corpo.erro).toContain("Verifique seu e-mail");
+    const me = await (await chamar("/api/auth/me", cabecalhos)).json();
+    expect(me.usuario.podeGerirAplicacoes).toBe(false);
+  });
+
+  it("membro comum (nem dono nem admin) não gerencia aplicações", async () => {
+    const conta = await criarUsuarioTeste("self-service-membro");
+    emailsCriados.push(conta.email);
+    const registro = await prisma.usuario.findFirstOrThrow({ where: { email: conta.email } });
+    await prisma.usuario.update({ where: { id: registro.id }, data: { emailVerificado: true } });
+    await prisma.membro.updateMany({ where: { usuarioId: registro.id }, data: { papel: "membro" } });
+    const { cabecalhos } = await loginTeste(conta.email, conta.senha);
+
+    expect((await chamar("/api/auth/aplicacoes", cabecalhos)).status).toBe(403);
+  });
+
+  it("dono verificado cria, lista e edita só as aplicações da própria organização", async () => {
+    const cliente = await sessaoCliente("self-service-dono");
+    const me = await (await chamar("/api/auth/me", cliente.cabecalhos)).json();
+    expect(me.usuario.podeGerirAplicacoes).toBe(true);
+    expect(me.usuario.operadorProvedor).toBe(false);
+
+    const { resposta, corpo } = await criarPeloPainel(cliente.cabecalhos, {
+      nome: "Loja do cliente",
+      origens: ["https://loja.cliente-self.com"],
+    });
+    expect(resposta.status).toBe(201);
+    expect(corpo.clientSecret).toMatch(/^sec_/);
+    const linha = await prisma.aplicacao.findUniqueOrThrow({ where: { id: corpo.aplicacao.id } });
+    expect(linha.organizacaoDonaId).toBe(cliente.organizacaoId);
+
+    // Não enxerga a aplicação padrão nem a de outro cliente.
+    const outro = await sessaoCliente("self-service-outro");
+    const { corpo: daOutra } = await criarPeloPainel(outro.cabecalhos, { nome: "App do outro" });
+    const lista = await (await chamar("/api/auth/aplicacoes", cliente.cabecalhos)).json();
+    expect(lista.aplicacoes.map((a: { id: string }) => a.id)).toEqual([corpo.aplicacao.id]);
+
+    // Aplicação de outra organização: 404 em editar e em rotacionar o segredo.
+    expect((await chamar(`/api/auth/aplicacoes/${daOutra.aplicacao.id}`, cliente.cabecalhos, "PATCH", { nome: "Invadida" })).status).toBe(404);
+    expect((await chamar(`/api/auth/aplicacoes/${daOutra.aplicacao.id}/segredo`, cliente.cabecalhos, "POST")).status).toBe(404);
+    const padrao = await prisma.aplicacao.findFirstOrThrow({ where: { padrao: true } });
+    expect((await chamar(`/api/auth/aplicacoes/${padrao.id}`, cliente.cabecalhos, "PATCH", { ativa: false })).status).toBe(404);
+
+    // A própria: edita e rotaciona.
+    expect((await chamar(`/api/auth/aplicacoes/${corpo.aplicacao.id}`, cliente.cabecalhos, "PATCH", { nome: "Loja renomeada" })).status).toBe(200);
+    expect((await chamar(`/api/auth/aplicacoes/${corpo.aplicacao.id}/segredo`, cliente.cabecalhos, "POST")).status).toBe(200);
+
+    // O operador continua vendo as duas.
+    const { cabecalhos: operador } = await sessaoOperador();
+    const doOperador = await (await chamar("/api/auth/aplicacoes", operador)).json();
+    const idsOperador = doOperador.aplicacoes.map((a: { id: string }) => a.id);
+    expect(idsOperador).toContain(corpo.aplicacao.id);
+    expect(idsOperador).toContain(daOutra.aplicacao.id);
+  });
+
+  it("self-service não define remetente próprio", async () => {
+    const cliente = await sessaoCliente("self-service-remetente");
+    const { resposta } = await criarPeloPainel(cliente.cabecalhos, {
+      nome: "Com remetente",
+      emailRemetente: "seguranca@provedor.com",
+    });
+    expect(resposta.status).toBe(400);
+
+    const { corpo } = await criarPeloPainel(cliente.cabecalhos, { nome: "Sem remetente" });
+    const editar = await chamar(`/api/auth/aplicacoes/${corpo.aplicacao.id}`, cliente.cabecalhos, "PATCH", {
+      emailRemetente: "seguranca@provedor.com",
+    });
+    expect(editar.status).toBe(400);
+  });
+
+  it("limite de aplicações por organização", async () => {
+    const cliente = await sessaoCliente("self-service-limite");
+    for (let i = 1; i <= 3; i++) {
+      expect((await criarPeloPainel(cliente.cabecalhos, { nome: `App ${i}` })).resposta.status).toBe(201);
+    }
+    const { resposta, corpo } = await criarPeloPainel(cliente.cabecalhos, { nome: "App 4" });
+    expect(resposta.status).toBe(403);
+    expect(corpo.erro).toContain("limite");
   });
 });
 

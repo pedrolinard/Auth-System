@@ -38,6 +38,9 @@ export async function GET(req: Request) {
     ? await contarCodigosRestantes(usuario.id)
     : null;
 
+  const contaDoPainel = await ehAplicacaoPadrao(payload.aplicacaoId);
+  const operadorProvedor = usuario.papel === "admin" && contaDoPainel;
+
   return NextResponse.json({
     usuario: {
       ...usuario,
@@ -49,11 +52,16 @@ export async function GET(req: Request) {
       // Usuario.papel).
       organizacaoId: payload.organizacaoId,
       papelOrganizacao: payload.papelOrganizacao,
-      // Decide se o painel mostra a gestão de aplicações. Mesma regra da
-      // autorização das rotas (src/lib/gestaoAplicacoes.ts) — a flag só
-      // esconde o link; quem barra de verdade é a rota.
-      operadorProvedor:
-        usuario.papel === "admin" && (await ehAplicacaoPadrao(payload.aplicacaoId)),
+      // Decidem o que o painel mostra na gestão de aplicações. Mesmas regras
+      // da autorização das rotas (autenticarGestorAplicacoes em
+      // src/lib/gestaoAplicacoes.ts) — as flags só escondem links e campos;
+      // quem barra de verdade é a rota.
+      operadorProvedor,
+      podeGerirAplicacoes:
+        operadorProvedor ||
+        (contaDoPainel &&
+          usuario.emailVerificado &&
+          (payload.papelOrganizacao === "dono" || payload.papelOrganizacao === "admin")),
     },
   });
 }

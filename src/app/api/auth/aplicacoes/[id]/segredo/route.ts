@@ -3,7 +3,12 @@ import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
-import { alvoAplicacao, autenticarOperadorProvedor, gerarClientSecret } from "@/lib/gestaoAplicacoes";
+import {
+  alvoAplicacao,
+  autenticarGestorAplicacoes,
+  escopoDoGestor,
+  gerarClientSecret,
+} from "@/lib/gestaoAplicacoes";
 
 // Gera um clientSecret novo e invalida o anterior no mesmo instante. Sem
 // janela de convivência dos dois: o segredo existe pra ser trocado quando
@@ -17,14 +22,15 @@ export async function POST(
   if (!csrfValido(req, await obterCookieCsrf())) {
     return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
   }
-  const acesso = await autenticarOperadorProvedor(req);
+  const acesso = await autenticarGestorAplicacoes(req);
   if (!acesso.ok) {
     return NextResponse.json({ erro: acesso.erro }, { status: acesso.status });
   }
+  const { gestor } = acesso;
 
   const { id } = await params;
-  const existe = await prisma.aplicacao.findUnique({
-    where: { id },
+  const existe = await prisma.aplicacao.findFirst({
+    where: { id, ...escopoDoGestor(gestor) },
     select: { id: true, clientId: true, nome: true },
   });
   if (!existe) {
@@ -37,9 +43,10 @@ export async function POST(
   await registrarEvento({
     req,
     evento: "segredo_aplicacao_rotacionado",
-    autorId: acesso.payload.sub,
-    autorEmail: acesso.payload.email,
-    aplicacaoId: acesso.payload.aplicacaoId,
+    autorId: gestor.payload.sub,
+    autorEmail: gestor.payload.email,
+    aplicacaoId: gestor.payload.aplicacaoId,
+    organizacaoId: gestor.organizacaoDonaId ?? undefined,
     alvo: alvoAplicacao(existe),
   });
 

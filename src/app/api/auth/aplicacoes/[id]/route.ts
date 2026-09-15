@@ -6,7 +6,8 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import {
   alvoAplicacao,
-  autenticarOperadorProvedor,
+  autenticarGestorAplicacoes,
+  escopoDoGestor,
   formatarAplicacao,
   origensIncompativeisComRpId,
   SELECAO_APLICACAO_PUBLICA,
@@ -25,15 +26,17 @@ export async function PATCH(
   if (!csrfValido(req, await obterCookieCsrf())) {
     return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
   }
-  const acesso = await autenticarOperadorProvedor(req);
+  const acesso = await autenticarGestorAplicacoes(req);
   if (!acesso.ok) {
     return NextResponse.json({ erro: acesso.erro }, { status: acesso.status });
   }
+  const { gestor } = acesso;
 
   const { id } = await params;
-  const atual = await prisma.aplicacao.findUnique({
-    where: { id },
-    select: { id: true, padrao: true, ativa: true, origens: true, passkeyRpId: true },
+  // Aplicação de outra organização é 404, não 403: nem a existência vaza.
+  const atual = await prisma.aplicacao.findFirst({
+    where: { id, ...escopoDoGestor(gestor) },
+    select: { id: true, padrao: true, ativa: true, origens: true, passkeyRpId: true, emailRemetente: true },
   });
   if (!atual) {
     return NextResponse.json({ erro: "Aplicação não encontrada." }, { status: 404 });
@@ -48,6 +51,18 @@ export async function PATCH(
     );
   }
   const mudancas = dados.data;
+
+  // Mesmo motivo da criação (aplicacoes/route.ts): remetente é do operador.
+  if (
+    !gestor.operador &&
+    mudancas.emailRemetente !== undefined &&
+    mudancas.emailRemetente !== atual.emailRemetente
+  ) {
+    return NextResponse.json(
+      { erro: "Remetente próprio é configurado por quem opera o provedor." },
+      { status: 400 },
+    );
+  }
 
   // A aplicação padrão é onde vive a conta de quem opera o provedor — e o
   // próprio painel. Desativá-la tranca todo mundo do lado de fora, inclusive
@@ -120,9 +135,10 @@ export async function PATCH(
         : mudancas.ativa === true && !atual.ativa
           ? "aplicacao_reativada"
           : "aplicacao_atualizada",
-    autorId: acesso.payload.sub,
-    autorEmail: acesso.payload.email,
-    aplicacaoId: acesso.payload.aplicacaoId,
+    autorId: gestor.payload.sub,
+    autorEmail: gestor.payload.email,
+    aplicacaoId: gestor.payload.aplicacaoId,
+    organizacaoId: gestor.organizacaoDonaId ?? undefined,
     alvo: alvoAplicacao(aplicacao),
   });
 
