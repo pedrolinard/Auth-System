@@ -19,6 +19,8 @@ export async function registrarEvento(dados: {
   // de qualquer escopo e sumiriam do painel do cliente.
   aplicacaoId?: string;
   organizacaoId?: string;
+  // O que foi alterado quando não é uma conta (ver LogAuditoria.alvo).
+  alvo?: string;
 }) {
   try {
     const ip = obterIp(dados.req);
@@ -48,6 +50,7 @@ export async function registrarEvento(dados: {
         autorEmail: dados.autorEmail,
         aplicacaoId,
         organizacaoId: dados.organizacaoId,
+        alvo: dados.alvo,
       },
     });
   } catch (erro) {

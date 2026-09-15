@@ -5,6 +5,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import {
+  alvoAplicacao,
   autenticarOperadorProvedor,
   formatarAplicacao,
   origensIncompativeisComRpId,
@@ -122,6 +123,7 @@ export async function PATCH(
     autorId: acesso.payload.sub,
     autorEmail: acesso.payload.email,
     aplicacaoId: acesso.payload.aplicacaoId,
+    alvo: alvoAplicacao(aplicacao),
   });
 
   return NextResponse.json({ aplicacao: formatarAplicacao(aplicacao) });

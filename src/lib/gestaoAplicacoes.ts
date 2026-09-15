@@ -84,6 +84,13 @@ export const SELECAO_APLICACAO_PUBLICA = {
   _count: { select: { usuarios: true } },
 } as const;
 
+// Valor de LogAuditoria.alvo nos eventos de gestão de aplicações: o clientId
+// é o identificador estável; o nome vai junto pra trilha ser legível sem
+// cruzar com outra tabela (e continua lá mesmo que a aplicação mude de nome).
+export function alvoAplicacao(aplicacao: { clientId: string; nome: string }): string {
+  return `aplicacao:${aplicacao.clientId} (${aplicacao.nome})`;
+}
+
 type AplicacaoComContagem = {
   clientSecretHash: string | null;
   _count: { usuarios: number };

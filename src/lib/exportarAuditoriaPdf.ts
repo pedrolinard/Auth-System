@@ -40,7 +40,7 @@ export async function exportarAuditoriaPdf(
     head: [["Quando", "Evento", "E-mail", "Admin responsável", "IP", "User-Agent"]],
     body: registros.map((r) => [
       new Date(r.criadoEm).toLocaleString("pt-BR"),
-      r.evento,
+      r.alvo ? `${r.evento}\n${r.alvo}` : r.evento,
       r.email ?? "—",
       r.autorEmail ?? "—",
       r.ip ?? "—",

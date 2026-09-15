@@ -204,6 +204,11 @@ export default function PaginaAuditoria() {
                       >
                         {registro.evento}
                       </span>
+                      {registro.alvo && (
+                        <p className="mt-1 break-all text-xs text-zinc-500 dark:text-zinc-500">
+                          {registro.alvo}
+                        </p>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
                       {registro.email ?? "—"}

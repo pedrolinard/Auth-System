@@ -325,6 +325,10 @@ model LogAuditoria {
   // suspendeu/reativou/excluiu, só o quê aconteceu com quem.
   autorId    String?
   autorEmail String?
+  // O que a ação alterou quando o alvo não é uma conta — ex.:
+  // "aplicacao:app_123 (Loja Acme)" na gestão de aplicações. usuarioId/email
+  // descrevem uma pessoa e não servem pra dizer QUAL cliente foi editado.
+  alvo       String?
 
   @@index([usuarioId])
   @@index([evento, ip, criadoEm])

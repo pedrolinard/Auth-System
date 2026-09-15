@@ -5,6 +5,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import {
+  alvoAplicacao,
   autenticarOperadorProvedor,
   formatarAplicacao,
   gerarClientId,
@@ -89,6 +90,7 @@ export async function POST(req: Request) {
     // Trilha do OPERADOR: o evento aparece no painel de auditoria da
     // aplicação padrão, onde quem opera o provedor olha.
     aplicacaoId: acesso.payload.aplicacaoId,
+    alvo: alvoAplicacao(aplicacao),
   });
 
   return NextResponse.json(

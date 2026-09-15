@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
-import { autenticarOperadorProvedor, gerarClientSecret } from "@/lib/gestaoAplicacoes";
+import { alvoAplicacao, autenticarOperadorProvedor, gerarClientSecret } from "@/lib/gestaoAplicacoes";
 
 // Gera um clientSecret novo e invalida o anterior no mesmo instante. Sem
 // janela de convivência dos dois: o segredo existe pra ser trocado quando
@@ -23,7 +23,10 @@ export async function POST(
   }
 
   const { id } = await params;
-  const existe = await prisma.aplicacao.findUnique({ where: { id }, select: { id: true } });
+  const existe = await prisma.aplicacao.findUnique({
+    where: { id },
+    select: { id: true, clientId: true, nome: true },
+  });
   if (!existe) {
     return NextResponse.json({ erro: "Aplicação não encontrada." }, { status: 404 });
   }
@@ -37,6 +40,7 @@ export async function POST(
     autorId: acesso.payload.sub,
     autorEmail: acesso.payload.email,
     aplicacaoId: acesso.payload.aplicacaoId,
+    alvo: alvoAplicacao(existe),
   });
 
   return NextResponse.json({ clientSecret: segredo });

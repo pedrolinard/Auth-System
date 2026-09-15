@@ -329,6 +329,30 @@ describe("Gestão de aplicações — ciclo de vida", () => {
     expect(clientSecret).not.toBe(corpo.clientSecret);
   });
 
+  it("a auditoria registra QUAL aplicação foi criada, editada e teve o segredo trocado", async () => {
+    const { cabecalhos } = await sessaoOperador();
+    const { corpo } = await criarPeloPainel(cabecalhos, { nome: "Cliente auditado" });
+    const { id, clientId } = corpo.aplicacao;
+    await chamar(`/api/auth/aplicacoes/${id}`, cabecalhos, "PATCH", { nome: "Cliente auditado 2" });
+    await chamar(`/api/auth/aplicacoes/${id}/segredo`, cabecalhos, "POST");
+
+    const eventos = await prisma.logAuditoria.findMany({
+      where: { alvo: { startsWith: `aplicacao:${clientId}` } },
+      orderBy: { criadoEm: "asc" },
+      select: { evento: true, alvo: true, autorEmail: true },
+    });
+    expect(eventos.map((e) => e.evento)).toEqual([
+      "aplicacao_criada",
+      "aplicacao_atualizada",
+      "segredo_aplicacao_rotacionado",
+    ]);
+    expect(eventos[0].alvo).toBe(`aplicacao:${clientId} (Cliente auditado)`);
+    expect(eventos[1].alvo).toBe(`aplicacao:${clientId} (Cliente auditado 2)`);
+
+    const painel = await (await chamar("/api/auth/auditoria?evento=aplicacao_criada", cabecalhos)).json();
+    expect(painel.registros.some((r: { alvo: string | null }) => r.alvo?.startsWith(`aplicacao:${clientId}`))).toBe(true);
+  });
+
   it("recusa trocar o RP ID quando já existem passkeys registradas", async () => {
     const { cabecalhos } = await sessaoOperador();
     const { corpo } = await criarPeloPainel(cabecalhos, {

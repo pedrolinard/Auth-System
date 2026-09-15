@@ -467,6 +467,8 @@ export type RegistroAuditoria = {
   // outra conta) — email acima continua sendo o do ALVO.
   autorId: string | null;
   autorEmail: string | null;
+  // O que foi alterado quando não é uma conta (ex.: qual aplicação).
+  alvo: string | null;
 };
 
 export async function listarAuditoria(filtros?: {

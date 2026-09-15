@@ -131,10 +131,12 @@ feito — nesse caso nada muda em produção, é só voltar ao passo 1.
 - [ ] tela de login com MFA mostra "Perdi o autenticador — usar um código de backup"
 - [ ] Vercel → `auth-gateway` → Settings → Cron Jobs lista `/api/cron/limpar-tokens`
 
-> A partir do merge, o workflow **Monitor de saúde** roda a cada 15 minutos.
-> Até o passo 4 (deploy do Django), o passo `/api/dominio/saude` dele **falha e
-> o GitHub manda e-mail**: é esperado. Faça o passo 4 logo em seguida para não
-> acumular alertas.
+> **O workflow Monitor de saúde está DESATIVADO no GitHub** desde 2026-09-15:
+> a `main` chegou ao GitHub antes do deploy (barrado pelo portão, faltava o
+> passo 1), e ele passaria a falhar e mandar e-mail a cada 15 minutos com a
+> produção ainda no código antigo. **Reative depois do passo 4**:
+> `gh workflow enable "Monitor de saúde (produção)"` (ou GitHub → Actions →
+> Monitor de saúde → Enable workflow).
 
 ## 3. Sincronizar suspensões — logo depois do deploy
 
@@ -173,7 +175,8 @@ O script sai com erro se o banco não estiver em dia — é o portão que faltav
 
 - [ ] `GET https://auth-gateway-django.vercel.app/api/dominio/saude` → `200`
 - [ ] tela de **Projetos** no painel carrega e cria um projeto
-- [ ] GitHub → Actions → **Monitor de saúde** → *Run workflow*: os dois passos verdes
+- [ ] Reativar o workflow **Monitor de saúde** (ver o aviso no passo 2) e rodar
+      *Run workflow*: os dois passos verdes
 
 ## 5. Depois
 
