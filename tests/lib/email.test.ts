@@ -150,8 +150,9 @@ describe("Notificações de segurança por e-mail (src/lib/email.ts)", () => {
     expect(html).toContain("ainda não verificou este aplicativo");
   });
 
-  it("cota de e-mails por hora da aplicação não aprovada: o que passa dela não sai", async () => {
-    const { enviarEmailMfaAtivado, COTA_EMAIL_POR_HORA } = await carregarEmailComResendConfigurado();
+  it("cota de e-mails a endereços escolhidos por quem pede: o que passa dela não sai, alerta de segurança sai", async () => {
+    const { enviarEmailVerificacao, enviarEmailSenhaAlterada, COTA_EMAIL_POR_HORA } =
+      await carregarEmailComResendConfigurado();
     const marca = {
       aplicacaoId: `app-email-cota-${Date.now()}`,
       verificada: false,
@@ -160,9 +161,13 @@ describe("Notificações de segurança por e-mail (src/lib/email.ts)", () => {
       logoUrl: null,
     };
     for (let i = 0; i < COTA_EMAIL_POR_HORA.naoVerificada + 5; i++) {
-      await enviarEmailMfaAtivado(`usuario${i}@teste.local`, marca);
+      await enviarEmailVerificacao(`usuario${i}@teste.local`, "https://provedor/verificar", marca);
     }
     expect(enviarMock).toHaveBeenCalledTimes(COTA_EMAIL_POR_HORA.naoVerificada);
+
+    // Com a cota esgotada, o aviso de segurança da conta continua saindo.
+    await enviarEmailSenhaAlterada("dono@teste.local", marca);
+    expect(enviarMock).toHaveBeenCalledTimes(COTA_EMAIL_POR_HORA.naoVerificada + 1);
   });
 
   it("sem marca (aplicação padrão): assunto e remetente de sempre", async () => {

@@ -101,11 +101,18 @@ async function enviar(dados: {
   // O que aparece no console em dev e nos logs de falha.
   descricao: string;
   logDev?: string;
+  // Endereço que QUEM FAZ A REQUISIÇÃO escolhe (verificação, redefinição,
+  // convite, confirmação de troca de e-mail, aviso de cadastro existente): é
+  // o que dá pra usar pra mandar e-mail a terceiros, então conta na cota.
+  // Os alertas de segurança vão pro dono da conta e nascem de eventos dela —
+  // ficam FORA da cota, senão quem gastasse a cota com cadastros falsos
+  // calaria "sua senha foi alterada" e "reuso de token detectado".
+  contaNaCota?: boolean;
 }) {
   const { destinatario, assunto, corpoHtml, marca, descricao } = dados;
 
   try {
-    if (marca && !(await dentroDaCota(marca))) {
+    if (marca && dados.contaNaCota && !(await dentroDaCota(marca))) {
       console.warn(`Cota de e-mails da aplicação ${marca.aplicacaoId} esgotada: ${descricao} não enviado.`);
       return;
     }
@@ -145,6 +152,7 @@ export async function enviarEmailVerificacao(destinatario: string, link: string,
     destinatario,
     marca,
     descricao: "verificação de e-mail",
+    contaNaCota: true,
     logDev: `Link de verificação de e-mail: ${link}`,
     assunto: "Confirme seu e-mail",
     corpoHtml: `
@@ -160,6 +168,7 @@ export async function enviarEmailRedefinicaoSenha(destinatario: string, link: st
     destinatario,
     marca,
     descricao: "redefinição de senha",
+    contaNaCota: true,
     logDev: `Link de redefinição de senha: ${link}`,
     assunto: "Redefinição de senha",
     corpoHtml: `
@@ -182,6 +191,7 @@ export async function enviarEmailConviteOrganizacao(
     destinatario,
     marca,
     descricao: "convite de organização",
+    contaNaCota: true,
     logDev: `Convite de ${dados.convidadoPorNome} para entrar em "${dados.organizacaoNome}": ${link}`,
     // Assunto não é HTML: vai o nome cru. Escapado, um "&" no nome da
     // organização aparecia como "&amp;" na caixa de entrada.
@@ -293,6 +303,7 @@ export async function enviarEmailConfirmacaoAlteracaoEmail(
     destinatario,
     marca,
     descricao: "confirmação de alteração de e-mail",
+    contaNaCota: true,
     logDev: `Link de confirmação de alteração de e-mail: ${link}`,
     assunto: "Confirme seu novo e-mail",
     corpoHtml: `
@@ -423,6 +434,7 @@ export async function enviarEmailCadastroComContaExistente(
     destinatario,
     marca,
     descricao: "cadastro com conta existente",
+    contaNaCota: true,
     logDev: `Aviso de cadastro com conta existente: ${links.login} | ${links.esqueciSenha}`,
     assunto: "Tentaram criar uma conta com o seu e-mail",
     corpoHtml: `
