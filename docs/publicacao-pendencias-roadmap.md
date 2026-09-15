@@ -3,6 +3,15 @@
 Passo a passo para levar esta branch a produção sem derrubar nada. **A ordem
 importa.** Cada passo diz como verificar antes de seguir.
 
+> **Duas publicações, cada uma com as suas migrations.**
+> - **Publicação 1** (passos 0 a 5 abaixo): a `main` em **`98b946c`**, que já
+>   está no GitHub. O deploy foi barrado pelo portão em 2026-09-15 porque o
+>   passo 1 ainda não tinha rodado. Depois do passo 1, basta refazer o deploy
+>   de produção desse commit.
+> - **Publicação 2** (seção no fim deste arquivo): os commits da branch
+>   **depois** de `98b946c`. As migrations dela só podem rodar depois que a
+>   publicação 1 estiver no ar.
+
 Resumo do que sobe: suspensão por organização, cadastro sem enumeração, CSP com
 nonce, gestão de aplicações, pente fino (correções de segurança e bugs),
 autenticação da aplicação cliente + CORS, SDK, e-mails com marca, endpoints de
@@ -18,7 +27,7 @@ saúde (GitHub Actions), suporte opcional a `DATABASE_CA_CERT` e
 carregamento no painel. Nenhuma migration a mais, nenhuma variável de ambiente
 obrigatória a mais.
 
-Três migrations novas no Next.js, **todas aditivas** (o código atual em produção
+Publicação 1: três migrations novas no Next.js, **todas aditivas** (o código atual em produção
 ignora as colunas novas): `20260914120000_suspensao_por_membro`,
 `20260915090000_motivo_revogacao`, `20260915100000_marca_aplicacao`. Nenhuma
 migration nova no Django.
@@ -197,3 +206,31 @@ O script sai com erro se o banco não estiver em dia — é o portão que faltav
 - **Clientes externos:** ainda não existe nenhum integrado. A exigência de
   origem ou client secret só vale para aplicações clientes; a aplicação padrão
   (o próprio painel) segue a regra anterior.
+
+---
+
+# Publicação 2 — commits depois de `98b946c`
+
+**Só depois que a publicação 1 estiver no ar.** Esta seção cresce a cada
+commit com migration; confira o commit final antes de rodar.
+
+## 2.1 Migrations no banco de produção (SQL Editor)
+
+Todas aditivas. Rode o bloco inteiro; ele é idempotente.
+
+```sql
+-- 20260916090000_alvo_auditoria
+ALTER TABLE "logs_auditoria" ADD COLUMN IF NOT EXISTS "alvo" TEXT;
+
+-- Registro pro Prisma considerar aplicadas
+INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
+SELECT gen_random_uuid()::text, v.checksum, now(), v.nome, NULL, NULL, now(), 1
+FROM (VALUES
+  ('20260916090000_alvo_auditoria', 'e7cc2f97b097871ffa908b8acf0bfd9bec674757579005ecea93bb8b37e1872a')
+) AS v(nome, checksum)
+WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = v.nome);
+```
+
+## 2.2 Publicar
+
+Merge da branch em `main`, push, e deploy do Django como no passo 4.
