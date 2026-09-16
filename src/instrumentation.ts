@@ -45,7 +45,9 @@ export const onRequestError: Instrumentation.onRequestError = async (
 
   const { rollbarServidor } = await import("@/lib/rollbarServidor");
   rollbarServidor.error(erro as Error, {
-    path: requisicao.path,
+    // Sem a query string: páginas como /redefinir-senha e /verificar-email
+    // recebem o token nela, e ele não pode ir parar num serviço de terceiros.
+    path: requisicao.path.split("?")[0],
     method: requisicao.method,
     routePath: contexto.routePath,
     routeType: contexto.routeType,

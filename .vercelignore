@@ -28,3 +28,9 @@
 
 # vercel
 /.vercel
+
+# segredos locais (.env.local tem credenciais reais; o build da Vercel leria
+# qualquer variável que faltasse no painel a partir desses arquivos)
+.env
+.env.*
+!.env.example
