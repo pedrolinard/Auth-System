@@ -216,7 +216,9 @@ acontece com as contas da sua aplicação. Só aplicações **aprovadas** recebe
 Cada entrega é um `POST` JSON: `{ "id", "evento", "criadoEm", "dados" }`. O
 `id` é o mesmo em todas as tentativas da entrega: use-o pra ignorar
 duplicatas. Responda `2xx` rápido (em até 10 s); qualquer outra coisa conta
-como falha e o provedor tenta de novo em 1 min, 5 min, 30 min, 2 h e 12 h.
+como falha e o provedor tenta de novo depois de pelo menos 1 min, 5 min,
+30 min, 2 h e 12 h (esperas mínimas: a nova tentativa sai na próxima passada
+da fila, que roda a cada 15 min).
 Cinco entregas seguidas sem sucesso desligam o webhook (religue no painel).
 
 **Confira a assinatura em toda entrega** (o segredo `whsec_...` aparece uma vez

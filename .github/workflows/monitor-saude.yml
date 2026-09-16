@@ -29,3 +29,18 @@ jobs:
       - name: Django — /api/dominio/saude
         if: always()
         run: curl --fail-with-body --silent --show-error --max-time 30 --retry 2 --retry-delay 10 https://auth-gateway-kappa.vercel.app/api/dominio/saude
+      # Carona no mesmo agendamento: anda a fila de retentativas de webhooks
+      # (a Vercel Hobby só roda o job diário). Sem o segredo CRON_SECRET no
+      # repositório, o passo só avisa e não falha o monitor.
+      - name: Fila de webhooks
+        if: always()
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::notice::Segredo CRON_SECRET ausente; fila de webhooks fica só com o job diário."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --max-time 60 -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            https://auth-gateway-kappa.vercel.app/api/cron/webhooks

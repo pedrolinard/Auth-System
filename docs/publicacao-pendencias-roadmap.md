@@ -350,7 +350,12 @@ origem do provedor (mesmo host da requisição), chamadas sem `Origin` e as
 origens declaradas. O painel no próprio domínio segue funcionando; um front em
 OUTRO domínio falando com a aplicação padrão passa a precisar estar nas origens.
 
+**Fila de webhooks:** crie o segredo `CRON_SECRET` no GitHub com o mesmo valor
+da produção (`docs/operacao.md`, item 9). Sem ele nada quebra, só as
+retentativas ficam mais lentas.
+
 **Verificar:**
+- [ ] Monitor de saúde: passo *Fila de webhooks* verde, sem aviso de segredo ausente.
 - [ ] `SELECT count(*), max(tentativas) FROM exclusoes_dominio_pendentes;` no dia
       seguinte: fila vazia (ou só itens de hoje).
 - [ ] login no painel funciona (a regra de origem da aplicação padrão mudou).

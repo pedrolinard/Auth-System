@@ -176,6 +176,17 @@ agendava a rota e essas tabelas só cresciam.
 **Pronto quando:** Vercel → projeto `auth-gateway` → Settings → Cron Jobs mostra
 a rota, e a execução do dia aparece nos logs com status 200.
 
+**Fila de webhooks.** O plano Hobby da Vercel só agenda uma vez por dia, e uma
+entrega de webhook que falhou esperaria até o job seguinte. Por isso o workflow
+**Monitor de saúde** (a cada 15 min) também chama `POST /api/cron/webhooks`.
+Pra isso, o repositório precisa do segredo `CRON_SECRET` com o **mesmo valor**
+da variável de produção: GitHub → Settings → Secrets and variables → Actions →
+*New repository secret* (ou `gh secret set CRON_SECRET`). Sem o segredo, o
+passo só avisa e a fila anda no job diário e de carona em eventos novos.
+
+**Pronto quando:** a execução do Monitor de saúde mostra o passo *Fila de
+webhooks* verde, sem o aviso de segredo ausente.
+
 ## 10. Pentest externo
 
 Um sistema de autenticação é exatamente o que o comprador vai perguntar na

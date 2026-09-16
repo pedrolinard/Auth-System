@@ -96,33 +96,50 @@ export async function postarParaUrlExterna(
 
   const modulo = url.protocol === "https:" ? https : http;
   return new Promise<ResultadoPost>((resolve) => {
+    let concluido = false;
+    const concluir = (resultado: ResultadoPost) => {
+      if (concluido) return;
+      concluido = true;
+      clearTimeout(prazo);
+      resolve(resultado);
+    };
     const requisicao = modulo.request(
       url,
       {
         method: "POST",
         headers: { ...cabecalhos, "Content-Length": Buffer.byteLength(corpo).toString() },
         lookup: lookupFixo,
-        timeout: tempoLimiteMs,
       },
       (resposta) => {
         let lidos = 0;
+        let estourou = false;
         resposta.on("data", (pedaco: Buffer) => {
           lidos += pedaco.length;
-          if (lidos > 64 * 1024) resposta.destroy();
+          if (lidos > 64 * 1024) {
+            estourou = true;
+            resposta.destroy();
+          }
         });
         const status = resposta.statusCode ?? null;
-        const concluir = () =>
-          resolve({ ok: status !== null && status >= 200 && status < 300, status, erro: null });
-        resposta.on("end", concluir);
-        resposta.on("close", concluir);
-        resposta.on("error", concluir);
+        const fim = () =>
+          concluir({
+            ok: !estourou && status !== null && status >= 200 && status < 300,
+            status,
+            erro: estourou ? "Resposta grande demais." : null,
+          });
+        resposta.on("end", fim);
+        resposta.on("close", fim);
+        resposta.on("error", fim);
       },
     );
-    requisicao.on("timeout", () => {
+    // Prazo ABSOLUTO (o `timeout` do http.request só conta tempo ocioso: um
+    // destino que manda 1 byte a cada poucos segundos seguraria a conexão
+    // pra sempre e travaria o lote inteiro).
+    const prazo = setTimeout(() => {
       requisicao.destroy();
-      resolve({ ok: false, status: null, erro: "Tempo esgotado." });
-    });
-    requisicao.on("error", (erro) => resolve({ ok: false, status: null, erro: erro.message.slice(0, 200) }));
+      concluir({ ok: false, status: null, erro: "Tempo esgotado." });
+    }, tempoLimiteMs);
+    requisicao.on("error", (erro) => concluir({ ok: false, status: null, erro: erro.message.slice(0, 200) }));
     requisicao.end(corpo);
   });
 }

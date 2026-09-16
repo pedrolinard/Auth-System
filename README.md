@@ -270,6 +270,7 @@ produção nos dois projetos Vercel (Next.js e Django).
 | PATCH  | `/api/auth/aplicacoes/[id]`| Edita nome/origens/RP ID, ativa ou desativa (desativar derruba as sessões dela) |
 | POST   | `/api/auth/aplicacoes/[id]/segredo` | Gera um `clientSecret` novo e invalida o anterior na hora       |
 | POST   | `/api/cron/limpar-tokens`  | Remove tokens expirados/revogados antigos; exige `Authorization: Bearer CRON_SECRET` |
+| POST   | `/api/cron/webhooks`       | Só anda a fila de retentativas de webhooks (pra agendador mais frequente que o job diário); exige `Authorization: Bearer CRON_SECRET` |
 
 As rotas `/api/dominio/*` (`/api/dominio/projetos`, `/api/dominio/tarefas`)
 não ficam em `src/app/api/` — são servidas pelo serviço Django

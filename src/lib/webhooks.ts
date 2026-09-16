@@ -10,8 +10,10 @@ import { postarParaUrlExterna } from "@/lib/requisicaoExterna";
 
 // Webhooks: o provedor avisa o sistema de uma aplicação cliente quando algo
 // acontece com as contas dela. Cada evento vira uma EntregaWebhook persistida
-// ANTES de enviar; o envio sai depois da resposta (after) e, se falhar, o job
-// de limpeza tenta de novo com espera crescente.
+// ANTES de enviar; o envio sai depois da resposta (after) e, se falhar, volta
+// pra fila com espera crescente. A fila anda de carona no after() de qualquer
+// evento novo e no job diário: as esperas abaixo são o MÍNIMO, e numa
+// aplicação sem movimento a retentativa pode esperar até o próximo job.
 //
 // Assinatura, no formato que os clientes já conhecem de outros provedores:
 //   x-auth-gateway-assinatura: t=<unix>,v1=<hex HMAC-SHA256(segredo, "<t>.<corpo>")>
@@ -63,6 +65,10 @@ export async function emitirEventoWebhook(
           // Montado aqui, campo a campo pelo chamador: nada de objeto do banco
           // inteiro (hash de senha, segredo de MFA) indo pra fora.
           payload: { evento, criadoEm: criadoEm.toISOString(), dados } as object,
+          // Relógio da aplicação (não o DEFAULT do banco): o arrendamento
+          // compara com `new Date()` daqui, e uma diferença de relógio entre
+          // os dois faria a entrega recém-criada parecer "do futuro".
+          proximaTentativaEm: criadoEm,
         },
         select: { id: true },
       });
@@ -76,21 +82,43 @@ export async function emitirEventoWebhook(
 
 function agendar(ids: string[]) {
   try {
-    after(() => processarEntregasWebhook(ids));
+    after(async () => {
+      await processarEntregasWebhook(ids);
+      // Aproveita a carona pra tentar de novo um lote pequeno de entregas que
+      // falharam e já passaram do horário: sem isso, as retentativas só
+      // rodariam no job diário (a Vercel Hobby não agenda com mais
+      // frequência) e uma falha passageira esperaria até um dia.
+      await processarEntregasWebhook(undefined, { lote: 10, orcamentoMs: 20_000 });
+    });
   } catch {
-    // Fora de uma requisição (script, teste de lib): o job de limpeza envia.
+    // Fora de uma requisição (script, teste de lib): o job envia.
   }
 }
 
-async function entregar(id: string): Promise<boolean> {
+// Quanto tempo uma entrega fica "arrendada" por quem vai enviá-la. Dentro
+// disso, o after() de outro evento, o job e o botão de teste não pegam a mesma
+// entrega — sem a trava, os três podiam enviar em dobro e perder incremento de
+// tentativas. Maior que o prazo de um envio (10 s) com folga.
+const ARRENDAMENTO_MS = 2 * 60 * 1000;
+
+type ResultadoEntrega = "entregue" | "falha" | "ignorada";
+
+async function entregar(id: string): Promise<ResultadoEntrega> {
+  const agora = new Date();
+  const { count } = await prisma.entregaWebhook.updateMany({
+    where: { id, entregueEm: null, desistiuEm: null, proximaTentativaEm: { lte: agora } },
+    data: { proximaTentativaEm: new Date(agora.getTime() + ARRENDAMENTO_MS) },
+  });
+  if (count !== 1) return "ignorada"; // já entregue, desistida ou com outro processo
+
   const entrega = await prisma.entregaWebhook.findUnique({
     where: { id },
     include: { webhook: { select: { url: true, segredoCifrado: true, ativo: true } } },
   });
-  if (!entrega || entrega.entregueEm || entrega.desistiuEm) return true;
+  if (!entrega) return "ignorada";
   if (!entrega.webhook.ativo) {
     await prisma.entregaWebhook.update({ where: { id }, data: { desistiuEm: new Date(), ultimoErro: "Webhook desativado." } });
-    return false;
+    return "falha";
   }
 
   const corpo = JSON.stringify({ id: entrega.id, ...(entrega.payload as object) });
@@ -109,7 +137,7 @@ async function entregar(id: string): Promise<boolean> {
       where: { id },
       data: { tentativas, entregueEm: new Date(), ultimoStatus: resultado.status, ultimoErro: null },
     });
-    return true;
+    return "entregue";
   }
   const desistir = tentativas >= MAX_TENTATIVAS;
   await prisma.entregaWebhook.update({
@@ -124,7 +152,7 @@ async function entregar(id: string): Promise<boolean> {
     },
   });
   if (desistir) await desligarSeFalhandoSempre(entrega.webhookId);
-  return false;
+  return "falha";
 }
 
 // Tantas entregas SEGUIDAS desistidas (cada uma já com todas as tentativas):
@@ -152,17 +180,23 @@ async function desligarSeFalhandoSempre(webhookId: string) {
 
 /**
  * Envia as entregas indicadas ou, sem lista, as pendentes cujo horário de
- * tentativa já chegou (job de limpeza). Sequencial e com lote limitado: um
- * sistema de cliente lento não pode prender a função inteira.
+ * tentativa já chegou. Sequencial, com lote e orçamento de tempo: cada envio
+ * tem prazo absoluto de 10 s, e o lote para quando o orçamento acaba, pra um
+ * sistema de cliente lento não prender a função até ela estourar.
  */
-export async function processarEntregasWebhook(ids?: string[]): Promise<{ entregues: number; falhas: number }> {
+export async function processarEntregasWebhook(
+  ids?: string[],
+  opcoes: { lote?: number; orcamentoMs?: number } = {},
+): Promise<{ entregues: number; falhas: number }> {
+  const inicio = Date.now();
+  const orcamentoMs = opcoes.orcamentoMs ?? 60_000;
   const pendentes = ids
     ? ids
     : (
         await prisma.entregaWebhook.findMany({
           where: { entregueEm: null, desistiuEm: null, proximaTentativaEm: { lte: new Date() } },
           orderBy: { proximaTentativaEm: "asc" },
-          take: 50,
+          take: opcoes.lote ?? 50,
           select: { id: true },
         })
       ).map((e) => e.id);
@@ -170,9 +204,11 @@ export async function processarEntregasWebhook(ids?: string[]): Promise<{ entreg
   let entregues = 0;
   let falhas = 0;
   for (const id of pendentes) {
+    if (Date.now() - inicio > orcamentoMs) break;
     try {
-      if (await entregar(id)) entregues++;
-      else falhas++;
+      const resultado = await entregar(id);
+      if (resultado === "entregue") entregues++;
+      else if (resultado === "falha") falhas++;
     } catch (erro) {
       falhas++;
       console.error(`Falha ao entregar webhook ${id}:`, erro);

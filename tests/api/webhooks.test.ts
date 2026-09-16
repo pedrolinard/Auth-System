@@ -20,6 +20,7 @@ type Recebido = { cabecalhos: Record<string, string | string[] | undefined>; cor
 let receptor: Server;
 let urlReceptor: string;
 let statusReceptor = 200;
+let atrasoReceptorMs = 0;
 const recebidos: Recebido[] = [];
 
 beforeAll(async () => {
@@ -28,8 +29,10 @@ beforeAll(async () => {
     req.on("data", (pedaco) => (corpo += pedaco));
     req.on("end", () => {
       recebidos.push({ cabecalhos: req.headers, corpo });
-      res.writeHead(statusReceptor);
-      res.end("ok");
+      setTimeout(() => {
+        res.writeHead(statusReceptor);
+        res.end("ok");
+      }, atrasoReceptorMs);
     });
   });
   await new Promise<void>((resolve) => receptor.listen(0, "127.0.0.1", resolve));
@@ -140,6 +143,42 @@ describe("Webhooks", () => {
     } finally {
       statusReceptor = 200;
     }
+  });
+
+  it("retentativa: job e fila em paralelo enviam a entrega uma vez só", async () => {
+    const operador = await sessaoOperador();
+    const { webhook } = await novaAplicacaoComWebhook(operador);
+    // Entrega que já falhou uma vez e cujo horário de nova tentativa chegou.
+    const entrega = await prisma.entregaWebhook.create({
+      data: {
+        webhookId: webhook.id,
+        evento: "usuario.criado",
+        payload: { evento: "usuario.criado", criadoEm: new Date().toISOString(), dados: {} },
+        tentativas: 1,
+        ultimoStatus: 500,
+        proximaTentativaEm: new Date(Date.now() - 60_000),
+      },
+    });
+    recebidos.length = 0;
+    // Destino lento: as três chamadas se sobrepõem enquanto a primeira envia.
+    atrasoReceptorMs = 1500;
+    try {
+      const segredo = { Authorization: `Bearer ${process.env.CRON_SECRET}` };
+      const respostas = await Promise.all([
+        fetch(`${BASE_URL}/api/cron/webhooks`, { method: "POST", headers: segredo }),
+        fetch(`${BASE_URL}/api/cron/webhooks`, { method: "POST", headers: segredo }),
+        fetch(`${BASE_URL}/api/cron/limpar-tokens`, { method: "POST", headers: segredo }),
+      ]);
+      expect(respostas.map((r) => r.status)).toEqual([200, 200, 200]);
+    } finally {
+      atrasoReceptorMs = 0;
+    }
+
+    const paraEsta = recebidos.filter((r) => r.cabecalhos["x-auth-gateway-entrega"] === entrega.id);
+    expect(paraEsta).toHaveLength(1);
+    const depois = await prisma.entregaWebhook.findUniqueOrThrow({ where: { id: entrega.id } });
+    expect(depois.entregueEm).not.toBeNull();
+    expect(depois.tentativas).toBe(2);
   });
 
   it("aplicação não aprovada não recebe eventos nem pode testar", async () => {

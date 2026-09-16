@@ -43,11 +43,14 @@ export async function POST(
   }
   await registrarTentativaIp({ ip: chave, evento: "webhook_teste", janelaMs: JANELA_TESTES_MS });
 
+  const agora = new Date();
   const entrega = await prisma.entregaWebhook.create({
     data: {
       webhookId: webhook.id,
       evento: "webhook.teste",
-      payload: { evento: "webhook.teste", criadoEm: new Date().toISOString(), dados: {} },
+      payload: { evento: "webhook.teste", criadoEm: agora.toISOString(), dados: {} },
+      // Relógio da aplicação, o mesmo que o arrendamento compara.
+      proximaTentativaEm: agora,
     },
     select: { id: true },
   });
