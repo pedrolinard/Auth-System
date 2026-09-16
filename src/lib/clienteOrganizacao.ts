@@ -18,6 +18,14 @@ export type ConviteOrganizacao = {
   criadoEm: string;
 };
 
+export type ConviteRecebido = {
+  id: string;
+  papel: "dono" | "admin" | "membro";
+  criadoEm: string;
+  organizacaoNome: string;
+  convidadoPorNome: string | null;
+};
+
 // Mesmo padrão de requisicaoAutenticada em clienteDominio.ts — CSRF
 // automático em mutações, uma tentativa de renovação em 401.
 async function requisicaoAutenticada(
@@ -100,6 +108,35 @@ export async function revogarConvite(id: string) {
   });
   const corpo = await lerCorpo(resposta);
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao cancelar convite."));
+}
+
+export async function listarConvitesRecebidos(): Promise<{
+  convites: ConviteRecebido[];
+  emailVerificado: boolean;
+}> {
+  const resposta = await requisicaoAutenticada("/api/auth/organizacoes/convites-recebidos");
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao carregar convites recebidos."));
+  return { convites: corpo.convites, emailVerificado: corpo.emailVerificado };
+}
+
+// Aceitar reemite a sessão já dentro da organização: recarregar a página é
+// responsabilidade de quem chama, como em entrarNaOrganizacao.
+export async function aceitarConviteRecebido(id: string) {
+  const resposta = await requisicaoAutenticada(`/api/auth/organizacoes/convites-recebidos/${id}`, {
+    method: "POST",
+  });
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao aceitar convite."));
+  return corpo;
+}
+
+export async function recusarConviteRecebido(id: string) {
+  const resposta = await requisicaoAutenticada(`/api/auth/organizacoes/convites-recebidos/${id}`, {
+    method: "DELETE",
+  });
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao recusar convite."));
 }
 
 export async function aceitarConvite(token: string) {

@@ -522,3 +522,114 @@ describe("Convites de organização", () => {
     expect(resposta.status).toBe(403);
   });
 });
+
+describe("Convites recebidos no painel", () => {
+  afterAll(async () => {
+    await apagarUsuariosTeste(emailsCriados);
+  });
+
+  const ROTA = `${BASE_URL}/api/auth/organizacoes/convites-recebidos`;
+
+  // Dono com organização + convidado já cadastrado, com o convite no banco.
+  async function cenario(prefixo: string, { verificado = true, diasAtras = 0 } = {}) {
+    const dono = await criarUsuarioTeste(`${prefixo}-dono`);
+    const convidado = await criarUsuarioTeste(`${prefixo}-alvo`);
+    emailsCriados.push(dono.email, convidado.email);
+    const { organizacaoId, usuario: donoRegistro } = await obterOrganizacaoDoUsuario(dono.email);
+    await prisma.organizacao.update({ where: { id: organizacaoId }, data: { nome: `Org de ${prefixo}` } });
+    await prisma.usuario.updateMany({ where: { email: convidado.email }, data: { emailVerificado: verificado } });
+    const convite = await prisma.conviteOrganizacao.create({
+      data: {
+        organizacaoId,
+        email: convidado.email,
+        papel: "admin",
+        criadoPorId: donoRegistro.id,
+        criadoEm: new Date(Date.now() - diasAtras * 24 * 60 * 60 * 1000),
+      },
+    });
+    const { cabecalhos } = await loginTeste(convidado.email, convidado.senha);
+    return { dono, convidado, organizacaoId, convite, cabecalhos };
+  }
+
+  it("quem tem conta verificada vê o convite no painel, aceita e vira membro", async () => {
+    const { convidado, organizacaoId, convite, cabecalhos } = await cenario("recebido-aceitar");
+
+    const lista = await fetch(ROTA, { headers: cabecalhos });
+    expect(lista.status).toBe(200);
+    const corpo = await lista.json();
+    expect(corpo.emailVerificado).toBe(true);
+    expect(corpo.convites).toEqual([
+      expect.objectContaining({
+        id: convite.id,
+        papel: "admin",
+        organizacaoNome: "Org de recebido-aceitar",
+        convidadoPorNome: "Usuário de teste",
+      }),
+    ]);
+
+    const aceitar = await fetch(`${ROTA}/${convite.id}`, { method: "POST", headers: cabecalhos });
+    expect(aceitar.status).toBe(200);
+    const membro = await prisma.membro.findFirst({ where: { organizacaoId, usuario: { email: convidado.email } } });
+    expect(membro?.papel).toBe("admin");
+
+    const depois = await (await fetch(ROTA, { headers: cabecalhos })).json();
+    expect(depois.convites).toEqual([]);
+    expect((await fetch(`${ROTA}/${convite.id}`, { method: "POST", headers: cabecalhos })).status).toBe(404);
+  });
+
+  it("e-mail não verificado não vê nem aceita: a conta pode ter sido criada com o e-mail de outra pessoa", async () => {
+    const { convidado, organizacaoId, convite, cabecalhos } = await cenario("recebido-nao-verificado", { verificado: false });
+
+    const corpo = await (await fetch(ROTA, { headers: cabecalhos })).json();
+    expect(corpo).toEqual({ convites: [], emailVerificado: false });
+
+    expect((await fetch(`${ROTA}/${convite.id}`, { method: "POST", headers: cabecalhos })).status).toBe(403);
+    expect((await fetch(`${ROTA}/${convite.id}`, { method: "DELETE", headers: cabecalhos })).status).toBe(403);
+    expect(await prisma.membro.count({ where: { organizacaoId, usuario: { email: convidado.email } } })).toBe(0);
+    expect(await prisma.conviteOrganizacao.count({ where: { id: convite.id } })).toBe(1);
+  });
+
+  it("outra conta não vê, não aceita e não recusa o convite de ninguém (404)", async () => {
+    const { organizacaoId, convite } = await cenario("recebido-alheio");
+    const intruso = await criarUsuarioTeste("recebido-alheio-intruso");
+    emailsCriados.push(intruso.email);
+    await prisma.usuario.updateMany({ where: { email: intruso.email }, data: { emailVerificado: true } });
+    const { cabecalhos } = await loginTeste(intruso.email, intruso.senha);
+
+    expect((await (await fetch(ROTA, { headers: cabecalhos })).json()).convites).toEqual([]);
+    expect((await fetch(`${ROTA}/${convite.id}`, { method: "POST", headers: cabecalhos })).status).toBe(404);
+    expect((await fetch(`${ROTA}/${convite.id}`, { method: "DELETE", headers: cabecalhos })).status).toBe(404);
+    expect(await prisma.membro.count({ where: { organizacaoId, usuario: { email: intruso.email } } })).toBe(0);
+    expect(await prisma.conviteOrganizacao.count({ where: { id: convite.id } })).toBe(1);
+  });
+
+  it("recusar apaga o convite e o link do e-mail deixa de funcionar", async () => {
+    const { convidado, organizacaoId, convite, cabecalhos } = await cenario("recebido-recusar");
+    const token = await gerarTokenConviteOrganizacao({
+      conviteId: convite.id,
+      organizacaoId,
+      email: convidado.email,
+      papel: "admin",
+    });
+
+    expect((await fetch(`${ROTA}/${convite.id}`, { method: "DELETE", headers: cabecalhos })).status).toBe(200);
+    expect(await prisma.conviteOrganizacao.count({ where: { id: convite.id } })).toBe(0);
+
+    const peloLink = await fetch(`${BASE_URL}/api/auth/organizacoes/aceitar-convite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...cabecalhos },
+      body: JSON.stringify({ token }),
+    });
+    expect(peloLink.status).toBe(400);
+  });
+
+  it("convite com mais de 7 dias (link vencido) não aparece nem pode ser aceito", async () => {
+    const { convite, cabecalhos } = await cenario("recebido-vencido", { diasAtras: 8 });
+    expect((await (await fetch(ROTA, { headers: cabecalhos })).json()).convites).toEqual([]);
+    expect((await fetch(`${ROTA}/${convite.id}`, { method: "POST", headers: cabecalhos })).status).toBe(404);
+  });
+
+  it("sem sessão, 401", async () => {
+    expect((await fetch(ROTA)).status).toBe(401);
+  });
+});

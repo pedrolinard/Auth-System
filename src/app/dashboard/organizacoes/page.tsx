@@ -1,16 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Mail, Plus, X } from "lucide-react";
+import { Building2, Inbox, Mail, Plus, X } from "lucide-react";
 import { usePainelUsuario } from "@/components/painel/usePainelUsuario";
 import {
+  aceitarConviteRecebido,
   criarConvite,
   criarOrganizacao,
   entrarNaOrganizacao,
   listarConvites,
+  listarConvitesRecebidos,
   listarOrganizacoes,
+  recusarConviteRecebido,
   revogarConvite,
   type ConviteOrganizacao,
+  type ConviteRecebido,
   type Organizacao,
 } from "@/lib/clienteOrganizacao";
 import { AvisoErro } from "@/components/ui/AvisoErro";
@@ -38,6 +42,10 @@ export default function PaginaOrganizacoes() {
   const [convidando, setConvidando] = useState(false);
   const [revogandoId, setRevogandoId] = useState<string | null>(null);
 
+  const [recebidos, setRecebidos] = useState<ConviteRecebido[]>([]);
+  const [emailVerificado, setEmailVerificado] = useState(true);
+  const [respondendoId, setRespondendoId] = useState<string | null>(null);
+
   const ehAdminOrganizacao =
     usuario?.papelOrganizacao === "dono" || usuario?.papelOrganizacao === "admin";
 
@@ -62,6 +70,17 @@ export default function PaginaOrganizacoes() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     carregarOrganizacoes();
   }, [carregarOrganizacoes]);
+
+  useEffect(() => {
+    // Convites para o e-mail desta conta: qualquer pessoa pode ter, não só
+    // admin. Falhar aqui não derruba a tela, só não mostra a seção.
+    listarConvitesRecebidos()
+      .then(({ convites: lista, emailVerificado: verificado }) => {
+        setRecebidos(lista);
+        setEmailVerificado(verificado);
+      })
+      .catch(() => setRecebidos([]));
+  }, []);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -118,6 +137,39 @@ export default function PaginaOrganizacoes() {
     }
   }
 
+  async function aoAceitarRecebido(convite: ConviteRecebido) {
+    setRespondendoId(convite.id);
+    try {
+      await aceitarConviteRecebido(convite.id);
+      notificar.sucesso(`Você entrou em ${convite.organizacaoNome}.`);
+      // A sessão já foi reemitida dentro da organização aceita: mesmo motivo
+      // de aoTrocar pra recarregar tudo.
+      window.location.reload();
+    } catch (erroCapturado) {
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra aceitar o convite.",
+      );
+      setRespondendoId(null);
+    }
+  }
+
+  async function aoRecusarRecebido(convite: ConviteRecebido) {
+    setRespondendoId(convite.id);
+    const anteriores = recebidos;
+    setRecebidos((atual) => atual.filter((c) => c.id !== convite.id));
+    try {
+      await recusarConviteRecebido(convite.id);
+      notificar.info(`Convite de ${convite.organizacaoNome} recusado.`);
+    } catch (erroCapturado) {
+      setRecebidos(anteriores);
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra recusar o convite.",
+      );
+    } finally {
+      setRespondendoId(null);
+    }
+  }
+
   async function aoRevogar(convite: ConviteOrganizacao) {
     setRevogandoId(convite.id);
     const anteriores = convites;
@@ -148,6 +200,58 @@ export default function PaginaOrganizacoes() {
         </div>
 
         <AvisoErro>{erro}</AvisoErro>
+
+        {recebidos.length > 0 && (
+          <section className="flex flex-col gap-2.5" aria-labelledby="titulo-convites-recebidos">
+            <h2
+              id="titulo-convites-recebidos"
+              className="flex items-center gap-1.5 text-sm font-medium text-foreground"
+            >
+              <Inbox className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+              Convites recebidos
+            </h2>
+            <ul className="flex flex-col gap-2.5">
+              {recebidos.map((convite) => (
+                <li key={convite.id} className="card-surface flex flex-wrap items-center gap-3 p-4">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-foreground">
+                      {convite.organizacaoNome}
+                    </span>
+                    <span className="block text-xs text-zinc-500 dark:text-zinc-400">
+                      {convite.convidadoPorNome
+                        ? `${convite.convidadoPorNome} convidou você como ${convite.papel}`
+                        : `Convite como ${convite.papel}`}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => aoRecusarRecebido(convite)}
+                      disabled={respondendoId === convite.id}
+                      className="btn-secondary-sm"
+                      aria-label={`Recusar convite de ${convite.organizacaoNome}`}
+                    >
+                      Recusar
+                    </button>
+                    <button
+                      onClick={() => aoAceitarRecebido(convite)}
+                      disabled={respondendoId === convite.id}
+                      className="btn-primary-sm"
+                      aria-label={`Aceitar convite de ${convite.organizacaoNome}`}
+                    >
+                      {respondendoId === convite.id ? "Respondendo..." : "Aceitar"}
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {!emailVerificado && (
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Confirme seu e-mail para ver aqui os convites de organizações enviados para você.
+          </p>
+        )}
 
         {organizacoes === null && <SkeletonLista linhas={2} />}
 
@@ -259,7 +363,7 @@ export default function PaginaOrganizacoes() {
               <EstadoVazio
                 icone={Mail}
                 titulo="Nenhum convite pendente"
-                descricao="Convites enviados e ainda não aceitos aparecem aqui."
+                descricao="Convites que esta organização enviou e ainda não foram aceitos aparecem aqui."
               />
             ) : (
               <ul className="flex flex-col gap-2.5">

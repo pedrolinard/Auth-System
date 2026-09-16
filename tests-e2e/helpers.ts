@@ -48,3 +48,9 @@ export async function apagarUsuarioTeste(email: string) {
     );
   });
 }
+
+export async function marcarEmailVerificado(email: string) {
+  await comConexao((client) =>
+    client.query(`UPDATE usuarios SET "emailVerificado" = true WHERE email = $1`, [email]),
+  );
+}
