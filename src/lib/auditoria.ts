@@ -21,10 +21,13 @@ export async function registrarEvento(dados: {
   organizacaoId?: string;
   // O que foi alterado quando não é uma conta (ver LogAuditoria.alvo).
   alvo?: string;
+  // Sem IP nem navegador: pro evento que registra a exclusão da própria
+  // conta, que não pode trazer de volta o que a exclusão acabou de apagar.
+  semRastro?: boolean;
 }) {
   try {
-    const ip = obterIp(dados.req);
-    const userAgent = dados.req.headers.get("user-agent");
+    const ip = dados.semRastro ? null : obterIp(dados.req);
+    const userAgent = dados.semRastro ? null : dados.req.headers.get("user-agent");
 
     // Uma consulta a mais por evento, por chave primária, dentro de um caminho
     // que já está escrevendo no banco e já é best-effort — barato o bastante

@@ -36,7 +36,11 @@ Não usamos seus dados para publicidade e não os vendemos.
 - Conta e dados de perfil: enquanto a conta existir.
 - Sessões: duram no máximo 30 dias e são apagadas logo depois de expirar, ou
   7 dias depois de encerradas.
-- Registro de segurança: 365 dias.
+- Registro de segurança: 365 dias. Se você excluir a conta, os registros
+  continuam existindo só como eventos e datas: e-mail, endereço IP e
+  navegador são apagados na hora.
+- Avisos enviados ao sistema da empresa dona da aplicação (webhooks): 30
+  dias, e os que têm o seu e-mail são apagados quando você exclui a conta.
 
 ## Com quem compartilhamos
 

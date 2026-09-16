@@ -120,6 +120,68 @@ describe("Autoatendimento LGPD (GET/DELETE /api/auth/minha-conta)", () => {
     expect(loginApagado.status).toBe(401);
   });
 
+  it("excluir a conta tira e-mail, IP e navegador da auditoria e apaga webhooks com o e-mail", async () => {
+    const usuario = await criarUsuarioTeste("minha-conta-anonimiza");
+    emailsCriados.push(usuario.email);
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+    const conta = await prisma.usuario.findFirstOrThrow({ where: { email: usuario.email } });
+    const aplicacaoId = conta.aplicacaoId;
+
+    // Um de cada caso: evento próprio, falha de login só com o e-mail, a
+    // pessoa como alvo de um admin, a pessoa agindo sobre outra conta.
+    const proprio = await prisma.logAuditoria.create({
+      data: { aplicacaoId, usuarioId: conta.id, email: usuario.email, evento: "login_sucesso", ip: "203.0.113.1", userAgent: "navegador-dela" },
+    });
+    const soEmail = await prisma.logAuditoria.create({
+      data: { aplicacaoId, email: usuario.email, evento: "login_falha", ip: "203.0.113.2", userAgent: "navegador-dela" },
+    });
+    const alvo = await prisma.logAuditoria.create({
+      data: { aplicacaoId, usuarioId: conta.id, email: usuario.email, evento: "usuario_suspenso", ip: "198.51.100.9", userAgent: "navegador-do-admin", autorId: "admin-x", autorEmail: "admin@exemplo.com" },
+    });
+    const autora = await prisma.logAuditoria.create({
+      data: { aplicacaoId, usuarioId: "outra-conta", email: "outra@exemplo.com", evento: "usuario_suspenso", ip: "203.0.113.3", userAgent: "navegador-dela", autorId: conta.id, autorEmail: usuario.email },
+    });
+    const outraPessoa = await prisma.logAuditoria.create({
+      data: { aplicacaoId, usuarioId: "outra-conta", email: "outra@exemplo.com", evento: "login_sucesso", ip: "203.0.113.4", userAgent: "outro-navegador" },
+    });
+
+    const webhook = await prisma.webhookAplicacao.create({
+      data: { aplicacaoId, url: "https://exemplo.invalid/hook", segredoCifrado: "x", eventos: [], ativo: false },
+    });
+    try {
+      const comEmail = await prisma.entregaWebhook.create({
+        data: { webhookId: webhook.id, evento: "usuario.criado", payload: { evento: "usuario.criado", dados: { usuario: { id: conta.id, email: usuario.email } } }, entregueEm: new Date() },
+      });
+      const deOutro = await prisma.entregaWebhook.create({
+        data: { webhookId: webhook.id, evento: "usuario.criado", payload: { evento: "usuario.criado", dados: { usuario: { id: "outra-conta", email: "outra@exemplo.com" } } }, entregueEm: new Date() },
+      });
+
+      const resposta = await fetch(`${BASE_URL}/api/auth/minha-conta`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", ...cabecalhos },
+        body: JSON.stringify({ senha: usuario.senha }),
+      });
+      expect(resposta.status).toBe(200);
+
+      const ler = (id: string) => prisma.logAuditoria.findUniqueOrThrow({ where: { id } });
+      expect(await ler(proprio.id)).toMatchObject({ usuarioId: conta.id, email: null, ip: null, userAgent: null, evento: "login_sucesso" });
+      expect(await ler(soEmail.id)).toMatchObject({ email: null, ip: null, userAgent: null });
+      expect(await ler(alvo.id)).toMatchObject({ email: null, ip: "198.51.100.9", userAgent: "navegador-do-admin", autorEmail: "admin@exemplo.com" });
+      expect(await ler(autora.id)).toMatchObject({ autorId: conta.id, autorEmail: null, ip: null, userAgent: null, email: "outra@exemplo.com" });
+      expect(await ler(outraPessoa.id)).toMatchObject({ email: "outra@exemplo.com", ip: "203.0.113.4" });
+
+      const exclusao = await prisma.logAuditoria.findFirstOrThrow({ where: { usuarioId: conta.id, evento: "conta_excluida_pelo_titular" } });
+      expect(exclusao).toMatchObject({ email: null, ip: null, userAgent: null, aplicacaoId });
+      expect(await prisma.logAuditoria.count({ where: { OR: [{ email: usuario.email }, { autorEmail: usuario.email }] } })).toBe(0);
+
+      expect(await prisma.entregaWebhook.findUnique({ where: { id: comEmail.id } })).toBeNull();
+      expect(await prisma.entregaWebhook.findUnique({ where: { id: deOutro.id } })).not.toBeNull();
+    } finally {
+      await prisma.logAuditoria.deleteMany({ where: { id: { in: [proprio.id, soEmail.id, alvo.id, autora.id, outraPessoa.id] } } });
+      await prisma.webhookAplicacao.delete({ where: { id: webhook.id } });
+    }
+  });
+
   it("rejeita exclusão com senha incorreta e mantém a conta", async () => {
     const usuario = await criarUsuarioTeste("minha-conta-excluir-senha-errada");
     emailsCriados.push(usuario.email);

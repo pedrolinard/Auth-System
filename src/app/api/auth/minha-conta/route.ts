@@ -17,6 +17,7 @@ import {
 } from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { esquemaExcluirConta } from "@/lib/validacao";
+import { anonimizarRastrosDaConta } from "@/lib/anonimizacao";
 
 // Autoatendimento LGPD: o titular exclui a própria conta aqui (DELETE) e
 // exporta os próprios dados em POST /api/auth/minha-conta/exportar (rota
@@ -152,6 +153,7 @@ export async function DELETE(req: Request) {
       ? [prisma.organizacao.deleteMany({ where: { id: { in: organizacoesParaExcluir } } })]
       : []),
     agendarExclusaoDominio(prisma, exclusaoDominio),
+    ...anonimizarRastrosDaConta(prisma, usuario),
   ]);
   // Depois da resposta: com o Django lento ou fora do ar, a pessoa não espera
   // o tempo limite pra ver a conta excluída. O que falhar fica na fila pro
@@ -160,8 +162,9 @@ export async function DELETE(req: Request) {
   await registrarEvento({
     req,
     evento: "conta_excluida_pelo_titular",
+    // Só o id (que não aponta pra mais nada): sem e-mail, IP nem navegador.
     usuarioId: usuario.id,
-    email: usuario.email,
+    semRastro: true,
     // Explícito: a conta acabou de ser apagada, então o fallback de
     // registrarEvento (buscar a aplicação pelo usuarioId) não acharia nada e o
     // evento sairia sem escopo — sumindo da auditoria do cliente.
