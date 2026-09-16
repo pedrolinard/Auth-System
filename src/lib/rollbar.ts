@@ -14,6 +14,9 @@ export const configCliente = {
   accessToken: process.env.NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157,
   captureUncaught: true,
   captureUnhandledRejections: true,
+  // IP truncado (último octeto zerado): investigar um erro não precisa saber
+  // exatamente quem o teve. LGPD, ver docs/juridico/registro-operacoes-tratamento.md.
+  captureIp: "anonymize" as const,
   // NEXT_PUBLIC_VERCEL_ENV é exposta automaticamente pela Vercel pro
   // client (VERCEL_ENV sozinha não seria) — distingue production/preview/
   // development nos 3 ambientes.

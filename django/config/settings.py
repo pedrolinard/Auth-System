@@ -154,6 +154,9 @@ if ROLLBAR_ACCESS_TOKEN:
         'access_token': ROLLBAR_ACCESS_TOKEN,
         'environment': 'development' if DEBUG else 'production',
         'root': str(BASE_DIR),
+        # IP truncado: investigar um erro não precisa saber exatamente quem o
+        # teve (LGPD). Mesma regra do Rollbar do Next.js.
+        'capture_ip': 'anonymize',
     }
 
 ROOT_URLCONF = 'config.urls'

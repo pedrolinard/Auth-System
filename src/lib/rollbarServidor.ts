@@ -10,5 +10,7 @@ export const rollbarServidor = new Rollbar({
   accessToken: process.env.ROLLBAR_AUTH_GATEWAY_SERVER_TOKEN_1787151157,
   captureUncaught: true,
   captureUnhandledRejections: true,
+  // IP truncado, como no cliente (src/lib/rollbar.ts).
+  captureIp: "anonymize",
   environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV,
 });

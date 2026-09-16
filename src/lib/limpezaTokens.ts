@@ -70,6 +70,20 @@ export async function limparTokensExpirados(): Promise<ResultadoLimpeza> {
     where: { criadoEm: { lt: new Date(agora.getTime() - 30 * 24 * 60 * 60 * 1000) } },
   });
 
+  // Convites de organização: o e-mail convidado não fica guardado para
+  // sempre. Aceito, o convite já virou Membro e a linha não serve pra mais
+  // nada (um link reaproveitado continua recusado: convite inexistente é
+  // inválido). Pendente, o link vence em 7 dias (DURACAO_TOKEN_CONVITE_ORGANIZACAO);
+  // passados 30 sem reenvio (reenviar renova criadoEm), sai da lista.
+  await prisma.conviteOrganizacao.deleteMany({
+    where: {
+      OR: [
+        { aceitoEm: { not: null } },
+        { criadoEm: { lt: new Date(agora.getTime() - 30 * 24 * 60 * 60 * 1000) } },
+      ],
+    },
+  });
+
   return {
     tokens: tokens.count,
     auditoria: auditoria.count,

@@ -39,7 +39,7 @@ Colunas: **dado** e onde ele está · **finalidade** · **base legal sugerida**
 | Segredo de MFA cifrado, último passo usado (`usuarios`), hashes dos códigos de backup (`codigos_backup_mfa`) | Segundo fator | Execução de contrato (V) | Até o titular desativar ou excluir a conta |
 | Chave pública e nome das passkeys (`passkeys`) | Login sem senha | Execução de contrato (V) | Até o titular remover ou excluir a conta |
 | Organizações, papéis, suspensão e motivo (`organizacoes`, `membros`) | Controle de acesso dentro da aplicação | Execução de contrato (V) | Enquanto a conta existir |
-| E-mail convidado e autor do convite (`convites_organizacao`) | Convidar alguém para uma organização | Legítimo interesse (IX) de quem convida | **Sem prazo definido hoje.** Ver seção 5 |
+| E-mail convidado e autor do convite (`convites_organizacao`) | Convidar alguém para uma organização | Legítimo interesse (IX) de quem convida | Aceito: apagado na limpeza diária seguinte. Pendente: 30 dias sem reenvio (o link vence em 7) |
 
 ### 3.2 Sessão e segurança
 
@@ -81,7 +81,7 @@ inclusive de terceiros. O serviço não inspeciona esse conteúdo.
 | Supabase Inc. | Banco de dados | Todos, em repouso | EUA: `us-east-1` | Host do pooler de produção |
 | Resend | Envio de e-mail | E-mail e conteúdo das mensagens | EUA | [CONFIRMAR no contrato] |
 | Cloudflare (Turnstile) | Proteção contra robôs | IP e sinais do navegador | Rede global | [CONFIRMAR no contrato] |
-| Rollbar | Monitoramento de erros | Dados técnicos do erro, caminho da página (sem query string), IP da requisição | EUA | [CONFIRMAR no contrato] |
+| Rollbar | Monitoramento de erros | Dados técnicos do erro, caminho da página (sem query string), IP truncado (último octeto zerado) | EUA | [CONFIRMAR no contrato] |
 | Have I Been Pwned | Checar senha vazada | 5 primeiros caracteres do hash SHA-1 da senha (não identifica ninguém) | Cloudflare / Austrália | Código (`src/lib/senhaVazada.ts`) |
 
 **Há transferência internacional** (art. 33). Mecanismo: [DEFINIR com o
@@ -91,14 +91,9 @@ os termos deles já as oferecem].
 
 ## 5. Pontos em aberto
 
-1. **Convites de organização sem prazo de retenção.** O e-mail convidado fica
-   guardado mesmo depois de aceito ou abandonado. Sugestão técnica: apagar
-   convites aceitos ou com mais de 30 dias na limpeza diária.
-2. **Rollbar recebe o IP da requisição.** Avaliar anonimizar (`captureIp:
-   "anonymize"`) se o IP não for necessário para investigar erros.
-3. **Base legal definitiva** de cada linha e o documento de legítimo interesse
+1. **Base legal definitiva** de cada linha e o documento de legítimo interesse
    (LIA) para as linhas marcadas com IX.
-4. **Transferência internacional** (seção 4).
+2. **Transferência internacional** (seção 4).
 
 ## 6. Medidas de segurança
 
