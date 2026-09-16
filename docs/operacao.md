@@ -109,6 +109,14 @@ entre a Vercel e o Supabase conseguiria se passar pelo banco.
 ela, a conexão exige certificado válido e nome de host batendo. Sem ela, nada
 muda.
 
+**Testado em 2026-09-16:** o CA `Supabase Root 2021 CA`
+(`prod-ca-2021.crt`, SHA-256 `80:70:25:AD:…:CA:FA`, vence em 2031) valida o
+pooler `aws-0-us-east-1.pooler.supabase.com` nas portas 5432 e 6543, com o nome
+de host batendo (`*.pooler.supabase.com`). Conexão real com o banco do Preview:
+Next.js (`configuracaoPool`) e Django (`opcoes_tls`, `sslmode=verify-full`)
+conectam com o CA certo e recusam um CA errado. Os passos 1 e 2 abaixo já estão
+feitos; falta criar a variável (3 a 5).
+
 **Cuidado:** se o certificado ou o host não baterem, **toda** conexão com o
 banco falha e o login sai do ar. Por isso, nesta ordem:
 
@@ -144,6 +152,7 @@ por schema.
 **Fazer** (SQL Editor do Supabase; troque a senha):
 ```sql
 CREATE ROLE django_dominio LOGIN PASSWORD '<senha-forte>';
+GRANT django_dominio TO postgres;  -- sem isso o ALTER ... OWNER abaixo falha
 GRANT USAGE, CREATE ON SCHEMA dominio TO django_dominio;
 GRANT ALL ON ALL TABLES IN SCHEMA dominio TO django_dominio;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA dominio TO django_dominio;
@@ -154,7 +163,10 @@ DO $$ DECLARE t record; BEGIN
   FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'dominio' LOOP
     EXECUTE format('ALTER TABLE dominio.%I OWNER TO django_dominio', t.tablename);
   END LOOP;
-END $$;
+  FOR t IN SELECT sequencename FROM pg_sequences WHERE schemaname = 'dominio' LOOP
+    EXECUTE format('ALTER SEQUENCE dominio.%I OWNER TO django_dominio', t.sequencename);
+  END LOOP;
+END $;
 ```
 Antes de trocar a `DATABASE_URL`, teste a conexão com o usuário novo (`psql`)
 e rode `select * from dominio.tarefas_projeto limit 1`. Depois, na Vercel
@@ -162,8 +174,9 @@ e rode `select * from dominio.tarefas_projeto limit 1`. Depois, na Vercel
 pooler do Supabase o usuário fica `django_dominio.<ref do projeto>`) e faça
 redeploy. **Rollback:** voltar a `DATABASE_URL` anterior e fazer redeploy.
 
-**Pronto quando:** `GET /api/dominio/saude` responde 200 e, conectado como
-`django_dominio`, `select * from public.usuarios limit 1` dá erro de permissão.
+**Pronto quando:** `GET /api/dominio/saude` responde 200 e, no SQL Editor,
+`SET ROLE django_dominio; SELECT count(*) FROM public.usuarios;` dá erro de
+permissão (dá pra conferir isso antes de trocar a `DATABASE_URL`).
 
 ## 9. Limpeza agendada
 
