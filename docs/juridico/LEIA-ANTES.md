@@ -10,6 +10,8 @@ publique e não envie a um cliente sem essa revisão.
 | `termos-de-uso.md` | Empresas que contratam o provedor | Objeto do serviço, responsabilidades, disponibilidade, suspensão, rescisão |
 | `politica-de-privacidade.md` | Usuários finais das aplicações clientes | Quais dados são tratados, finalidade, retenção, direitos do titular (LGPD) |
 | `acordo-tratamento-dados.md` | Empresas que contratam (anexo ao contrato) | Papéis de controlador e operador, suboperadores, incidentes, eliminação |
+| `registro-operacoes-tratamento.md` | Uso interno; ANPD, se pedir (art. 37) | Cada dado pessoal: onde fica, finalidade, base legal sugerida, retenção, fornecedores e transferência internacional |
+| `plano-resposta-incidentes.md` | Uso interno | Detecção, contenção com os comandos deste sistema, avaliação de risco, prazos de comunicação à ANPD e aos titulares, modelo de registro |
 
 ## Campos a preencher
 
@@ -17,6 +19,7 @@ Todos os documentos usam marcadores entre colchetes que precisam ser trocados:
 
 - `[RAZÃO SOCIAL]`, `[CNPJ]`, `[ENDEREÇO]`: dados da empresa que vende o serviço
 - `[E-MAIL DO ENCARREGADO]`: contato do encarregado de dados (DPO), exigido pela LGPD
+- `[NOME]`, `[TELEFONE]`, `[ADVOGADO]`: responsáveis no plano de incidentes
 - `[FORO]`: comarca para disputas
 - `[PRAZO DE SLA]` e `[PERCENTUAL]`: só depois de definir a infraestrutura paga (ver `docs/operacao.md`)
 
