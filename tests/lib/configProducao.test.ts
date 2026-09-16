@@ -57,9 +57,18 @@ describe("Checagem de config de produção (src/lib/configProducao.ts)", () => {
     expect(avisos.some((a) => a.includes("Turnstile"))).toBe(true);
   });
 
-  it("RESEND_API_KEY ausente é aviso, não erro", () => {
+  it("RESEND_API_KEY ausente é erro (aborta o boot)", () => {
+    const { erros } = checarConfigProducao({
+      ...CONFIG_COMPLETA,
+      RESEND_API_KEY: undefined,
+    });
+    expect(erros.some((e) => e.includes("RESEND_API_KEY"))).toBe(true);
+  });
+
+  it("RESEND_API_KEY ausente no Preview da Vercel é só aviso", () => {
     const { erros, avisos } = checarConfigProducao({
       ...CONFIG_COMPLETA,
+      VERCEL_ENV: "preview",
       RESEND_API_KEY: undefined,
     });
     expect(erros).toEqual([]);

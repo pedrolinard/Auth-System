@@ -503,9 +503,10 @@ via **Resend** (`src/lib/email.ts`). O usuário abre `/verificar-email?token=...
 que chama `POST /api/auth/verificar-email` e marca `Usuario.emailVerificado = true`.
 
 Configuração: `RESEND_API_KEY` (gerada em https://resend.com/api-keys) e
-`EMAIL_FROM` (remetente). Sem `RESEND_API_KEY` definida, cai de volta pro
-comportamento antigo — o link só é logado no console (útil pra dev local sem
-depender de uma conta Resend). O remetente padrão (`onboarding@resend.dev`)
+`EMAIL_FROM` (remetente). Sem `RESEND_API_KEY` definida, em dev o link só é
+logado no console (útil pra dev local sem depender de uma conta Resend); num
+build de produção o link NÃO vai pro log (tem token), e fora do Preview da
+Vercel o boot é abortado. O remetente padrão (`onboarding@resend.dev`)
 é o domínio de teste do Resend: funciona sem configurar DNS, mas só entrega
 pro e-mail cadastrado na própria conta Resend (modo sandbox) — para enviar
 para qualquer destinatário (ex. um usuário real se cadastrando), é preciso
@@ -1057,9 +1058,10 @@ configurar algo, isso passa despercebido. `src/lib/configProducao.ts`
   deixaria a aplicação quebrada: `BASE_URL` ausente (links de e-mail
   apontariam pra `localhost`) ou Turnstile configurado pela metade (depois de
   algumas tentativas o login exige um CAPTCHA que o front, sem a site key,
-  não consegue renderizar — a pessoa fica trancada pra fora).
-- **Loga um aviso** e segue quando é degradação tolerável: sem
-  `RESEND_API_KEY` (e-mails só no log), sem token do Rollbar (erros não
+  não consegue renderizar — a pessoa fica trancada pra fora) ou
+  `RESEND_API_KEY` ausente (ninguém recebe verificação nem redefinição de
+  senha; no Preview da Vercel isso é só aviso).
+- **Loga um aviso** e segue quando é degradação tolerável: sem token do Rollbar (erros não
   reportados), sem `CRON_SECRET` (limpeza de tokens não roda), Turnstile
   totalmente ausente (CAPTCHA desativado).
 

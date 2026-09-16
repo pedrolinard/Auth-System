@@ -9,7 +9,7 @@ import "server-only";
 //
 //   - sem TURNSTILE_SECRET_KEY:      o CAPTCHA é pulado (verificarTurnstile
 //                                    retorna true)
-//   - sem RESEND_API_KEY:            e-mails só são logados no console
+//   - sem RESEND_API_KEY:            nenhum e-mail sai (erro, exceto em Preview)
 //   - sem ROLLBAR_*:                 erros inesperados não são reportados
 //   - sem BASE_URL:                  links de e-mail apontam pra localhost:3000
 //
@@ -61,13 +61,16 @@ export function checarConfigProducao(env: Env): ResultadoConfig {
     );
   }
 
-  // Resend: sem a chave, email.ts não instancia o cliente e cai no modo
-  // "loga o link no console" — em produção isso significa que ninguém
-  // recebe e-mail de verificação nem de redefinição de senha.
+  // Resend: sem a chave, email.ts não instancia o cliente e nenhum e-mail
+  // sai — ninguém recebe verificação nem redefinição de senha, e a conta fica
+  // sem como ser recuperada. Erro, não aviso. A exceção é o Preview da
+  // Vercel, que não tem a chave e não deve cair por isso (lá os links também
+  // não vão pro log: ver enviar() em email.ts).
   if (!definida(env, "RESEND_API_KEY")) {
-    avisos.push(
-      "RESEND_API_KEY não definida — nenhum e-mail é enviado de verdade (o conteúdo só vai para o log do servidor).",
-    );
+    const mensagem =
+      "RESEND_API_KEY não definida — nenhum e-mail é enviado (verificação, redefinição de senha, alertas de segurança).";
+    if (env.VERCEL_ENV === "preview") avisos.push(mensagem);
+    else erros.push(mensagem);
   } else if (!definida(env, "EMAIL_FROM") || env.EMAIL_FROM!.includes("@resend.dev")) {
     // Com a chave mas no remetente de teste do Resend, o envio "funciona" sem
     // erro nenhum — só que o sandbox entrega apenas pro e-mail dono da conta

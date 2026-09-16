@@ -139,7 +139,11 @@ async function enviar(dados: {
   }
 
   if (!resend) {
-    console.log(`[dev] ${dados.logDev ?? descricao} para ${destinatario}`);
+    // O logDev carrega o link com token (redefinição de senha, verificação,
+    // convite): só serve pra dev. Num build de produção sem a chave (Preview,
+    // que lê o banco de produção), o log fica só com a descrição.
+    const detalhe = process.env.NODE_ENV === "production" ? descricao : (dados.logDev ?? descricao);
+    console.log(`[sem Resend] ${detalhe} para ${destinatario}`);
     return;
   }
 
