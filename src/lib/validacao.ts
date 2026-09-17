@@ -152,6 +152,23 @@ export const esquemaCriarOrganizacao = z.object({
     .max(80, { error: "O nome é longo demais (máximo de 80 caracteres)." }),
 });
 
+// Renomear mantém o slug: ele pode já estar em URLs e integrações do
+// cliente, e trocá-lo junto quebraria esses links em silêncio.
+export const esquemaRenomearOrganizacao = esquemaCriarOrganizacao;
+
+// "dono" fica de fora pelo mesmo motivo do convite: virar dono é a
+// transferência de titularidade, com senha e rota própria.
+export const esquemaAlterarPapelMembro = z.object({
+  papel: z.enum(["admin", "membro"], { error: "Papel inválido." }),
+});
+
+export const esquemaTransferirOrganizacao = z.object({
+  usuarioId: z.string({ error: "Informe quem vai receber a organização." }).min(1),
+  senha: z.string({ error: "Informe a senha." }).min(1, { error: "Informe a senha." }),
+});
+
+export const esquemaExcluirOrganizacao = esquemaExcluirConta;
+
 export const esquemaCriarConvite = z.object({
   email: z.email({ error: "Informe um e-mail válido." }).trim().toLowerCase(),
   // "dono" fica de fora de propósito — convidar alguém já como dono

@@ -76,6 +76,61 @@ export async function entrarNaOrganizacao(id: string) {
   return corpo;
 }
 
+export async function renomearOrganizacao(id: string, nome: string) {
+  const resposta = await requisicaoAutenticada(`/api/auth/organizacoes/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nome }),
+  });
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao renomear organização."));
+  return corpo.organizacao as { id: string; nome: string; slug: string };
+}
+
+// Sair, excluir e transferir podem reemitir a sessão (quando mexem na
+// organização ativa) — recarregar a página depois é responsabilidade de quem
+// chama, mesmo motivo de entrarNaOrganizacao.
+export async function sairDaOrganizacao(id: string) {
+  const resposta = await requisicaoAutenticada(`/api/auth/organizacoes/${id}/sair`, {
+    method: "POST",
+  });
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao sair da organização."));
+}
+
+// Nas duas chamadas com senha, `tentouRenovar = true` desliga a renovação em
+// 401: aqui 401 quase sempre é "Senha incorreta.", não sessão expirada — e
+// renovar e repetir reenviaria a senha errada, gastando duas tentativas do
+// limite de 5 por uma digitada (mesmo motivo de excluirMinhaConta usar fetch
+// direto).
+export async function excluirOrganizacao(id: string, senha: string) {
+  const resposta = await requisicaoAutenticada(
+    `/api/auth/organizacoes/${id}`,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ senha }),
+    },
+    true,
+  );
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao excluir organização."));
+}
+
+export async function transferirOrganizacao(id: string, dados: { usuarioId: string; senha: string }) {
+  const resposta = await requisicaoAutenticada(
+    `/api/auth/organizacoes/${id}/transferir`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados),
+    },
+    true,
+  );
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao transferir organização."));
+}
+
 export async function listarConvites(): Promise<ConviteOrganizacao[]> {
   const resposta = await requisicaoAutenticada("/api/auth/organizacoes/convites");
   const corpo = await lerCorpo(resposta);

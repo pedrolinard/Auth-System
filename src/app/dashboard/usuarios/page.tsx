@@ -3,14 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Users } from "lucide-react";
 import {
+  alterarPapelMembro,
   listarUsuarios,
   obterUsuarioAtual,
   reativarUsuario,
   removerMembroDaOrganizacao,
   suspenderUsuario,
   type UsuarioAdmin,
+  type UsuarioAtual,
 } from "@/lib/clienteAuth";
+import { transferirOrganizacao } from "@/lib/clienteOrganizacao";
 import { CabecalhoSecao } from "@/components/ui/CabecalhoSecao";
+import { CampoSelecao } from "@/components/ui/CampoSelecao";
 import { AvisoErro } from "@/components/ui/AvisoErro";
 import { EstadoVazio } from "@/components/ui/EstadoVazio";
 import { RolagemHorizontal } from "@/components/ui/RolagemHorizontal";
@@ -30,12 +34,24 @@ function statusSuspensao(usuario: UsuarioAdmin): string | null {
     : "Suspenso permanentemente";
 }
 
+// Espelha podeAgirSobre (src/lib/rbacOrganizacao.ts) — só pra não oferecer
+// botões que o servidor vai recusar; quem decide é a API.
+function podeAgirSobre(meuPapel: UsuarioAtual["papelOrganizacao"] | null, alvo: UsuarioAdmin) {
+  if (meuPapel === "dono") return true;
+  if (meuPapel === "admin") return alvo.papel !== "dono";
+  return false;
+}
+
 export default function PaginaUsuarios() {
   const [usuarios, setUsuarios] = useState<UsuarioAdmin[] | null>(null);
   const [meuId, setMeuId] = useState<string | null>(null);
+  const [meuPapel, setMeuPapel] = useState<UsuarioAtual["papelOrganizacao"] | null>(null);
+  const [organizacaoId, setOrganizacaoId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [suspendendoId, setSuspendendoId] = useState<string | null>(null);
   const [confirmandoExclusaoId, setConfirmandoExclusaoId] = useState<string | null>(null);
+  const [transferindoId, setTransferindoId] = useState<string | null>(null);
+  const [senhaTransferencia, setSenhaTransferencia] = useState("");
   const [processandoId, setProcessandoId] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
   const [busca, setBusca] = useState("");
@@ -45,6 +61,8 @@ export default function PaginaUsuarios() {
       const [lista, eu] = await Promise.all([listarUsuarios(), obterUsuarioAtual()]);
       setUsuarios(lista);
       setMeuId(eu?.id ?? null);
+      setMeuPapel(eu?.papelOrganizacao ?? null);
+      setOrganizacaoId(eu?.organizacaoId ?? null);
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
     }
@@ -96,6 +114,44 @@ export default function PaginaUsuarios() {
     }
   }
 
+  async function aoAlterarPapel(usuario: UsuarioAdmin, papel: "admin" | "membro") {
+    setProcessandoId(usuario.id);
+    const anteriores = usuarios;
+    setUsuarios((atual) => atual?.map((u) => (u.id === usuario.id ? { ...u, papel } : u)) ?? null);
+    try {
+      await alterarPapelMembro(usuario.id, papel);
+      notificar.sucesso(`${usuario.nome} agora é ${papel}.`);
+    } catch (erroCapturado) {
+      setUsuarios(anteriores);
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra alterar o papel.",
+      );
+    } finally {
+      setProcessandoId(null);
+    }
+  }
+
+  async function aoTransferir(evento: React.FormEvent, usuario: UsuarioAdmin) {
+    evento.preventDefault();
+    if (!organizacaoId) return;
+    setProcessandoId(usuario.id);
+    try {
+      await transferirOrganizacao(organizacaoId, {
+        usuarioId: usuario.id,
+        senha: senhaTransferencia,
+      });
+      notificar.sucesso(`${usuario.nome} agora é dono da organização.`);
+      // A sessão foi reemitida com o papel novo (admin) — recarrega pra a
+      // tela e o menu pararem de oferecer ações de dono.
+      window.location.reload();
+    } catch (erroCapturado) {
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra transferir.",
+      );
+      setProcessandoId(null);
+    }
+  }
+
   async function aoRemover(usuario: UsuarioAdmin) {
     setProcessandoId(usuario.id);
     try {
@@ -119,7 +175,7 @@ export default function PaginaUsuarios() {
           icone={Users}
           eyebrow="Admin"
           titulo="Usuários"
-          descricao="Suspenda, reative ou remova membros desta organização. Você não aparece com ações sobre si mesmo."
+          descricao="Mude o papel, suspenda, reative ou remova membros desta organização. Você não aparece com ações sobre si mesmo."
           acao={
             usuarios ? (
               <span className="rounded-full bg-black/[.05] px-2.5 py-1 text-xs font-medium text-zinc-500 tabular-nums dark:bg-white/[.06] dark:text-zinc-400">
@@ -182,6 +238,7 @@ export default function PaginaUsuarios() {
                 {filtrados.map((usuario) => {
                   const status = statusSuspensao(usuario);
                   const ehVoceMesmo = usuario.id === meuId;
+                  const podeAgir = !ehVoceMesmo && podeAgirSobre(meuPapel, usuario);
                   return (
                     <tr
                       key={usuario.id}
@@ -197,15 +254,33 @@ export default function PaginaUsuarios() {
                       </td>
                       <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{usuario.email}</td>
                       <td className="px-4 py-3">
-                        <span
-                          className={
-                            usuario.papel === "dono" || usuario.papel === "admin"
-                              ? "rounded-full bg-black/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-black dark:bg-white/10 dark:text-white"
-                              : "text-xs text-zinc-500 dark:text-zinc-400"
-                          }
-                        >
-                          {usuario.papel}
-                        </span>
+                        {podeAgir && usuario.papel !== "dono" ? (
+                          <CampoSelecao
+                            value={usuario.papel}
+                            onChange={(e) =>
+                              aoAlterarPapel(usuario, e.target.value as "admin" | "membro")
+                            }
+                            disabled={processandoId === usuario.id}
+                            ocupado={processandoId === usuario.id}
+                            aria-label={`Papel de ${usuario.nome}`}
+                            tamanho="sm"
+                            classeContainer="text-zinc-600 dark:text-zinc-400"
+                            className="rounded-md border border-black/[.09] bg-transparent py-1 pl-2 text-xs font-medium outline-none disabled:opacity-50 dark:border-white/[.13]"
+                          >
+                            <option value="membro">membro</option>
+                            <option value="admin">admin</option>
+                          </CampoSelecao>
+                        ) : (
+                          <span
+                            className={
+                              usuario.papel === "dono" || usuario.papel === "admin"
+                                ? "rounded-full bg-black/10 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-black dark:bg-white/10 dark:text-white"
+                                : "text-xs text-zinc-500 dark:text-zinc-400"
+                            }
+                          >
+                            {usuario.papel}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         {status ? (
@@ -220,8 +295,46 @@ export default function PaginaUsuarios() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {ehVoceMesmo ? (
+                        {!podeAgir ? (
                           <span className="text-xs text-zinc-400 dark:text-zinc-600">—</span>
+                        ) : transferindoId === usuario.id ? (
+                          <form
+                            onSubmit={(e) => aoTransferir(e, usuario)}
+                            className="flex flex-col gap-2"
+                          >
+                            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                              {usuario.nome} vira dono e você passa a admin. Confirme com sua senha.
+                            </p>
+                            <input
+                              type="password"
+                              required
+                              autoComplete="current-password"
+                              value={senhaTransferencia}
+                              onChange={(e) => setSenhaTransferencia(e.target.value)}
+                              placeholder="Sua senha"
+                              aria-label="Sua senha"
+                              className="input-field text-xs"
+                            />
+                            <div className="flex flex-wrap gap-1.5">
+                              <button
+                                type="submit"
+                                disabled={processandoId === usuario.id || !senhaTransferencia}
+                                className="btn-primary-sm"
+                              >
+                                {processandoId === usuario.id ? "Transferindo..." : "Transferir"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTransferindoId(null);
+                                  setSenhaTransferencia("");
+                                }}
+                                className="btn-secondary-sm"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </form>
                         ) : suspendendoId === usuario.id ? (
                           <div className="flex flex-col gap-2">
                             <input
@@ -296,6 +409,14 @@ export default function PaginaUsuarios() {
                                 className="btn-secondary-sm"
                               >
                                 Suspender
+                              </button>
+                            )}
+                            {meuPapel === "dono" && usuario.papel !== "dono" && !status && (
+                              <button
+                                onClick={() => setTransferindoId(usuario.id)}
+                                className="btn-secondary-sm"
+                              >
+                                Tornar dono
                               </button>
                             )}
                             <button

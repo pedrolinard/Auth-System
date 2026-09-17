@@ -20,6 +20,7 @@ export type MotivoRevogacao =
   | "email_alterado"
   | "suspensao"
   | "remocao_organizacao"
+  | "saida_organizacao"
   | "aplicacao_desativada";
 
 export function revogacao(motivo: MotivoRevogacao) {

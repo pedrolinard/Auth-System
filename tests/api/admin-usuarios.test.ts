@@ -555,7 +555,9 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
       method: "DELETE",
       headers: cabecalhos,
     });
-    expect(resposta.status).toBe(400);
+    // 403, não 400: desde a hierarquia de papéis (podeAgirSobre), admin não
+    // remove dono nenhum — barrado antes mesmo da checagem de único dono.
+    expect(resposta.status).toBe(403);
 
     const membroDono = await prisma.membro.findUnique({
       where: {
