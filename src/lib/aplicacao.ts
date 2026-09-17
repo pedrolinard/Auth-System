@@ -212,7 +212,7 @@ export async function autenticarAplicacao(req: Request): Promise<ResultadoAutent
   }
 
   if (aplicacao.padrao) {
-    return origemPermitida(aplicacao, req)
+    return ehOrigemDoPainel(req) || origemPermitida(aplicacao, req)
       ? { ok: true, aplicacao }
       : { ok: false, status: 403, erro: "Origem não autorizada para esta aplicação." };
   }
@@ -233,6 +233,31 @@ export async function autenticarAplicacao(req: Request): Promise<ResultadoAutent
   }
 
   return { ok: false, status: 401, erro: "Credencial da aplicação ausente ou inválida." };
+}
+
+/**
+ * A aplicação padrão É o painel: a origem em que ele está sendo servido (e a
+ * da BASE_URL) é sempre dela, com ou sem lista de origens. Sem isso, cadastrar
+ * qualquer origem na aplicação padrão pela tela de aplicações — sem repetir o
+ * domínio do próprio site — derrubava o login de todo mundo no painel com
+ * "Origem não autorizada" (aconteceu em produção em 2026-09-16).
+ */
+function origensDoPainel(req?: Request): string[] {
+  const origens: string[] = [];
+  for (const url of [req?.url, process.env.BASE_URL]) {
+    if (!url) continue;
+    try {
+      origens.push(new URL(url).origin);
+    } catch {
+      // BASE_URL malformada não pode derrubar a checagem — só não conta.
+    }
+  }
+  return origens;
+}
+
+function ehOrigemDoPainel(req: Request): boolean {
+  const origem = req.headers.get("origin");
+  return !!origem && origensDoPainel(req).includes(origem);
 }
 
 function segredoConfere(aplicacao: AplicacaoResolvida, req: Request): boolean {

@@ -211,6 +211,35 @@ describe("Gestão de aplicações — ciclo de vida", () => {
     expect((await prisma.aplicacao.findUniqueOrThrow({ where: { id: padrao.id } })).ativa).toBe(true);
   });
 
+  it("origens cadastradas na aplicação padrão não barram o login no próprio painel", async () => {
+    // Incidente de produção (2026-09-16): a aplicação padrão ganhou uma lista
+    // de origens sem o domínio do próprio site, e todo login pelo painel
+    // passou a responder 403 "Origem não autorizada".
+    const conta = await criarUsuarioTeste("origem-painel");
+    emailsCriados.push(conta.email);
+    const padrao = await prisma.aplicacao.findFirstOrThrow({ where: { padrao: true } });
+
+    async function entrarCom(origem: string) {
+      return fetch(`${BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": ipAleatorio(), Origin: origem },
+        body: JSON.stringify({ email: conta.email, senha: SENHA_TESTE }),
+      });
+    }
+
+    await prisma.aplicacao.update({
+      where: { id: padrao.id },
+      data: { origens: ["https://outro-site.exemplo"] },
+    });
+    try {
+      expect((await entrarCom(BASE_URL)).status).toBe(200);
+      expect((await entrarCom("https://outro-site.exemplo")).status).toBe(200);
+      expect((await entrarCom("https://site-alheio.exemplo")).status).toBe(403);
+    } finally {
+      await prisma.aplicacao.update({ where: { id: padrao.id }, data: { origens: padrao.origens } });
+    }
+  });
+
   it("desativar corta login e sessões dos usuários dela, sem alarme falso de reuso de token", async () => {
     const { cabecalhos } = await sessaoOperador();
     const { corpo } = await criarPeloPainel(cabecalhos, { nome: "Cliente a desativar" });
