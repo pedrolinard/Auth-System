@@ -37,10 +37,10 @@ export const atualizadoEm = "2026-09-21";
 // banco, commit/deploy) são calculadas em tempo de requisição na página.
 export const metricas = {
   rotasApi: 59,
-  migracoesPrisma: 31,
+  migracoesPrisma: 32,
   modulosLib: 53,
   tabelas: 17,
-  testesVitest: 323,
+  testesVitest: 325,
   testesE2e: 9,
   testesDjango: 53,
 };
@@ -451,7 +451,7 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "supabase-data-api-rls",
     titulo: "Data API do Supabase aberto sobre um `public` sem RLS",
     descricao:
-      "O Supabase liga por padrão o Data API (PostgREST em /rest/v1), que expõe o schema `public` por HTTP autenticado pela `anon key` — uma chave que não é segredo, nasce pra ir embutida em front end. Quem barra um estranho é a Row Level Security, e não existe RLS nenhuma neste projeto: nenhuma migration do Prisma liga RLS nem cria policy. Com o default do Supabase, que concede privilégios em `public` a `anon` e `authenticated`, isso significa ler usuarios (hash de senha, segredo de MFA), chaves_assinatura (a chave RS256 que assina todos os tokens), codigos_backup_mfa, passkeys e tokens_atualizacao com uma chave pública. Confirmado em 2026-09-21 que o endpoint está no ar em produção (401 \"No API key found in request\"); falta confirmar a RLS no Security Advisor. Correção barata: desligar o Data API, que este projeto não usa pra nada (não há supabase-js nem SUPABASE_ANON_KEY no código — Prisma e psycopg falam direto pelo pooler); e ligar RLS sem policy como defesa em profundidade, que não afeta o Prisma porque dono de tabela contorna RLS. Passo a passo em docs/operacao.md, item 11.",
+      "O Supabase liga por padrão o Data API (PostgREST em /rest/v1), que expõe o schema `public` por HTTP autenticado pela `anon key` — uma chave que não é segredo, nasce pra ir embutida em front end. Quem barra um estranho é a Row Level Security, e não existe RLS nenhuma neste projeto: nenhuma migration do Prisma liga RLS nem cria policy. Com o default do Supabase, que concede privilégios em `public` a `anon` e `authenticated`, isso significa ler usuarios (hash de senha, segredo de MFA), chaves_assinatura (a chave RS256 que assina todos os tokens), codigos_backup_mfa, passkeys e tokens_atualizacao com uma chave pública. Confirmado em 2026-09-21 que o endpoint está no ar em produção (401 \"No API key found in request\"); falta confirmar a RLS no Security Advisor. Correção barata: desligar o Data API, que este projeto não usa pra nada (não há supabase-js nem SUPABASE_ANON_KEY no código — Prisma e psycopg falam direto pelo pooler); e ligar RLS sem policy como defesa em profundidade, que não afeta o Prisma porque dono de tabela contorna RLS. A parte de RLS já está feita e versionada: migration 20260921120000_rls_public liga RLS em tudo de `public` e sobe na publicação 2, com o teste tests/lib/rlsPublic.test.ts exigindo que nenhuma tabela fique de fora — sem ele, uma tabela criada por migration futura nasceria sem RLS em silêncio. FALTA a parte de painel: confirmar no Security Advisor e desligar o Data API (ou tirar `public` dos \"Exposed schemas\"). Passo a passo em docs/operacao.md, item 11.",
     categoria: "Segurança",
     prioridade: "alta",
     status: "pendente",

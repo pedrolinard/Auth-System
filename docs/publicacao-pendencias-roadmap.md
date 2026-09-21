@@ -225,9 +225,16 @@ commit com migration; confira o commit final antes de rodar.
 > exclusão de conta, e uma organização que gerencia aplicações não pode mais
 > ser excluída pelo painel (409).
 
+> **`20260921120000_rls_public` entrou depois (2026-09-21)** e mudou o bloco
+> da §2.1: se você copiou o SQL antes dessa data, pegue de novo. Ela liga RLS
+> em tudo de `public` — defesa em profundidade contra o Data API do Supabase
+> (docs/operacao.md, item 11). Não muda o comportamento da aplicação: o Prisma
+> conecta como dono das tabelas, e dono contorna RLS.
+
 ## 2.1 Migrations no banco de produção (SQL Editor)
 
-Todas aditivas. Rode o bloco inteiro; ele é idempotente.
+Oito migrations, todas aditivas ou sem efeito na aplicação. Rode o bloco
+inteiro; ele é idempotente.
 
 ```sql
 -- 20260916090000_alvo_auditoria
@@ -326,6 +333,17 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- 20260921120000_rls_public
+-- RLS sem policy em tudo de `public`: o Data API do Supabase expõe esse schema
+-- por HTTP com a `anon key`, que é pública por design. Não muda nada pra
+-- aplicação: o Prisma conecta como dono das tabelas, e dono contorna RLS.
+-- Ver docs/operacao.md, item 11.
+DO $$ DECLARE t record; BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
+  END LOOP;
+END $$;
+
 -- Registro pro Prisma considerar aplicadas
 INSERT INTO "_prisma_migrations" (id, checksum, finished_at, migration_name, logs, rolled_back_at, started_at, applied_steps_count)
 SELECT gen_random_uuid()::text, v.checksum, now(), v.nome, NULL, NULL, now(), 1
@@ -336,7 +354,8 @@ FROM (VALUES
   ('20260916120000_aplicacao_aprovacao',        'f2e80679c6ad7bb9274f6e052da952f4f611bf023d75c53aee2f5dc2a3a95cc0'),
   ('20260916130000_oidc',                       '85adfabfdd5006add5bbb741f8a1e9d019598c753285d0817234cbe01a69a28b'),
   ('20260916140000_oidc_cliente_escopo',        '2dcaf9a86716f28a6969ef1e96933e8f0a8fc7c5e38d095fe70ae17a393f7271'),
-  ('20260916150000_webhooks',                   'e1f693593a141502f2505af06428f6ffc6d01f9163ce0a0bd3eb8c35923eec8f')
+  ('20260916150000_webhooks',                   'e1f693593a141502f2505af06428f6ffc6d01f9163ce0a0bd3eb8c35923eec8f'),
+  ('20260921120000_rls_public',                 '34f04309d7a23545a7caef6a21cb7089abf517d7bfdaa81ca77d4c275c9a1400')
 ) AS v(nome, checksum)
 WHERE NOT EXISTS (SELECT 1 FROM "_prisma_migrations" p WHERE p.migration_name = v.nome);
 ```

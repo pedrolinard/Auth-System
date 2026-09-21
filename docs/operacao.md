@@ -263,25 +263,34 @@ aos papéis `anon` e `authenticated`, o resultado é que a `anon key` lê
 `GET https://<ref>.supabase.co/rest/v1/` devolve `401 {"message":"No API key
 found in request"}`, ou seja, o PostgREST está no ar, só esperando a chave.
 Falta confirmar no painel se a RLS está desligada: **Supabase → Advisors →
-Security Advisor** aponta "RLS disabled in public" em 1 clique.
+Security Advisor** aponta "RLS disabled in public" em 1 clique. Depois da
+publicação 2, esse alerta deve sumir sozinho (ver abaixo).
 
 **A correção barata: desligar o Data API.** Este projeto não usa PostgREST pra
 nada — não há `supabase-js`, `createClient` nem `SUPABASE_ANON_KEY` em lugar
 nenhum do código; Next.js fala com o banco pelo Prisma e o Django pelo psycopg,
 os dois pelo pooler. O Data API é superfície de ataque sem contrapartida.
-Project Settings → API → desativar.
+Duas formas, o mesmo efeito:
 
-**Defesa em profundidade: ligar RLS mesmo assim.** Se um dia o Data API for
+- **Project Settings → API → desativar o Data API.** Corta tudo.
+- **Project Settings → API → tirar `public` de "Exposed schemas".** O
+  PostgREST continua de pé mas não enxerga mais nada que importe. Mais fácil
+  de explicar pra quem for mexer ali depois: a lista diz na cara o que está
+  aberto.
+
+**Defesa em profundidade: RLS ligada mesmo assim.** Se um dia o Data API for
 religado (por você ou por um default novo do Supabase), a RLS é o que segura.
-Sem policy nenhuma, RLS ligada nega tudo para `anon` e `authenticated`:
+Sem policy nenhuma, RLS ligada nega tudo para `anon` e `authenticated`.
 
-```sql
-DO $$ DECLARE t record; BEGIN
-  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
-    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
-  END LOOP;
-END $$;
-```
+Isso **já está versionado**: a migration `20260921120000_rls_public` liga RLS
+em todas as tabelas de `public`, e sobe junto com a publicação 2 (o bloco da
+§2.1 do roteiro de publicação a inclui). Não é SQL pra rodar na mão.
+
+Como o laço da migration só alcança as tabelas que existiam quando ela rodou,
+uma tabela criada por migration futura nasceria sem RLS — e em silêncio. Quem
+não deixa é o teste `tests/lib/rlsPublic.test.ts`: ele exige que nenhuma
+tabela de `public` esteja sem RLS, então a suíte fica vermelha antes de o
+buraco existir em produção.
 
 **Isso não quebra o Prisma nem o Django.** O dono de uma tabela contorna a RLS
 por padrão (só um `FORCE ROW LEVEL SECURITY` mudaria isso), e as tabelas de
