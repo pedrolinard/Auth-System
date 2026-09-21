@@ -9,8 +9,11 @@ Formato [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), versão
 
 - Passo de build (`npm run build:sdk`): `sdk/dist` com `.js` + `.d.ts`
   emitidos por `tsc`, sem bundler.
-- Pontos de entrada separados: `/cliente` (não puxa `jose`) e `/servidor`
-  (verificador de token), além da raiz que exporta os dois.
+- Pontos de entrada separados: a raiz e `/cliente` dão o cliente (sem `jose`),
+  `/servidor` dá o verificador de token. A raiz NÃO reexporta o verificador:
+  como `jose` é peer opcional, um `import` da raiz num app de navegador
+  quebraria no bundler com "Can't resolve 'jose'".
+- `src` vai junto no pacote, pros `.map` do `dist` resolverem.
 
 ### Mudado
 
@@ -19,6 +22,7 @@ Formato [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), versão
   da fonte dentro do repositório.
 - `jose` virou peer dependency **opcional**: quem usa só o cliente no
   navegador não precisa instalar.
+- Node mínimo passou a ser 20 (o 18 já saiu do suporte).
 
 ## Antes da publicação
 

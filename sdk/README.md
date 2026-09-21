@@ -51,23 +51,30 @@ const verificar = criarVerificadorDeToken({
 const claims = await verificar(tokenDoHeaderAuthorization);
 ```
 
-Três pontos de entrada: a raiz (`@grupocz/auth-gateway-sdk`) exporta tudo,
-`/cliente` só o cliente (não puxa `jose`) e `/servidor` só o verificador.
+A raiz (`@grupocz/auth-gateway-sdk`) e `/cliente` dão a mesma coisa: o
+cliente, sem `jose`. O verificador existe SÓ em `/servidor`, e não é
+reexportado pela raiz de propósito — senão um `import` da raiz num app de
+navegador quebraria no bundler com "Can't resolve 'jose'" sem nunca ter pedido
+um verificador.
 
 Guia completo, com o que cadastrar no painel e a referência das rotas:
 [`docs/integracao.md`](../docs/integracao.md).
 
 ## Compatibilidade
 
-Pacote **ESM puro** (`"type": "module"`), Node >= 18. Um backend em CommonJS
-carrega com `await import("@grupocz/auth-gateway-sdk")`; `require()` não
-funciona.
+Pacote **ESM puro** (`"type": "module"`), Node >= 20 (o 18 já saiu do
+suporte). Um backend em CommonJS carrega com
+`await import("@grupocz/auth-gateway-sdk")`; `require()` não funciona.
 
 ## Build
 
 ```bash
 npm run build:sdk   # na raiz do repositório: gera sdk/dist (.js + .d.ts)
 ```
+
+O `src` também vai no pacote publicado: é o que faz os `.map` do `dist`
+resolverem, e com eles o "ir para a definição" do editor cair no TypeScript
+de verdade em vez de no JavaScript compilado.
 
 `sdk/dist` fica fora do controle de versão — é gerado no publish, pelo
 `prepublishOnly`. Os testes em `tests/sdk/sdk.test.ts` importam `sdk/src`
@@ -78,7 +85,7 @@ Pra publicar, rode de dentro de `sdk/` (o `prepublishOnly` chama o `tsc` do
 
 ```bash
 cd sdk
-npm install        # só na primeira vez: instala o typescript do próprio pacote
+npm install        # só na primeira vez: typescript e jose do próprio pacote
 npm publish --access public
 ```
 

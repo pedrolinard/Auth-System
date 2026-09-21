@@ -1,7 +1,10 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { gerarTokenRedefinicaoSenha, gerarTokenVerificacaoEmail } from "@/lib/token";
-import { ClienteAuthGateway, criarVerificadorDeToken, type Tokens } from "../../sdk/src";
+// Do jeito que um cliente importa: a raiz do pacote só tem o cliente, e o
+// verificador vem do subcaminho /servidor (ver sdk/src/index.ts).
+import { ClienteAuthGateway, type Tokens } from "../../sdk/src";
+import { criarVerificadorDeToken } from "../../sdk/src/servidor";
 import {
   apagarAplicacoesTeste,
   BASE_URL,

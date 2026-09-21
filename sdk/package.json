@@ -24,11 +24,12 @@
   },
   "files": [
     "dist",
+    "src",
     "README.md",
     "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "repository": {
     "type": "git",
@@ -48,6 +49,7 @@
     }
   },
   "devDependencies": {
+    "jose": "^6.0.0",
     "typescript": "^5"
   }
 }
