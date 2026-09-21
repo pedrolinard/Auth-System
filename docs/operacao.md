@@ -151,6 +151,8 @@ por schema.
 
 **Fazer** (SQL Editor do Supabase; troque a senha):
 ```sql
+BEGIN;
+
 CREATE ROLE django_dominio LOGIN PASSWORD '<senha-forte>';
 GRANT django_dominio TO postgres;  -- sem isso o ALTER ... OWNER abaixo falha
 GRANT USAGE, CREATE ON SCHEMA dominio TO django_dominio;
@@ -166,17 +168,38 @@ DO $$ DECLARE t record; BEGIN
   FOR t IN SELECT sequencename FROM pg_sequences WHERE schemaname = 'dominio' LOOP
     EXECUTE format('ALTER SEQUENCE dominio.%I OWNER TO django_dominio', t.sequencename);
   END LOOP;
-END $;
-```
-Antes de trocar a `DATABASE_URL`, teste a conexão com o usuário novo (`psql`)
-e rode `select * from dominio.tarefas_projeto limit 1`. Depois, na Vercel
-(`auth-gateway-django`), troque o usuário e a senha da `DATABASE_URL` (no
-pooler do Supabase o usuário fica `django_dominio.<ref do projeto>`) e faça
-redeploy. **Rollback:** voltar a `DATABASE_URL` anterior e fazer redeploy.
+END $$;
 
-**Pronto quando:** `GET /api/dominio/saude` responde 200 e, no SQL Editor,
-`SET ROLE django_dominio; SELECT count(*) FROM public.usuarios;` dá erro de
-permissão (dá pra conferir isso antes de trocar a `DATABASE_URL`).
+COMMIT;
+```
+
+Não conceda nada em `public`: é justamente o que este item existe pra impedir.
+O `search_path` do Django é `dominio,public` (`settings.py`), mas um schema que
+o papel não enxerga é ignorado em silêncio pelo Postgres — e o `USAGE` que todo
+papel já tem em `public` por padrão deixa as funções de extensão resolvíveis sem
+dar acesso a **tabela** nenhuma. É esse default-deny que a conferência abaixo
+verifica.
+
+**Conferir ANTES de trocar a `DATABASE_URL`** (SQL Editor, na mesma sessão):
+```sql
+SET ROLE django_dominio;
+SELECT count(*) FROM dominio.tarefas_projeto;   -- tem que FUNCIONAR
+SELECT count(*) FROM public.usuarios;           -- tem que dar "permission denied"
+RESET ROLE;
+```
+Se a segunda linha devolver um número em vez de erro, **pare**: a separação não
+aconteceu e trocar a `DATABASE_URL` não protege nada.
+Passando a conferência, teste a conexão de fora com o usuário novo (`psql`,
+mesmo host do pooler) antes de mexer na Vercel. Depois, no projeto
+`auth-gateway-django`, troque usuário e senha da `DATABASE_URL` — no pooler do
+Supabase o usuário fica `django_dominio.<ref do projeto>` — e faça redeploy
+(`cd django && npx vercel deploy --prod`).
+
+**Rollback:** voltar a `DATABASE_URL` anterior e fazer redeploy. O papel novo
+pode continuar existindo; ele sozinho não muda nada.
+
+**Pronto quando:** `GET /api/dominio/saude` responde 200 com a `DATABASE_URL`
+nova e a conferência acima continua dando "permission denied" no `public`.
 
 ## 9. Limpeza agendada
 
