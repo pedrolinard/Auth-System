@@ -7,10 +7,10 @@ export {
   type ResultadoLogin,
   type Tokens,
   type Usuario,
-} from "./cliente";
+} from "./cliente.js";
 export {
   criarVerificadorDeToken,
   EMISSOR_PROVEDOR,
   type ClaimsTokenAcesso,
   type OpcoesVerificador,
-} from "./servidor";
+} from "./servidor.js";

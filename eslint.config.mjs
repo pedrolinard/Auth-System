@@ -25,6 +25,10 @@ const eslintConfig = defineConfig([
     // sendo varrido também, incluindo JS vendorizado de dependências Python
     // (ex.: django-rest-framework) que nunca deveria passar por este ESLint.
     "django/**",
+    // Saída do build do SDK publicável (JS e .d.ts gerados por tsc a partir
+    // de sdk/src) — varrer o que o compilador emitiu não diz nada sobre o
+    // código-fonte, que o ESLint já vê em sdk/src.
+    "sdk/dist/**",
   ]),
 ]);
 

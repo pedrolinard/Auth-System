@@ -155,8 +155,12 @@ Endpoints: `GET /autorizar`, `POST /api/oidc/token` (`authorization_code` e
 > `clienteConfidencial: true`) e o SDK avisa no console. No backend, use o SDK
 > com `clientSecret` e deixe a aplicação confidencial.
 
+```bash
+npm install @grupocz/auth-gateway-sdk
+```
+
 ```ts
-import { ClienteAuthGateway } from "auth-gateway-sdk";
+import { ClienteAuthGateway } from "@grupocz/auth-gateway-sdk/cliente";
 
 const auth = new ClienteAuthGateway({
   urlBase: "https://auth.suaempresa.com.br",
@@ -250,7 +254,7 @@ O backend não chama o provedor a cada requisição. Ele valida o JWT localmente
 com as chaves públicas:
 
 ```ts
-import { criarVerificadorDeToken } from "auth-gateway-sdk";
+import { criarVerificadorDeToken } from "@grupocz/auth-gateway-sdk/servidor";
 
 const verificar = criarVerificadorDeToken({
   urlBase: "https://auth.suaempresa.com.br",

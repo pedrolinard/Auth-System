@@ -508,7 +508,7 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "publicar-sdk",
     titulo: "Publicar o SDK no npm",
     descricao:
-      "O SDK (sdk/) é consumido direto da fonte. Para um cliente instalar, falta um passo de build (.js + .d.ts), o nome público do pacote e versionamento semântico ligado às mudanças de contrato da API.",
+      "O pacote está PRONTO pra publicar (2026-09-21): build próprio em sdk/tsconfig.json emitindo .js + .d.ts por tsc, sem bundler (`npm run build:sdk`); nome `@grupocz/auth-gateway-sdk`; ESM puro com três pontos de entrada — a raiz, /cliente (não puxa `jose`) e /servidor (o verificador) —, com `jose` virando peer dependency opcional pra quem só usa o cliente no navegador; política de semver amarrada ao contrato da API e CHANGELOG no sdk/. A resolução do build é Node16, não `bundler` como na raiz: é ela que exige extensão nos imports relativos e barra em tempo de compilação um `from \"./cliente\"` que só quebraria na máquina de quem instalou. FALTA o `npm publish` em si, que depende da organização @grupocz no npm (e de decidir a licença — hoje UNLICENSED).",
     categoria: "Multi-tenant",
     prioridade: "baixa",
     status: "pendente",
@@ -524,12 +524,13 @@ export const proximosPassos: ItemProximoPasso[] = [
   },
   {
     id: "auditoria-alvo-aplicacao",
-    titulo: "Auditoria da gestão de aplicações sem o alvo",
+    titulo: "Auditoria da gestão de aplicações diz qual aplicação foi alterada",
     descricao:
-      "Os eventos aplicacao_criada/atualizada/desativada/reativada e segredo_aplicacao_rotacionado registram QUEM agiu (autorId/autorEmail) e caem na trilha da aplicação padrão, mas LogAuditoria não tem coluna pra dizer QUAL aplicação foi alterada — usuarioId/email descrevem uma conta, não um cliente. Precisa de um campo de alvo (ou metadados) na tabela.",
+      "Os eventos aplicacao_criada/atualizada/desativada/reativada/aprovada e segredo_aplicacao_rotacionado registravam QUEM agiu (autorId/autorEmail) e caíam na trilha da aplicação padrão, mas LogAuditoria não tinha onde dizer QUAL aplicação foi alterada — usuarioId/email descrevem uma conta, não um cliente. LogAuditoria.alvo (texto livre, migration 20260916090000_alvo_auditoria) resolve: as rotas de gestão de aplicações e de webhooks gravam `aplicacao:<clientId> (<nome>)` via alvoAplicacao(). Texto e não FK de propósito: o alvo precisa sobreviver à exclusão do que ele descreve — uma trilha que perde a referência quando a aplicação some não serve de trilha.",
     categoria: "Auditoria",
     prioridade: "baixa",
-    status: "pendente",
+    status: "feito",
+    concluidoEm: "2026-09-15",
   },
   {
     id: "django-csrf-constant-time",

@@ -1,0 +1,29 @@
+{
+  // Build do pacote publicável — separado do tsconfig da raiz, que é do
+  // Next.js e roda com "noEmit". Aqui o objetivo é o contrário: emitir o
+  // JavaScript e os .d.ts que o cliente instala do npm.
+  //
+  // module/moduleResolution "Node16" (e não "bundler", como na raiz) de
+  // propósito: é a resolução que o Node usa de verdade. Ela EXIGE extensão
+  // nos imports relativos, então o próprio compilador barra um
+  // `from "./cliente"` que quebraria só na máquina do cliente, depois de
+  // publicado. Por isso os imports em src/index.ts terminam em ".js".
+  "compilerOptions": {
+    "target": "ES2022",
+    // DOM pelo `fetch`/`console`, sem @types/node: o SDK é isomórfico e não
+    // pode exigir que uma aplicação de navegador instale os tipos do Node.
+    "lib": ["ES2022", "DOM"],
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

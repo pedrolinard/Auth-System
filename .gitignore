@@ -64,3 +64,8 @@ next-env.d.ts
 .agents/
 .claude/
 skills-lock.json
+
+# SDK publicável: dist é gerado por `npm run build:sdk`; node_modules só
+# aparece se alguém rodar `npm install` dentro de sdk/ pra publicar.
+/sdk/dist
+/sdk/node_modules
