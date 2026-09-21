@@ -448,6 +448,15 @@ export const proximosPassos: ItemProximoPasso[] = [
     concluidoEm: "2026-09-16",
   },
   {
+    id: "supabase-data-api-rls",
+    titulo: "Data API do Supabase aberto sobre um `public` sem RLS",
+    descricao:
+      "O Supabase liga por padrão o Data API (PostgREST em /rest/v1), que expõe o schema `public` por HTTP autenticado pela `anon key` — uma chave que não é segredo, nasce pra ir embutida em front end. Quem barra um estranho é a Row Level Security, e não existe RLS nenhuma neste projeto: nenhuma migration do Prisma liga RLS nem cria policy. Com o default do Supabase, que concede privilégios em `public` a `anon` e `authenticated`, isso significa ler usuarios (hash de senha, segredo de MFA), chaves_assinatura (a chave RS256 que assina todos os tokens), codigos_backup_mfa, passkeys e tokens_atualizacao com uma chave pública. Confirmado em 2026-09-21 que o endpoint está no ar em produção (401 \"No API key found in request\"); falta confirmar a RLS no Security Advisor. Correção barata: desligar o Data API, que este projeto não usa pra nada (não há supabase-js nem SUPABASE_ANON_KEY no código — Prisma e psycopg falam direto pelo pooler); e ligar RLS sem policy como defesa em profundidade, que não afeta o Prisma porque dono de tabela contorna RLS. Passo a passo em docs/operacao.md, item 11.",
+    categoria: "Segurança",
+    prioridade: "alta",
+    status: "pendente",
+  },
+  {
     id: "banco-tls-e-usuario-django",
     titulo: "Ligar TLS verificado no banco e separar o usuário do Django",
     descricao:

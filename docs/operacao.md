@@ -149,6 +149,18 @@ mesmo usuário do Next.js (`postgres`), quem comprometer o Django lê os hashes 
 senha, os segredos de MFA e os tokens do schema `public`. A separação atual é só
 por schema.
 
+**Antes de tudo, confira o dono das tabelas** — é o único ponto que pode
+travar a transação abaixo. O `ALTER ... OWNER` exige que quem executa seja
+dono do objeto, e as tabelas de `dominio` foram criadas pelo `migrate` do
+Django conectado como `postgres`:
+
+```sql
+SELECT tablename, tableowner FROM pg_tables WHERE schemaname = 'dominio';
+```
+
+Se algum dono não for `postgres`, pare: aquele `ALTER` falha e a transação
+volta atrás inteira.
+
 **Fazer** (SQL Editor do Supabase; troque a senha):
 ```sql
 BEGIN;
@@ -228,3 +240,54 @@ webhooks* verde, sem o aviso de segredo ausente.
 Um sistema de autenticação é exatamente o que o comprador vai perguntar na
 due diligence. Contrate um teste de intrusão externo antes do primeiro cliente
 relevante. O escopo sugerido está em `docs/seguranca/escopo-pentest.md`.
+
+## 11. Data API do Supabase (PostgREST) e RLS
+
+**Faça este antes do item 8.** É a mesma preocupação — impedir que um acesso
+menos privilegiado leia o `public` — mas com uma exposição muito maior: aqui
+não é preciso comprometer o Django, basta uma chave que é pública por
+definição.
+
+**O problema.** O Supabase liga por padrão o Data API: um PostgREST em
+`https://<ref>.supabase.co/rest/v1/` que expõe o schema `public` por HTTP,
+autenticado pela `anon key`. Essa chave **não é segredo** — ela nasce pra ser
+embutida em front end. O que impede um estranho de ler é a Row Level Security.
+E não há RLS nenhuma neste projeto: nenhuma migration do Prisma liga RLS nem
+cria policy. Somado ao default do Supabase, que concede privilégios em `public`
+aos papéis `anon` e `authenticated`, o resultado é que a `anon key` lê
+`usuarios` (hash de senha, segredo de MFA cifrado), `chaves_assinatura`
+(`privadaCifrada`, a chave RS256 que assina todos os tokens),
+`codigos_backup_mfa`, `passkeys`, `tokens_atualizacao` e o resto.
+
+**Verificado em 2026-09-21:** o endpoint responde em produção —
+`GET https://<ref>.supabase.co/rest/v1/` devolve `401 {"message":"No API key
+found in request"}`, ou seja, o PostgREST está no ar, só esperando a chave.
+Falta confirmar no painel se a RLS está desligada: **Supabase → Advisors →
+Security Advisor** aponta "RLS disabled in public" em 1 clique.
+
+**A correção barata: desligar o Data API.** Este projeto não usa PostgREST pra
+nada — não há `supabase-js`, `createClient` nem `SUPABASE_ANON_KEY` em lugar
+nenhum do código; Next.js fala com o banco pelo Prisma e o Django pelo psycopg,
+os dois pelo pooler. O Data API é superfície de ataque sem contrapartida.
+Project Settings → API → desativar.
+
+**Defesa em profundidade: ligar RLS mesmo assim.** Se um dia o Data API for
+religado (por você ou por um default novo do Supabase), a RLS é o que segura.
+Sem policy nenhuma, RLS ligada nega tudo para `anon` e `authenticated`:
+
+```sql
+DO $$ DECLARE t record; BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
+  END LOOP;
+END $$;
+```
+
+**Isso não quebra o Prisma nem o Django.** O dono de uma tabela contorna a RLS
+por padrão (só um `FORCE ROW LEVEL SECURITY` mudaria isso), e as tabelas de
+`public` pertencem ao mesmo papel com que o Prisma conecta. Por isso a ordem
+importa: ligue a RLS **antes** de qualquer troca de dono no `public`.
+
+**Conferir:** no Security Advisor, o alerta de RLS desaparece; e, se você
+desligou o Data API, `GET https://<ref>.supabase.co/rest/v1/` deixa de
+responder.
