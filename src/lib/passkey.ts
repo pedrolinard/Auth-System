@@ -32,6 +32,7 @@ const ORIGEM_PADRAO = process.env.PASSKEY_ORIGIN ?? "http://localhost:3000";
 export type AplicacaoWebAuthn = {
   passkeyRpId: string | null;
   origens: string[];
+  padrao?: boolean;
 };
 
 function rpIdDe(aplicacao: AplicacaoWebAuthn | null): string {
@@ -44,7 +45,13 @@ function rpIdDe(aplicacao: AplicacaoWebAuthn | null): string {
 // aconteceria se a lista vazia virasse "sem checagem".
 function origensDe(aplicacao: AplicacaoWebAuthn | null): string[] {
   const origens = aplicacao?.origens ?? [];
-  return origens.length > 0 ? origens : [ORIGEM_PADRAO];
+  if (origens.length === 0) return [ORIGEM_PADRAO];
+  // A aplicação padrão é o próprio painel: cadastrar outras origens nela não
+  // pode tirar a do painel — as passkeys criadas nele deixariam de funcionar
+  // (mesmo incidente de 2026-09-16 que ehMesmaOrigem resolve em aplicacao.ts).
+  return aplicacao?.padrao && !origens.includes(ORIGEM_PADRAO)
+    ? [...origens, ORIGEM_PADRAO]
+    : origens;
 }
 
 type CredencialResumo = {

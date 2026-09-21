@@ -4,7 +4,7 @@ import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
-import { obterMembroDaOrganizacao, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
+import { obterMembroDaOrganizacao, podeAgirSobre, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
 import { revogacao } from "@/lib/revogacao";
 import { esquemaSuspensao } from "@/lib/validacao";
 import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
@@ -57,6 +57,12 @@ export async function POST(
     return NextResponse.json(
       { erro: "Usuário não encontrado nesta organização." },
       { status: 404 },
+    );
+  }
+  if (!podeAgirSobre(payload.papelOrganizacao, membro.papel)) {
+    return NextResponse.json(
+      { erro: "Só um dono pode suspender outro dono." },
+      { status: 403 },
     );
   }
 

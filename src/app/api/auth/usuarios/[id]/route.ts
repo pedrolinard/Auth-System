@@ -4,8 +4,101 @@ import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
-import { obterMembroDaOrganizacao, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
+import { obterMembroDaOrganizacao, podeAgirSobre, temPapelOrganizacao } from "@/lib/rbacOrganizacao";
 import { revogacao } from "@/lib/revogacao";
+import { esquemaAlterarPapelMembro } from "@/lib/validacao";
+import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
+
+// Muda o papel (admin ↔ membro) de alguém na organização ativa. Virar dono
+// não passa por aqui: é a transferência, que exige senha
+// (POST /api/auth/organizacoes/[id]/transferir).
+//
+// As sessões do alvo não são revogadas: /api/auth/atualizar relê o papel do
+// Membro a cada renovação, então o token novo já sai com o papel certo. Um
+// admin rebaixado mantém os poderes até o access token atual expirar (até
+// 15 min) — mesmo trade-off já aceito na suspensão.
+export async function PATCH(
+  req: Request,
+  { params }: RouteContext<"/api/auth/usuarios/[id]">,
+) {
+  if (!csrfValido(req, await obterCookieCsrf())) {
+    return NextResponse.json({ erro: "Token CSRF inválido." }, { status: 403 });
+  }
+
+  const payload = await autenticarRequisicao(req);
+  if (!payload) {
+    return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  }
+  if (!temPapelOrganizacao(payload.papelOrganizacao, ["dono", "admin"])) {
+    return NextResponse.json(
+      { erro: "Acesso restrito a administradores da organização." },
+      { status: 403 },
+    );
+  }
+
+  const { id } = await params;
+  if (id === payload.sub) {
+    return NextResponse.json(
+      { erro: "Não é possível alterar o próprio papel." },
+      { status: 400 },
+    );
+  }
+
+  const corpo = await req.json().catch(() => null);
+  const dadosValidados = esquemaAlterarPapelMembro.safeParse(corpo);
+  if (!dadosValidados.success) {
+    return NextResponse.json(
+      { erro: "Dados inválidos.", detalhes: dadosValidados.error.flatten() },
+      { status: 400 },
+    );
+  }
+
+  const membro = await obterMembroDaOrganizacao(payload.organizacaoId, id);
+  if (!membro) {
+    return NextResponse.json(
+      { erro: "Usuário não encontrado nesta organização." },
+      { status: 404 },
+    );
+  }
+  if (!podeAgirSobre(payload.papelOrganizacao, membro.papel)) {
+    return NextResponse.json(
+      { erro: "Só um dono pode alterar o papel de outro dono." },
+      { status: 403 },
+    );
+  }
+
+  const { papel } = dadosValidados.data;
+  if (membro.papel === papel) {
+    return NextResponse.json({ sucesso: true, papel });
+  }
+
+  // Rebaixar um dono só é possível pra outro dono (podeAgirSobre acima), e
+  // quem age continua dono — a organização nunca fica sem dono por aqui.
+  await prisma.membro.update({ where: { id: membro.id }, data: { papel } });
+
+  const usuario = await prisma.usuario.findUnique({
+    where: { id },
+    select: { id: true, email: true, aplicacaoId: true },
+  });
+  await registrarEvento({
+    req,
+    evento: "papel_organizacao_alterado",
+    usuarioId: id,
+    email: usuario?.email,
+    autorId: payload.sub,
+    autorEmail: payload.email,
+  });
+  if (usuario) {
+    await emitirEventoWebhook(usuario.aplicacaoId, "membro.papel_alterado", {
+      ...dadosDoUsuario(usuario),
+      organizacaoId: payload.organizacaoId,
+      papel,
+      papelAnterior: membro.papel,
+    });
+  }
+
+  return NextResponse.json({ sucesso: true, papel });
+}
 
 // Remove o alvo da organização ativa — NÃO exclui a conta (Usuario) dele.
 // Antes do multi-tenant esta rota excluía a conta inteira; virou remoção de
@@ -47,6 +140,12 @@ export async function DELETE(
       { status: 404 },
     );
   }
+  if (!podeAgirSobre(payload.papelOrganizacao, membro.papel)) {
+    return NextResponse.json(
+      { erro: "Só um dono pode remover outro dono." },
+      { status: 403 },
+    );
+  }
 
   // Sem isso, a organização podia ficar sem nenhum dono — ninguém mais
   // conseguiria gerenciar membros nem transferir a titularidade.
@@ -62,7 +161,10 @@ export async function DELETE(
     }
   }
 
-  const usuario = await prisma.usuario.findUnique({ where: { id }, select: { email: true } });
+  const usuario = await prisma.usuario.findUnique({
+    where: { id },
+    select: { id: true, email: true, aplicacaoId: true },
+  });
 
   await prisma.membro.delete({ where: { id: membro.id } });
 
@@ -83,6 +185,12 @@ export async function DELETE(
     autorId: payload.sub,
     autorEmail: payload.email,
   });
+  if (usuario) {
+    await emitirEventoWebhook(usuario.aplicacaoId, "membro.removido", {
+      ...dadosDoUsuario(usuario),
+      organizacaoId: payload.organizacaoId,
+    });
+  }
 
   return NextResponse.json({ sucesso: true });
 }

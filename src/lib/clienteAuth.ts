@@ -447,6 +447,17 @@ export async function removerMembroDaOrganizacao(id: string) {
   if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao remover membro."));
 }
 
+export async function alterarPapelMembro(id: string, papel: "admin" | "membro") {
+  const resposta = await fetch(`/api/auth/usuarios/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...cabecalhoCsrf() },
+    credentials: "include",
+    body: JSON.stringify({ papel }),
+  });
+  const corpo = await lerCorpo(resposta);
+  if (!resposta.ok) throw new Error(mensagemErro(corpo, "Falha ao alterar papel."));
+}
+
 export async function suspenderUsuario(id: string, dados: { dias?: number; motivo?: string }) {
   const resposta = await fetch(`/api/auth/usuarios/${id}/suspender`, {
     method: "POST",

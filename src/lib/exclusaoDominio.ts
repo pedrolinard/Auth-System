@@ -19,25 +19,23 @@ const PREFIXO_USUARIO = "usuario:";
  * uma organização apagada sem o pedido de exclusão do outro lado.
  *
  * `usuarioId` cobre os projetos e tarefas LEGADOS da conta (de antes do
- * multi-tenant, sem organizacao_id), que a organização não alcança.
+ * multi-tenant, sem organizacao_id), que a organização não alcança. Só vai na
+ * exclusão da CONTA: excluir uma organização não pode levar junto os dados
+ * legados de quem excluiu — a pessoa continua existindo.
  */
-export function agendarExclusaoDominio(
-  tx: Transacao,
-  dados: { organizacoes: string[]; usuarioId: string },
-) {
+type DadosExclusao = { organizacoes: string[]; usuarioId?: string };
+
+export function agendarExclusaoDominio(tx: Transacao, dados: DadosExclusao) {
   return tx.exclusaoDominioPendente.createMany({
-    data: [
-      ...dados.organizacoes.map((id) => ({ alvo: `${PREFIXO_ORGANIZACAO}${id}` })),
-      { alvo: `${PREFIXO_USUARIO}${dados.usuarioId}` },
-    ],
+    data: alvosDaExclusao(dados).map((alvo) => ({ alvo })),
     skipDuplicates: true,
   });
 }
 
-export function alvosDaExclusao(dados: { organizacoes: string[]; usuarioId: string }): string[] {
+export function alvosDaExclusao(dados: DadosExclusao): string[] {
   return [
     ...dados.organizacoes.map((id) => `${PREFIXO_ORGANIZACAO}${id}`),
-    `${PREFIXO_USUARIO}${dados.usuarioId}`,
+    ...(dados.usuarioId ? [`${PREFIXO_USUARIO}${dados.usuarioId}`] : []),
   ];
 }
 

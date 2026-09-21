@@ -212,6 +212,12 @@ acontece com as contas da sua aplicação. Só aplicações **aprovadas** recebe
 | `usuario.mfa_ativado` / `usuario.mfa_desativado` | verificação em duas etapas | `usuario` |
 | `usuario.excluido` | a pessoa excluiu a conta | `usuario.id` |
 | `membro.suspenso` / `membro.reativado` | suspensão numa organização | `usuario`, `organizacaoId`, `suspensoAte` |
+| `membro.removido` | um dono ou admin tirou a pessoa da organização | `usuario`, `organizacaoId` |
+| `membro.papel_alterado` | papel mudou entre `admin` e `membro` | `usuario`, `organizacaoId`, `papel`, `papelAnterior` |
+| `membro.saiu` | a própria pessoa saiu da organização | `usuario`, `organizacaoId` |
+| `organizacao.renomeada` | nome novo (o slug não muda) | `organizacaoId`, `nome` |
+| `organizacao.transferida` | outra pessoa virou dona; quem transferiu passou a admin | `organizacaoId`, `usuario` (novo dono), `donoAnterior` |
+| `organizacao.excluida` | um dono excluiu a organização | `organizacaoId` |
 
 Cada entrega é um `POST` JSON: `{ "id", "evento", "criadoEm", "dados" }`. O
 `id` é o mesmo em todas as tentativas da entrega: use-o pra ignorar

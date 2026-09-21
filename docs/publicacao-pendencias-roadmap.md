@@ -214,6 +214,17 @@ O script sai com erro se o banco não estiver em dia — é o portão que faltav
 **Só depois que a publicação 1 estiver no ar.** Esta seção cresce a cada
 commit com migration; confira o commit final antes de rodar.
 
+> **A `main` andou depois de `98b946c` e já foi mesclada nesta branch**
+> (2026-09-16): `98bcdd0` gestão de organização e `12eda84` correção da origem
+> da aplicação padrão, os dois já em produção e sem migration. O merge não
+> acrescenta migration nem variável de ambiente. Nesta publicação, a gestão de
+> organização ganha seis eventos de webhook (`membro.removido`,
+> `membro.papel_alterado`, `membro.saiu`, `organizacao.renomeada`,
+> `organizacao.transferida`, `organizacao.excluida`), excluir uma organização
+> passa a apagar os projetos e tarefas dela no Django pela mesma fila da
+> exclusão de conta, e uma organização que gerencia aplicações não pode mais
+> ser excluída pelo painel (409).
+
 ## 2.1 Migrations no banco de produção (SQL Editor)
 
 Todas aditivas. Rode o bloco inteiro; ele é idempotente.

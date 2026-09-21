@@ -30,19 +30,19 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-09-15";
+export const atualizadoEm = "2026-09-21";
 
 // Métricas ESTÁTICAS do código — atualize junto com a mudança que as move
 // (mesma disciplina do resto do arquivo). As métricas AO VIVO (contagens do
 // banco, commit/deploy) são calculadas em tempo de requisição na página.
 export const metricas = {
-  rotasApi: 44,
-  migracoesPrisma: 24,
-  modulosLib: 39,
-  tabelas: 13,
-  testesVitest: 248,
-  testesE2e: 8,
-  testesDjango: 46,
+  rotasApi: 59,
+  migracoesPrisma: 31,
+  modulosLib: 53,
+  tabelas: 17,
+  testesVitest: 323,
+  testesE2e: 9,
+  testesDjango: 53,
 };
 
 export const concluido: GrupoConcluido[] = [
@@ -128,6 +128,7 @@ export const concluido: GrupoConcluido[] = [
       "Organização ativa da sessão é um claim no próprio access token (organizacaoId/papelOrganizacao), não resolvida por parâmetro de rota — preserva o princípio de que o Django nunca consulta as tabelas do Next.js, só confia no JWT",
       "Trocar de organização (POST /api/auth/organizacoes/[id]/entrar) reemite tokens sem pedir senha de novo, mesmo padrão da conclusão de MFA; trade-off aceito: uma organização ativa por sessão de navegador",
       "RBAC de admin (listar/suspender/reativar/remover membro) escopado por organização — dono/admin da organização A não enxerga nem afeta contas da organização B",
+      "Hierarquia entre papéis: admin não suspende, remove nem rebaixa dono; mudar papel (admin ↔ membro), transferir a titularidade com senha, sair, renomear e excluir organização",
       "Convites por e-mail com token JWT próprio (JWT_CONVITE_ORGANIZACAO_SECRET), reconvidar o mesmo e-mail atualiza o pendente em vez de duplicar, aceite exige a conta dona do e-mail convidado e é idempotente sob aceite concorrente",
       "Rate limit dedicado: criar organização (10/h por IP) e enviar convite (30/h por IP + 5/h por e-mail alvo)",
       "Cadastro cria a organização pessoal do usuário numa transação (Usuario + Organizacao + Membro dono) — sem organização órfã se algo falhar no meio",
@@ -337,6 +338,26 @@ export const proximosPassos: ItemProximoPasso[] = [
     concluidoEm: "2026-09-08",
   },
   {
+    id: "webhooks-gestao-organizacao",
+    titulo: "Webhooks e exclusão no Django cobrem a gestão de organização",
+    descricao:
+      "A gestão de organização (mudar papel, transferir, sair, renomear, excluir) nasceu na main depois que os webhooks e a fila de exclusão do Django já existiam nesta branch, e os dois lados não se conheciam. Seis eventos novos: membro.removido (remover membro nunca teve evento), membro.papel_alterado (com papel e papelAnterior), membro.saiu, organizacao.renomeada, organizacao.transferida (novo dono e donoAnterior) e organizacao.excluida. Excluir uma organização agenda os projetos e tarefas dela no Django na MESMA transação, pela fila da exclusão de conta — que passou a aceitar só organizações, sem a conta: sem isso, excluir uma organização apagaria também os projetos legados de quem excluiu. E uma organização que gerencia aplicações não é excluída (409): Aplicacao.organizacaoDonaId é SetNull pra quando a conta dona some sem escolha, mas excluir a organização é decisão do dono, e deixar clientes em produção órfãos sem avisar seria surpresa. Teste de ponta a ponta com contas de uma aplicação cliente (Bearer): os seis eventos chegam assinados no receptor, com organizacaoId, e a fila do Django recebe só a organização.",
+    categoria: "Multi-tenant",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-16",
+  },
+  {
+    id: "gestao-organizacao",
+    titulo: "Gestão de organização: papel, transferência, sair, renomear e excluir",
+    descricao:
+      "Até aqui o papel de um membro só era definido no convite (corrigir exigia remover e convidar de novo), deixar de ser dono só era possível excluindo a própria conta, ninguém saía de uma organização por conta própria e uma organização não podia ser renomeada nem excluída. Agora: PATCH /api/auth/usuarios/[id] muda admin ↔ membro (sem revogar sessões: /atualizar relê o papel a cada renovação, mesma janela de até 15 min da suspensão); POST /api/auth/organizacoes/[id]/transferir passa a titularidade com a senha atual (alvo vira dono, quem transfere vira admin, atômico contra transferência dupla, a sessão é reemitida já com o papel novo); POST .../[id]/sair desfaz o vínculo e revoga as sessões daquela organização (único dono não sai, ninguém sai da única organização acessível); PATCH .../[id] renomeia mantendo o slug; DELETE .../[id] exclui com a senha (só dono, nunca a única organização). Nas rotas novas o papel vem do banco, não do token, porque o id vem na URL e o papel do token pode estar defasado logo depois de uma transferência. A senha atual passou por um helper único (src/lib/senhaAtual.ts) com o mesmo orçamento de tentativas da exclusão de conta. Achado no caminho, e corrigido junto: não havia hierarquia entre papéis — um admin suspendia ou removia o dono da organização. podeAgirSobre (rbacOrganizacao.ts) agora barra admin agindo sobre dono em suspender, remover e mudar papel. Telas: seletor de papel e \"Tornar dono\" em /dashboard/usuarios; renomear, sair e excluir em /dashboard/organizacoes. +14 testes.",
+    categoria: "Multi-tenant",
+    prioridade: "alta",
+    status: "feito",
+    concluidoEm: "2026-09-16",
+  },
+  {
     id: "suspensao-por-organizacao",
     titulo: "Suspensão de conta por organização, não por conta inteira",
     descricao:
@@ -477,7 +498,7 @@ export const proximosPassos: ItemProximoPasso[] = [
     id: "exclusao-dados-dominio",
     titulo: "Excluir os projetos e tarefas no Django junto com a organização",
     descricao:
-      "Excluir a própria conta apagava a organização pessoal no Next.js, mas os projetos e tarefas dela no serviço Django (schema dominio, sem FK entre os serviços) ficavam órfãos — direito ao esquecimento incompleto. Agora o pedido de exclusão entra numa fila (exclusoes_dominio_pendentes) na MESMA transação que apaga a conta, e o gateway chama POST /api/dominio/interno/excluir-dados logo depois da resposta, em lotes, com um token de serviço RS256 de 2 min (mesma chave do JWKS, audiência própria, escopo dentro do token e não no corpo). Vão as organizações apagadas e também a conta, pros projetos e tarefas legados de antes do multi-tenant que ficaram sem organização. O que falhar com o Django fora do ar o job diário de limpeza reenvia. O token de serviço é recusado como token de usuário nos dois serviços.",
+      "Excluir a própria conta apagava a organização pessoal no Next.js, mas os projetos e tarefas dela no serviço Django (schema dominio, sem FK entre os serviços) ficavam órfãos — direito ao esquecimento incompleto. Agora o pedido de exclusão entra numa fila (exclusoes_dominio_pendentes) na MESMA transação que apaga a conta, e o gateway chama POST /api/dominio/interno/excluir-dados logo depois da resposta, em lotes, com um token de serviço RS256 de 2 min (mesma chave do JWKS, audiência própria, escopo dentro do token e não no corpo). Vão as organizações apagadas e também a conta, pros projetos e tarefas legados de antes do multi-tenant que ficaram sem organização. O que falhar com o Django fora do ar o job diário de limpeza reenvia. O token de serviço é recusado como token de usuário nos dois serviços. Excluir uma organização em /dashboard/organizacoes (gestão de organização) entra na mesma fila.",
     categoria: "Multi-tenant",
     prioridade: "media",
     status: "feito",

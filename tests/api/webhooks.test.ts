@@ -9,6 +9,7 @@ import {
   cabecalhosAplicacao,
   criarUsuarioTeste,
   gerarEmailTeste,
+  ipAleatorio,
   loginTeste,
   SENHA_TESTE,
 } from "../helpers";
@@ -224,6 +225,94 @@ describe("Webhooks", () => {
     const { cabecalhos: deOutraOrg } = await loginTeste(outro.email, outro.senha);
     expect((await chamar(`/api/auth/aplicacoes/${aplicacao.id}/webhooks`, deOutraOrg)).status).toBe(404);
     expect((await chamar(`/api/auth/aplicacoes/${aplicacao.id}/webhooks/${webhook.id}`, deOutraOrg, "DELETE")).status).toBe(404);
+  });
+
+  it("gestão de organização emite os eventos de membro e de organização; excluir agenda só a organização no Django", async () => {
+    const eventos = [
+      "membro.papel_alterado",
+      "membro.removido",
+      "membro.saiu",
+      "organizacao.renomeada",
+      "organizacao.transferida",
+      "organizacao.excluida",
+    ];
+    const operador = await sessaoOperador();
+    const { aplicacao } = await novaAplicacaoComWebhook(operador, eventos);
+
+    // Contas da aplicação cliente, com sessão por Bearer (sem cookie, sem CSRF).
+    async function conta(prefixo: string) {
+      const email = gerarEmailTeste(prefixo);
+      const cadastro = await fetch(`${BASE_URL}/api/auth/cadastro`, {
+        method: "POST",
+        headers: cabecalhosAplicacao(aplicacao),
+        body: JSON.stringify({ nome: prefixo, email, senha: SENHA_TESTE }),
+      });
+      expect(cadastro.status).toBe(201);
+      const { id } = await prisma.usuario.findFirstOrThrow({ where: { email, aplicacaoId: aplicacao.id } });
+      return { id, email };
+    }
+    async function bearer(email: string) {
+      const login = await fetch(`${BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: cabecalhosAplicacao(aplicacao),
+        body: JSON.stringify({ email, senha: SENHA_TESTE }),
+      });
+      expect(login.status).toBe(200);
+      return (await login.json()).tokenAcesso as string;
+    }
+    function como(token: string, metodo: string, caminho: string, corpo?: unknown) {
+      return chamar(caminho, { Authorization: `Bearer ${token}`, "X-Forwarded-For": ipAleatorio() }, metodo, corpo);
+    }
+
+    const dono = await conta("org-evento-dono");
+    const alvo = await conta("org-evento-alvo");
+    const removido = await conta("org-evento-removido");
+    const { organizacaoId } = await prisma.membro.findFirstOrThrow({ where: { usuarioId: dono.id } });
+    await prisma.membro.createMany({
+      data: [
+        { organizacaoId, usuarioId: alvo.id, papel: "membro" },
+        { organizacaoId, usuarioId: removido.id, papel: "membro" },
+      ],
+    });
+    recebidos.length = 0;
+
+    let tokenDono = await bearer(dono.email);
+    expect((await como(tokenDono, "PATCH", `/api/auth/usuarios/${alvo.id}`, { papel: "admin" })).status).toBe(200);
+    expect((await como(tokenDono, "PATCH", `/api/auth/organizacoes/${organizacaoId}`, { nome: "Nome novo" })).status).toBe(200);
+    expect((await como(tokenDono, "DELETE", `/api/auth/usuarios/${removido.id}`)).status).toBe(200);
+    const transferir = await como(tokenDono, "POST", `/api/auth/organizacoes/${organizacaoId}/transferir`, {
+      usuarioId: alvo.id,
+      senha: SENHA_TESTE,
+    });
+    expect(transferir.status).toBe(200);
+
+    // Ex-dono cria outra organização (a sessão passa pra ela) e sai desta.
+    const criar = await como(tokenDono, "POST", "/api/auth/organizacoes", { nome: "Outra do ex-dono" });
+    expect(criar.status).toBe(201);
+    tokenDono = (await criar.json()).tokenAcesso;
+    expect((await como(tokenDono, "POST", `/api/auth/organizacoes/${organizacaoId}/sair`)).status).toBe(200);
+
+    // Novo dono exclui (tem a organização pessoal pra onde ir).
+    const tokenAlvo = await bearer(alvo.email);
+    const excluir = await como(tokenAlvo, "DELETE", `/api/auth/organizacoes/${organizacaoId}`, { senha: SENHA_TESTE });
+    expect(excluir.status).toBe(200);
+
+    await esperarRecebidos(eventos.length);
+    const porEvento = new Map(recebidos.map((r) => [String(r.cabecalhos["x-auth-gateway-evento"]), JSON.parse(r.corpo).dados]));
+    expect([...porEvento.keys()].sort()).toEqual([...eventos].sort());
+    for (const dados of porEvento.values()) expect(dados.organizacaoId).toBe(organizacaoId);
+    expect(porEvento.get("membro.papel_alterado")).toMatchObject({ papel: "admin", papelAnterior: "membro", usuario: { id: alvo.id } });
+    expect(porEvento.get("membro.removido").usuario.id).toBe(removido.id);
+    expect(porEvento.get("membro.saiu").usuario.id).toBe(dono.id);
+    expect(porEvento.get("organizacao.renomeada").nome).toBe("Nome novo");
+    expect(porEvento.get("organizacao.transferida")).toMatchObject({ usuario: { id: alvo.id }, donoAnterior: { id: dono.id } });
+
+    // Só a organização vai pro Django — nunca os dados legados de quem excluiu.
+    const pendentes = await prisma.exclusaoDominioPendente.findMany({
+      where: { alvo: { in: [`organizacao:${organizacaoId}`, `usuario:${alvo.id}`] } },
+    });
+    expect(pendentes.map((p) => p.alvo)).toEqual([`organizacao:${organizacaoId}`]);
+    await prisma.exclusaoDominioPendente.deleteMany({ where: { alvo: `organizacao:${organizacaoId}` } });
   });
 
   it("recusa webhook pro próprio provedor e eventos desconhecidos", async () => {

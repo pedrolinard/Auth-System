@@ -11,6 +11,12 @@ export const EVENTOS_WEBHOOK = [
   "usuario.excluido",
   "membro.suspenso",
   "membro.reativado",
+  "membro.removido",
+  "membro.papel_alterado",
+  "membro.saiu",
+  "organizacao.renomeada",
+  "organizacao.transferida",
+  "organizacao.excluida",
 ] as const;
 
 export type EventoWebhook = (typeof EVENTOS_WEBHOOK)[number] | "webhook.teste";

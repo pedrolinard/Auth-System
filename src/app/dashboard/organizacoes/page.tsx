@@ -1,18 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Building2, Inbox, Mail, Plus, X } from "lucide-react";
+import { Building2, Inbox, LogOut, Mail, Pencil, Plus, Trash2, X } from "lucide-react";
 import { usePainelUsuario } from "@/components/painel/usePainelUsuario";
 import {
   aceitarConviteRecebido,
   criarConvite,
   criarOrganizacao,
   entrarNaOrganizacao,
+  excluirOrganizacao,
   listarConvites,
   listarConvitesRecebidos,
   listarOrganizacoes,
   recusarConviteRecebido,
+  renomearOrganizacao,
   revogarConvite,
+  sairDaOrganizacao,
   type ConviteOrganizacao,
   type ConviteRecebido,
   type Organizacao,
@@ -46,8 +49,24 @@ export default function PaginaOrganizacoes() {
   const [emailVerificado, setEmailVerificado] = useState(true);
   const [respondendoId, setRespondendoId] = useState<string | null>(null);
 
+  const [nomeEditado, setNomeEditado] = useState<string | null>(null);
+  const [renomeando, setRenomeando] = useState(false);
+  const [confirmandoSaidaId, setConfirmandoSaidaId] = useState<string | null>(null);
+  const [saindoId, setSaindoId] = useState<string | null>(null);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [senhaExclusao, setSenhaExclusao] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+  // Erro de renomear/excluir fica dentro do cartão da organização ativa, junto
+  // do campo que falhou — não no topo da página, fora da vista.
+  const [erroGestao, setErroGestao] = useState<string | null>(null);
+
   const ehAdminOrganizacao =
     usuario?.papelOrganizacao === "dono" || usuario?.papelOrganizacao === "admin";
+  const organizacaoAtiva = organizacoes?.find((org) => org.id === usuario?.organizacaoId);
+  // Mesma regra do servidor (temOutraOrganizacaoAcessivel): sem outra
+  // organização em que dê pra entrar, sair e excluir sempre seriam recusados.
+  const temOutraAcessivel =
+    organizacoes?.some((org) => org.id !== usuario?.organizacaoId && !org.suspenso) ?? false;
 
   const carregarOrganizacoes = useCallback(async () => {
     try {
@@ -118,6 +137,62 @@ export default function PaginaOrganizacoes() {
         erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra trocar de organização.",
       );
       setTrocandoId(null);
+    }
+  }
+
+  async function aoRenomear(evento: React.FormEvent) {
+    evento.preventDefault();
+    if (!organizacaoAtiva || nomeEditado === null) return;
+    setErroGestao(null);
+    setRenomeando(true);
+    try {
+      const { nome } = await renomearOrganizacao(organizacaoAtiva.id, nomeEditado);
+      setOrganizacoes((atual) =>
+        atual?.map((org) => (org.id === organizacaoAtiva.id ? { ...org, nome } : org)) ?? null,
+      );
+      setNomeEditado(null);
+      notificar.sucesso("Nome da organização atualizado.");
+    } catch (erroCapturado) {
+      setErroGestao(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+    } finally {
+      setRenomeando(false);
+    }
+  }
+
+  async function aoSair(org: Organizacao) {
+    setSaindoId(org.id);
+    try {
+      await sairDaOrganizacao(org.id);
+      notificar.info(`Você saiu de ${org.nome}.`);
+      if (org.id === usuario?.organizacaoId) {
+        // A sessão foi reemitida em outra organização — mesmo motivo do
+        // criar/trocar: tudo em memória ainda aponta pra antiga.
+        window.location.reload();
+        return;
+      }
+      setOrganizacoes((atual) => atual?.filter((o) => o.id !== org.id) ?? null);
+      setConfirmandoSaidaId(null);
+      setSaindoId(null);
+    } catch (erroCapturado) {
+      notificar.erro(
+        erroCapturado instanceof Error ? erroCapturado.message : "Não deu pra sair da organização.",
+      );
+      setSaindoId(null);
+    }
+  }
+
+  async function aoExcluir(evento: React.FormEvent) {
+    evento.preventDefault();
+    if (!organizacaoAtiva) return;
+    setErroGestao(null);
+    setExcluindo(true);
+    try {
+      await excluirOrganizacao(organizacaoAtiva.id, senhaExclusao);
+      notificar.info(`${organizacaoAtiva.nome} foi excluída.`);
+      window.location.reload();
+    } catch (erroCapturado) {
+      setErroGestao(erroCapturado instanceof Error ? erroCapturado.message : "Erro inesperado.");
+      setExcluindo(false);
     }
   }
 
@@ -273,7 +348,20 @@ export default function PaginaOrganizacoes() {
                       {org.papel}
                     </span>
                   </span>
-                  {ativa ? (
+                  {!ativa && confirmandoSaidaId === org.id ? (
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        onClick={() => aoSair(org)}
+                        disabled={saindoId === org.id}
+                        className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition-all duration-150 hover:-translate-y-px hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        {saindoId === org.id ? "Saindo..." : "Sim, sair"}
+                      </button>
+                      <button onClick={() => setConfirmandoSaidaId(null)} className="btn-secondary-sm">
+                        Cancelar
+                      </button>
+                    </span>
+                  ) : ativa ? (
                     <span className="rounded-full bg-[var(--accent-wash)] px-2.5 py-1 text-xs font-medium text-[var(--accent)]">
                       Ativa
                     </span>
@@ -290,10 +378,143 @@ export default function PaginaOrganizacoes() {
                       {trocandoId === org.id ? "Entrando..." : "Entrar"}
                     </button>
                   )}
+                  {!ativa && confirmandoSaidaId !== org.id && (
+                    <button
+                      onClick={() => setConfirmandoSaidaId(org.id)}
+                      className="btn-ghost shrink-0 p-1.5"
+                      aria-label={`Sair de ${org.nome}`}
+                      title="Sair da organização"
+                    >
+                      <LogOut className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  )}
                 </li>
               );
             })}
           </ul>
+        )}
+
+        {organizacaoAtiva && (
+          <section className="card-surface flex flex-col gap-4 p-6">
+            <h2 className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+              <Building2 className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+              Organização ativa
+            </h2>
+
+            <AvisoErro>{erroGestao}</AvisoErro>
+
+            {ehAdminOrganizacao && (
+              <form onSubmit={aoRenomear} className="flex flex-col gap-2">
+                <label htmlFor="nome-organizacao" className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Nome
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="nome-organizacao"
+                    required
+                    value={nomeEditado ?? organizacaoAtiva.nome}
+                    onChange={(e) => setNomeEditado(e.target.value)}
+                    className="input-field min-w-0 flex-1"
+                  />
+                  <button
+                    type="submit"
+                    disabled={
+                      renomeando ||
+                      nomeEditado === null ||
+                      nomeEditado.trim() === organizacaoAtiva.nome
+                    }
+                    className="btn-secondary-sm shrink-0 gap-1.5"
+                  >
+                    <Pencil className="h-3 w-3" aria-hidden="true" />
+                    {renomeando ? "Salvando..." : "Renomear"}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {!temOutraAcessivel ? (
+              <p className="border-t border-black/[.06] pt-4 text-xs text-zinc-500 dark:border-white/[.08] dark:text-zinc-400">
+                Esta é sua única organização. Para sair dela ou excluí-la, crie ou entre em outra
+                antes.
+              </p>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 border-t border-black/[.06] pt-4 dark:border-white/[.08]">
+                {confirmandoSaidaId === organizacaoAtiva.id ? (
+                  <>
+                    <span className="text-xs text-red-600 dark:text-red-400">
+                      Sair de {organizacaoAtiva.nome}?
+                    </span>
+                    <button
+                      onClick={() => aoSair(organizacaoAtiva)}
+                      disabled={saindoId === organizacaoAtiva.id}
+                      className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition-all duration-150 hover:-translate-y-px hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
+                    >
+                      {saindoId === organizacaoAtiva.id ? "Saindo..." : "Sim, sair"}
+                    </button>
+                    <button onClick={() => setConfirmandoSaidaId(null)} className="btn-secondary-sm">
+                      Cancelar
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setConfirmandoSaidaId(organizacaoAtiva.id)}
+                    className="btn-secondary-sm gap-1.5"
+                  >
+                    <LogOut className="h-3 w-3" aria-hidden="true" />
+                    Sair da organização
+                  </button>
+                )}
+                {usuario?.papelOrganizacao === "dono" && !confirmandoExclusao && (
+                  <button
+                    onClick={() => setConfirmandoExclusao(true)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-full border border-red-600/30 px-4 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 dark:text-red-400"
+                  >
+                    <Trash2 className="h-3 w-3" aria-hidden="true" />
+                    Excluir organização
+                  </button>
+                )}
+              </div>
+            )}
+
+            {confirmandoExclusao && (
+              <form onSubmit={aoExcluir} className="flex flex-col gap-2">
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  Excluir {organizacaoAtiva.nome} remove todos os membros e convites, e não dá pra
+                  desfazer. Confirme com sua senha.
+                </p>
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={senhaExclusao}
+                  onChange={(e) => setSenhaExclusao(e.target.value)}
+                  placeholder="Sua senha"
+                  aria-label="Sua senha"
+                  className="input-field"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="submit"
+                    disabled={excluindo || !senhaExclusao}
+                    className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-1.5 text-xs font-medium text-white transition-all duration-150 hover:-translate-y-px hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    {excluindo ? "Excluindo..." : "Excluir definitivamente"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmandoExclusao(false);
+                      setSenhaExclusao("");
+                      setErroGestao(null);
+                    }}
+                    className="btn-secondary-sm"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
         )}
 
         <form onSubmit={aoCriarOrganizacao} className="card-surface flex flex-col gap-3 p-6">
