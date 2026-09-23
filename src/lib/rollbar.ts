@@ -17,6 +17,16 @@ export const configCliente = {
   // IP truncado (último octeto zerado): investigar um erro não precisa saber
   // exatamente quem o teve. LGPD, ver docs/juridico/registro-operacoes-tratamento.md.
   captureIp: "anonymize" as const,
+  // Somados à lista padrão do rollbar.js (que tem password/access_token, mas
+  // não `token`): os links de e-mail (redefinir senha, verificar e trocar
+  // e-mail, aceitar convite) trazem o token em `?token=`, e a URL da página
+  // vai em todo erro e no rastro de navegação. O mascaramento vale pra
+  // chave de objeto com esse nome e pra `nome=valor` dentro de qualquer string.
+  scrubFields: ["token", "mfaToken", "refreshToken", "senha", "senhaAtual", "novaSenha", "codigo", "segredo", "clientSecret"],
+  // O rastro de telemetria guarda o que foi digitado nos campos (o rollbar.js
+  // só esconde type="password"): código de MFA, código de backup e e-mail
+  // iriam junto com o erro.
+  scrubTelemetryInputs: true,
   // NEXT_PUBLIC_VERCEL_ENV é exposta automaticamente pela Vercel pro
   // client (VERCEL_ENV sozinha não seria) — distingue production/preview/
   // development nos 3 ambientes.
