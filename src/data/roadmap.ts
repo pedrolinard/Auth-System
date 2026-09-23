@@ -30,7 +30,7 @@ export type GrupoConcluido = {
   itens: string[];
 };
 
-export const atualizadoEm = "2026-09-21";
+export const atualizadoEm = "2026-09-23";
 
 // Métricas ESTÁTICAS do código — atualize junto com a mudança que as move
 // (mesma disciplina do resto do arquivo). As métricas AO VIVO (contagens do
@@ -454,6 +454,15 @@ export const proximosPassos: ItemProximoPasso[] = [
       "O Supabase liga por padrão o Data API (PostgREST em /rest/v1), que expõe o schema `public` por HTTP autenticado pela `anon key` — uma chave que não é segredo, nasce pra ir embutida em front end. Quem barra um estranho é a Row Level Security, e não existe RLS nenhuma neste projeto: nenhuma migration do Prisma liga RLS nem cria policy. Com o default do Supabase, que concede privilégios em `public` a `anon` e `authenticated`, isso significa ler usuarios (hash de senha, segredo de MFA), chaves_assinatura (a chave RS256 que assina todos os tokens), codigos_backup_mfa, passkeys e tokens_atualizacao com uma chave pública. Confirmado em 2026-09-21 que o endpoint está no ar em produção (401 \"No API key found in request\"); falta confirmar a RLS no Security Advisor. Correção barata: desligar o Data API, que este projeto não usa pra nada (não há supabase-js nem SUPABASE_ANON_KEY no código — Prisma e psycopg falam direto pelo pooler); e ligar RLS sem policy como defesa em profundidade, que não afeta o Prisma porque dono de tabela contorna RLS. A parte de RLS já está feita e versionada: migration 20260921120000_rls_public liga RLS em tudo de `public` e sobe na publicação 2, com o teste tests/lib/rlsPublic.test.ts exigindo que nenhuma tabela fique de fora — sem ele, uma tabela criada por migration futura nasceria sem RLS em silêncio. FALTA a parte de painel: confirmar no Security Advisor e desligar o Data API (ou tirar `public` dos \"Exposed schemas\"). Passo a passo em docs/operacao.md, item 11.",
     categoria: "Segurança",
     prioridade: "alta",
+    status: "pendente",
+  },
+  {
+    id: "rls-tabelas-de-extensao",
+    titulo: "RLS do `public` ignorar tabelas de extensão",
+    descricao:
+      "A migration 20260921120000_rls_public e o teste tests/lib/rlsPublic.test.ts tratam toda tabela de `public` igual, inclusive as que pertencem a uma extensão. Hoje não existe nenhuma (a trava do SQL de produção de 2026-09-23 provou isso), mas instalar PostGIS e afins em `public` cria tabela como `spatial_ref_sys` com dono `supabase_admin`: o teste fica vermelho sem problema real e o laço da migration falharia ao tentar ligar RLS nela. Correção: excluir objetos com `pg_depend.deptype = 'e'` no laço e no teste. Mexer no migration.sql muda o checksum que produção já registrou em `_prisma_migrations`, então o ajuste entra como migration nova (ou só no teste), nunca editando a existente. Enquanto isso, instalar extensão no schema `extensions`, que é o padrão do Supabase.",
+    categoria: "Segurança",
+    prioridade: "baixa",
     status: "pendente",
   },
   {

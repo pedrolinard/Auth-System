@@ -374,6 +374,12 @@ deploy do Django. Nada se perde; mesmo assim, faça os dois em seguida.
 Se alguma aplicação de teste usa o SDK no navegador, marque "Cliente público"
 nela no painel logo depois do deploy — senão a renovação passa a ser recusada.
 
+**Variáveis de ambiente:** nenhuma nova obrigatória. `WEBHOOKS_PERMITIR_REDE_LOCAL`
+é nova e **não deve existir em produção** (afrouxa a proteção contra SSRF dos
+webhooks). E `RESEND_API_KEY` ausente passou de aviso a **erro de boot** fora do
+Preview: produção tem a chave, mas apagá-la agora derruba o Next em vez de só
+parar os e-mails.
+
 **Antes do merge, confira a aplicação padrão:** a regra de origem dela mudou.
 Antes, lista de origens vazia aceitava qualquer origem; agora aceita a própria
 origem do provedor (mesmo host da requisição), chamadas sem `Origin` e as
