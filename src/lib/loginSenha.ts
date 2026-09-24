@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { contextoEmail, type AplicacaoResolvida } from "@/lib/aplicacao";
 import { dispositivoEhConfiavel } from "@/lib/dispositivoConfiavel";
-import { enviarEmailDispositivoNovo, enviarEmailViagemImpossivel } from "@/lib/email";
+import { enviarEmailDispositivoNovo, enviarEmailViagemImpossivel, type MarcaEmail } from "@/lib/email";
 import { formatarLocalizacao, obterGeo } from "@/lib/geo";
 import {
   contarEventosPorIp,
@@ -84,6 +84,30 @@ export type ResultadoLoginSenha =
 
 function recusa(status: number, corpo: Record<string, unknown>): ResultadoLoginSenha {
   return { tipo: "recusa", status, corpo };
+}
+
+/**
+ * Alerta de login (dispositivo novo, viagem impossível) enviado DEPOIS da
+ * resposta, com a marca da aplicação dona da conta: o login não espera o
+ * Resend. Dentro do after() o erro não chega mais ao onRequestError da rota,
+ * e a busca da marca pode lançar — então é capturado aqui e vai pro Rollbar.
+ * Usado também pelo login por passkey.
+ */
+export function alertarDepoisDaResposta(
+  aplicacaoId: string,
+  descricao: string,
+  enviarAlerta: (marca: MarcaEmail) => Promise<void>,
+): void {
+  after(async () => {
+    try {
+      const { marca } = await contextoEmail(aplicacaoId);
+      await enviarAlerta(marca);
+    } catch (erro) {
+      console.error(`Falha ao enviar o alerta de ${descricao}:`, erro);
+      const { rollbarServidor } = await import("@/lib/rollbarServidor");
+      rollbarServidor.error(erro as Error, { alerta: descricao });
+    }
+  });
 }
 
 export async function autenticarComSenha(
@@ -199,28 +223,24 @@ export async function autenticarComSenha(
 
   await registrarEvento({ req, evento: "login_sucesso", usuarioId: usuario.id, email });
 
-  // Os alertas saem com a marca da aplicação dona da conta. O envio vai pro
-  // after(): o login não espera o Resend, e enviar() nunca lança (falha só
-  // vira log), então nada que a resposta precise se perde. O evento de
-  // auditoria continua síncrono.
+  // O evento de auditoria continua síncrono; o e-mail sai depois da resposta
+  // (ver alertarDepoisDaResposta).
   const quando = new Date();
   if (viagemImpossivel) {
     // Alerta mais específico que o de "dispositivo novo" — evita mandar os
     // dois e-mails pro mesmo login suspeito.
     await registrarEvento({ req, evento: "viagem_impossivel_detectada", usuarioId: usuario.id, email });
-    after(async () => {
-      const { marca } = await contextoEmail(usuario.aplicacaoId);
-      await enviarEmailViagemImpossivel(usuario.email, {
+    alertarDepoisDaResposta(usuario.aplicacaoId, "viagem impossível", (marca) =>
+      enviarEmailViagemImpossivel(usuario.email, {
         paisAnterior: formatarLocalizacao({ cidade: null, regiao: null, pais: ultimaSessao!.geoPais }) ?? ultimaSessao!.geoPais!,
         paisAtual: formatarLocalizacao({ cidade: null, regiao: null, pais: geoAtual.pais }) ?? geoAtual.pais!,
         quando,
-      }, marca);
-    });
+      }, marca),
+    );
   } else if (!loginAnteriorMesmoDispositivo) {
-    after(async () => {
-      const { marca } = await contextoEmail(usuario.aplicacaoId);
-      await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando }, marca);
-    });
+    alertarDepoisDaResposta(usuario.aplicacaoId, "dispositivo novo", (marca) =>
+      enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando }, marca),
+    );
   }
 
   if (usuario.mfaAtivado) {
