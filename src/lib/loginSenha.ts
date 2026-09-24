@@ -106,6 +106,9 @@ export function alertarDepoisDaResposta(
       console.error(`Falha ao enviar o alerta de ${descricao}:`, erro);
       const { rollbarServidor } = await import("@/lib/rollbarServidor");
       rollbarServidor.error(erro as Error, { alerta: descricao });
+      // error() só enfileira o envio. Esperar ele sair: terminado o after(),
+      // a Vercel pode congelar a função antes de o relatório chegar.
+      await new Promise<void>((pronto) => rollbarServidor.wait(pronto));
     }
   });
 }
