@@ -9,14 +9,8 @@ import {
   enviarEmailAlteracaoEmailSolicitada,
   enviarEmailConfirmacaoAlteracaoEmail,
 } from "@/lib/email";
-import {
-  limiteExcedido,
-  limiteExcedidoPorEmail,
-  obterIp,
-  registrarTentativaEmail,
-  registrarTentativaIp,
-} from "@/lib/rateLimit";
-import { verificarSenha } from "@/lib/senha";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { conferirSenhaAtual } from "@/lib/senhaAtual";
 import { gerarTokenAlteracaoEmail } from "@/lib/token";
 import { esquemaAlterarEmail } from "@/lib/validacao";
 
@@ -24,7 +18,6 @@ import { esquemaAlterarEmail } from "@/lib/validacao";
 // autenticada (senha, minha-conta DELETE): sem limite, um access token
 // roubado poderia forçar bruta a `senha` sem parar.
 const MAX_TENTATIVAS_SENHA_ATUAL = 5;
-const JANELA_SENHA_ATUAL_MS = 5 * 60 * 1000;
 
 export async function POST(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
@@ -65,36 +58,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
 
-  if (
-    await limiteExcedidoPorEmail({
-      aplicacaoId: usuario.aplicacaoId,
-      email: usuario.email,
-      evento: "senha_atual_falha",
-      maximo: MAX_TENTATIVAS_SENHA_ATUAL,
-    })
-  ) {
-    return NextResponse.json(
-      { erro: "Muitas tentativas. Tente novamente mais tarde." },
-      { status: 429 },
-    );
-  }
-
-  if (!(await verificarSenha(senha, usuario.senhaHash))) {
-    await registrarEvento({
-      req,
-      evento: "senha_atual_falha",
-      usuarioId: usuario.id,
-      email: usuario.email,
-    });
-    await registrarTentativaIp({ ip, evento: "senha_atual_falha", janelaMs: JANELA_SENHA_ATUAL_MS });
-    await registrarTentativaEmail({
-      aplicacaoId: usuario.aplicacaoId,
-      email: usuario.email,
-      evento: "senha_atual_falha",
-      janelaMs: JANELA_SENHA_ATUAL_MS,
-    });
-    return NextResponse.json({ erro: "Senha atual incorreta." }, { status: 401 });
-  }
+  const erroSenha = await conferirSenhaAtual(req, usuario, senha, "Senha atual incorreta.");
+  if (erroSenha) return erroSenha;
 
   if (novoEmail === usuario.email) {
     return NextResponse.json(

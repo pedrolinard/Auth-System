@@ -1,5 +1,5 @@
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
@@ -212,17 +212,24 @@ export async function POST(req: Request) {
 
   await registrarEvento({ req, evento: "login_passkey_sucesso", usuarioId: usuario.id, email: usuario.email });
 
-  // Os alertas saem com a marca da aplicação dona da conta.
-  const { marca } = await contextoEmail(usuario.aplicacaoId);
+  // Os alertas saem com a marca da aplicação dona da conta, depois da
+  // resposta (mesmo motivo de lib/loginSenha.ts).
+  const quando = new Date();
   if (viagemImpossivel) {
     await registrarEvento({ req, evento: "viagem_impossivel_detectada", usuarioId: usuario.id, email: usuario.email });
-    await enviarEmailViagemImpossivel(usuario.email, {
-      paisAnterior: formatarLocalizacao({ cidade: null, regiao: null, pais: ultimaSessao!.geoPais }) ?? ultimaSessao!.geoPais!,
-      paisAtual: formatarLocalizacao({ cidade: null, regiao: null, pais: geoAtual.pais }) ?? geoAtual.pais!,
-      quando: new Date(),
-    }, marca);
+    after(async () => {
+      const { marca } = await contextoEmail(usuario.aplicacaoId);
+      await enviarEmailViagemImpossivel(usuario.email, {
+        paisAnterior: formatarLocalizacao({ cidade: null, regiao: null, pais: ultimaSessao!.geoPais }) ?? ultimaSessao!.geoPais!,
+        paisAtual: formatarLocalizacao({ cidade: null, regiao: null, pais: geoAtual.pais }) ?? geoAtual.pais!,
+        quando,
+      }, marca);
+    });
   } else if (!loginAnteriorMesmoDispositivo) {
-    await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando: new Date() }, marca);
+    after(async () => {
+      const { marca } = await contextoEmail(usuario.aplicacaoId);
+      await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando }, marca);
+    });
   }
 
   // Login por passkey já é, por natureza, posse do authenticator + presença

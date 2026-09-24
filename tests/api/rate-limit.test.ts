@@ -58,6 +58,27 @@ describe("Rate limiting", () => {
     await apagarUsuariosTeste([usuario.email]);
   }, 120000);
 
+  it("senhas erradas disparadas em paralelo não furam o limite por conta", async () => {
+    // Mesmo cenário acima, mas tudo AO MESMO TEMPO: sem a reserva antes do
+    // bcrypt, os 40 pedidos passavam pela checagem antes de qualquer um somar.
+    const usuario = await criarUsuarioTeste("rate-limit-conta-paralelo");
+
+    const respostas = await Promise.all(
+      Array.from({ length: 40 }, () =>
+        fetch(`${BASE_URL}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Forwarded-For": ipFalso() },
+          body: JSON.stringify({ email: usuario.email, senha: "SenhaErrada999" }),
+        }),
+      ),
+    );
+    const status = respostas.map((resposta) => resposta.status);
+    expect(status.filter((s) => s === 401).length).toBeLessThanOrEqual(20);
+    expect(status.filter((s) => s === 429).length).toBeGreaterThanOrEqual(20);
+
+    await apagarUsuariosTeste([usuario.email]);
+  }, 120000);
+
   it("bloqueia cadastro com 429 após estourar o limite de tentativas do mesmo IP", async () => {
     const ip = ipFalso();
     const emailsCriados: string[] = [];

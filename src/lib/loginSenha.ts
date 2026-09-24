@@ -1,5 +1,7 @@
 import "server-only";
 
+import { after } from "next/server";
+
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { contextoEmail, type AplicacaoResolvida } from "@/lib/aplicacao";
@@ -10,8 +12,7 @@ import {
   contarEventosPorIp,
   limiteExcedidoPorEmail,
   obterIp,
-  registrarTentativaEmail,
-  registrarTentativaIp,
+  reservarTentativas,
 } from "@/lib/rateLimit";
 import { verificarSenha } from "@/lib/senha";
 import { bloqueioPorSuspensao } from "@/lib/sessao";
@@ -123,28 +124,45 @@ export async function autenticarComSenha(
     }
   }
 
-  const usuario = await prisma.usuario.findUnique({
-    where: { aplicacaoId_email: { aplicacaoId: aplicacao.id, email } },
-  });
-  // Sempre roda o bcrypt.compare, mesmo sem usuário — contra o hash falso
-  // acima quando não há usuário, para equalizar o tempo dos dois caminhos.
-  const senhaConfere = await verificarSenha(
-    senha,
-    usuario?.senhaHash ?? HASH_FALSO_PARA_EQUALIZAR_TEMPO,
-  );
-  const credenciaisValidas = usuario && senhaConfere;
-
-  if (!credenciaisValidas) {
-    await registrarEvento({ req, evento: "login_falha", email, aplicacaoId: aplicacao.id });
-    await registrarTentativaIp({ ip, evento: "login_falha", janelaMs: JANELA_LOGIN_MS });
-    await registrarTentativaEmail({
+  // Os checks acima só leem os contadores; quem segura pedidos simultâneos é
+  // esta reserva, feita ANTES do bcrypt (ver reservarTentativas).
+  const reserva = await reservarTentativas([
+    { ip, evento: "login_falha", maximo: MAX_TENTATIVAS_LOGIN, janelaMs: JANELA_LOGIN_MS },
+    {
       aplicacaoId: aplicacao.id,
       email,
       evento: "login_falha",
+      maximo: MAX_TENTATIVAS_LOGIN_POR_CONTA,
       janelaMs: JANELA_LOGIN_POR_CONTA_MS,
+    },
+  ]);
+  if (!reserva) {
+    return recusa(429, { erro: "Muitas tentativas. Tente novamente mais tarde." });
+  }
+
+  let usuario: Awaited<ReturnType<typeof prisma.usuario.findUnique>>;
+  let senhaConfere: boolean;
+  try {
+    usuario = await prisma.usuario.findUnique({
+      where: { aplicacaoId_email: { aplicacaoId: aplicacao.id, email } },
     });
+    // Sempre roda o bcrypt.compare, mesmo sem usuário — contra o hash falso
+    // acima quando não há usuário, para equalizar o tempo dos dois caminhos.
+    senhaConfere = await verificarSenha(
+      senha,
+      usuario?.senhaHash ?? HASH_FALSO_PARA_EQUALIZAR_TEMPO,
+    );
+  } catch (erro) {
+    // Falha nossa, não da pessoa: não conta como tentativa.
+    await reserva.liberar();
+    throw erro;
+  }
+  if (!usuario || !senhaConfere) {
+    // A reserva fica: é ela que conta esta falha, por IP e por conta.
+    await registrarEvento({ req, evento: "login_falha", email, aplicacaoId: aplicacao.id });
     return recusa(401, { erro: "E-mail ou senha inválidos." });
   }
+  await reserva.liberar();
 
   const bloqueio = await bloqueioPorSuspensao(usuario.id);
   if (bloqueio) {
@@ -181,19 +199,28 @@ export async function autenticarComSenha(
 
   await registrarEvento({ req, evento: "login_sucesso", usuarioId: usuario.id, email });
 
-  // Os alertas saem com a marca da aplicação dona da conta.
-  const { marca } = await contextoEmail(usuario.aplicacaoId);
+  // Os alertas saem com a marca da aplicação dona da conta. O envio vai pro
+  // after(): o login não espera o Resend, e enviar() nunca lança (falha só
+  // vira log), então nada que a resposta precise se perde. O evento de
+  // auditoria continua síncrono.
+  const quando = new Date();
   if (viagemImpossivel) {
     // Alerta mais específico que o de "dispositivo novo" — evita mandar os
     // dois e-mails pro mesmo login suspeito.
     await registrarEvento({ req, evento: "viagem_impossivel_detectada", usuarioId: usuario.id, email });
-    await enviarEmailViagemImpossivel(usuario.email, {
-      paisAnterior: formatarLocalizacao({ cidade: null, regiao: null, pais: ultimaSessao!.geoPais }) ?? ultimaSessao!.geoPais!,
-      paisAtual: formatarLocalizacao({ cidade: null, regiao: null, pais: geoAtual.pais }) ?? geoAtual.pais!,
-      quando: new Date(),
-    }, marca);
+    after(async () => {
+      const { marca } = await contextoEmail(usuario.aplicacaoId);
+      await enviarEmailViagemImpossivel(usuario.email, {
+        paisAnterior: formatarLocalizacao({ cidade: null, regiao: null, pais: ultimaSessao!.geoPais }) ?? ultimaSessao!.geoPais!,
+        paisAtual: formatarLocalizacao({ cidade: null, regiao: null, pais: geoAtual.pais }) ?? geoAtual.pais!,
+        quando,
+      }, marca);
+    });
   } else if (!loginAnteriorMesmoDispositivo) {
-    await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando: new Date() }, marca);
+    after(async () => {
+      const { marca } = await contextoEmail(usuario.aplicacaoId);
+      await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando }, marca);
+    });
   }
 
   if (usuario.mfaAtivado) {
