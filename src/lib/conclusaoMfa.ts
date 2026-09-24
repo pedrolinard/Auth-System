@@ -7,13 +7,7 @@ import { consumirCodigoBackup, contarCodigosRestantes } from "@/lib/backupMfa";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import type { UsuarioAutenticado } from "@/lib/loginSenha";
 import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
-import {
-  limiteExcedido,
-  limiteExcedidoPorEmail,
-  obterIp,
-  registrarTentativaEmail,
-  registrarTentativaIp,
-} from "@/lib/rateLimit";
+import { limiteExcedido, obterIp, reservarTentativas } from "@/lib/rateLimit";
 import { bloqueioPorSuspensao } from "@/lib/sessao";
 import { verificarTokenDesafioMfa } from "@/lib/token";
 import { esquemaCodigoBackup, esquemaVerificacaoMfa } from "@/lib/validacao";
@@ -100,6 +94,26 @@ async function finalizar(
   return null;
 }
 
+// Limites por IP e por conta de uma tentativa de código (autenticador ou
+// backup), reservados ANTES de conferir o código — ver reservarTentativas.
+// As chaves são as mesmas que os checks por IP do início das funções leem.
+function limitesMfa(
+  ip: string | null,
+  usuario: { aplicacaoId: string; email: string },
+  evento: "mfa_codigo_falha" | "mfa_backup_falha",
+) {
+  return [
+    { ip, evento, maximo: MAX_TENTATIVAS_MFA, janelaMs: JANELA_MFA_MS },
+    {
+      aplicacaoId: usuario.aplicacaoId,
+      email: usuario.email,
+      evento: `${evento}_conta`,
+      maximo: MAX_FALHAS_MFA_CONTA,
+      janelaMs: JANELA_MFA_CONTA_MS,
+    },
+  ];
+}
+
 export async function concluirMfaComCodigo(req: Request, corpo: unknown, opcoes: Opcoes = {}): Promise<ResultadoMfa> {
   const ip = obterIp(req);
   if (await limiteExcedido({ ip, evento: "mfa_codigo_falha", maximo: MAX_TENTATIVAS_MFA })) {
@@ -114,26 +128,26 @@ export async function concluirMfaComCodigo(req: Request, corpo: unknown, opcoes:
   const { payload, usuario } = desafio;
   if (!usuario.mfaSecret) return recusa(401, DESAFIO_INVALIDO);
 
-  const contaMfa = { aplicacaoId: usuario.aplicacaoId, email: usuario.email, evento: "mfa_codigo_falha_conta" };
-  if (await limiteExcedidoPorEmail({ ...contaMfa, maximo: MAX_FALHAS_MFA_CONTA })) {
-    return recusa(429, MUITAS_TENTATIVAS);
-  }
+  const reserva = await reservarTentativas(limitesMfa(ip, usuario, "mfa_codigo_falha"));
+  if (!reserva) return recusa(429, MUITAS_TENTATIVAS);
 
   let codigoValido: boolean;
   try {
     codigoValido = await verificarCodigoMfaSemReplay(usuario.id, usuario.mfaSecret, usuario.email, dados.data.codigo);
   } catch (erro) {
+    // Falha nossa, não da pessoa: não conta como tentativa.
+    await reserva.liberar();
     if (erro instanceof ErroSegredoMfaIlegivel) {
       return recusa(500, { erro: "Não foi possível verificar o código agora. Tente novamente mais tarde." });
     }
     throw erro;
   }
   if (!codigoValido) {
+    // A reserva fica: é ela que conta esta falha.
     await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
-    await registrarTentativaIp({ ip, evento: "mfa_codigo_falha", janelaMs: JANELA_MFA_MS });
-    await registrarTentativaEmail({ ...contaMfa, janelaMs: JANELA_MFA_CONTA_MS });
     return recusa(401, { erro: "Código inválido." });
   }
+  await reserva.liberar();
 
   const falha = await finalizar(req, usuario, payload);
   if (falha) return falha;
@@ -160,18 +174,22 @@ export async function concluirMfaComBackup(req: Request, corpo: unknown, opcoes:
   if (!desafio.ok) return desafio.recusa;
   const { payload, usuario } = desafio;
 
-  const contaMfa = { aplicacaoId: usuario.aplicacaoId, email: usuario.email, evento: "mfa_backup_falha_conta" };
-  if (await limiteExcedidoPorEmail({ ...contaMfa, maximo: MAX_FALHAS_MFA_CONTA })) {
-    return recusa(429, MUITAS_TENTATIVAS);
-  }
+  const reserva = await reservarTentativas(limitesMfa(ip, usuario, "mfa_backup_falha"));
+  if (!reserva) return recusa(429, MUITAS_TENTATIVAS);
 
-  const codigoValido = await consumirCodigoBackup(usuario.id, dados.data.codigo);
+  let codigoValido: boolean;
+  try {
+    codigoValido = await consumirCodigoBackup(usuario.id, dados.data.codigo);
+  } catch (erro) {
+    await reserva.liberar();
+    throw erro;
+  }
   if (!codigoValido) {
+    // A reserva fica: é ela que conta esta falha.
     await registrarEvento({ req, evento: "mfa_backup_falha", usuarioId: usuario.id });
-    await registrarTentativaIp({ ip, evento: "mfa_backup_falha", janelaMs: JANELA_MFA_MS });
-    await registrarTentativaEmail({ ...contaMfa, janelaMs: JANELA_MFA_CONTA_MS });
     return recusa(401, { erro: "Código de backup inválido." });
   }
+  await reserva.liberar();
 
   // O código de backup já foi consumido acima, então não há "tentar de novo"
   // — mas o mfaToken em si ainda não deve servir pra abrir uma segunda sessão.

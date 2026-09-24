@@ -8,14 +8,8 @@ import { csrfValido } from "@/lib/csrf";
 import { enviarEmailContaExcluida } from "@/lib/email";
 import { agendarExclusaoDominio, alvosDaExclusao, processarExclusoesDominio } from "@/lib/exclusaoDominio";
 import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
-import {
-  limiteExcedido,
-  limiteExcedidoPorEmail,
-  obterIp,
-  registrarTentativaEmail,
-  registrarTentativaIp,
-} from "@/lib/rateLimit";
-import { verificarSenha } from "@/lib/senha";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { conferirSenhaAtual } from "@/lib/senhaAtual";
 import { esquemaExcluirConta } from "@/lib/validacao";
 import { anonimizarRastrosDaConta } from "@/lib/anonimizacao";
 
@@ -24,7 +18,6 @@ import { anonimizarRastrosDaConta } from "@/lib/anonimizacao";
 // separada porque o export passou a exigir a senha atual).
 
 const MAX_TENTATIVAS_SENHA_ATUAL = 5;
-const JANELA_SENHA_ATUAL_MS = 5 * 60 * 1000;
 
 // DELETE exclui a conta permanentemente (cascata: sessões, dispositivos
 // confiáveis, códigos de backup, Membro — ver onDelete: Cascade no schema).
@@ -81,36 +74,8 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
 
-  if (
-    await limiteExcedidoPorEmail({
-      aplicacaoId: usuario.aplicacaoId,
-      email: usuario.email,
-      evento: "senha_atual_falha",
-      maximo: MAX_TENTATIVAS_SENHA_ATUAL,
-    })
-  ) {
-    return NextResponse.json(
-      { erro: "Muitas tentativas. Tente novamente mais tarde." },
-      { status: 429 },
-    );
-  }
-
-  if (!(await verificarSenha(dadosValidados.data.senha, usuario.senhaHash))) {
-    await registrarEvento({
-      req,
-      evento: "senha_atual_falha",
-      usuarioId: usuario.id,
-      email: usuario.email,
-    });
-    await registrarTentativaIp({ ip, evento: "senha_atual_falha", janelaMs: JANELA_SENHA_ATUAL_MS });
-    await registrarTentativaEmail({
-      aplicacaoId: usuario.aplicacaoId,
-      email: usuario.email,
-      evento: "senha_atual_falha",
-      janelaMs: JANELA_SENHA_ATUAL_MS,
-    });
-    return NextResponse.json({ erro: "Senha incorreta." }, { status: 401 });
-  }
+  const erroSenha = await conferirSenhaAtual(req, usuario, dadosValidados.data.senha);
+  if (erroSenha) return erroSenha;
 
   const donatarios = await prisma.membro.findMany({
     where: { usuarioId: usuario.id, papel: "dono" },

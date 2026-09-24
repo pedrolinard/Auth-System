@@ -63,6 +63,58 @@ describe("Rate limiting do código MFA", () => {
     await apagarUsuariosTeste([usuario.email]);
   }, 45000);
 
+  it("códigos disparados em paralelo não furam o limite por conta", async () => {
+    // O ataque: quem já tem a senha manda muitos códigos AO MESMO TEMPO com o
+    // mesmo mfaToken, cada um de um IP. Conferir o contador e só somar depois
+    // da falha deixava todos passarem pela checagem antes de qualquer um
+    // somar. Com a reserva, no máximo o limite por conta (10) chega a ser
+    // conferido; o resto é 429.
+    const usuario = await criarUsuarioTeste("mfa-rate-paralelo");
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+
+    const respostaIniciar = await fetch(`${BASE_URL}/api/auth/mfa/iniciar`, {
+      method: "POST",
+      headers: { ...cabecalhos, "X-Forwarded-For": ipFalso() },
+    });
+    const { segredo } = await respostaIniciar.json();
+    const OTPAuth = await import("otpauth");
+    const totp = new OTPAuth.TOTP({
+      algorithm: "SHA1",
+      digits: 6,
+      period: 30,
+      secret: OTPAuth.Secret.fromBase32(segredo),
+    });
+    await fetch(`${BASE_URL}/api/auth/mfa/confirmar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...cabecalhos, "X-Forwarded-For": ipFalso() },
+      body: JSON.stringify({ codigo: totp.generate() }),
+    });
+
+    const loginComMfa = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ipFalso() },
+      body: JSON.stringify({ email: usuario.email, senha: usuario.senha }),
+    });
+    const { mfaToken } = await loginComMfa.json();
+    expect(mfaToken).toBeTruthy();
+
+    const respostas = await Promise.all(
+      Array.from({ length: 30 }, () =>
+        fetch(`${BASE_URL}/api/auth/mfa/verificar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Forwarded-For": ipFalso() },
+          body: JSON.stringify({ mfaToken, codigo: "000000" }),
+        }),
+      ),
+    );
+    const status = respostas.map((resposta) => resposta.status);
+    expect(status.filter((s) => s === 401).length).toBeLessThanOrEqual(10);
+    expect(status.filter((s) => s === 429).length).toBeGreaterThanOrEqual(20);
+    expect(status.every((s) => s === 401 || s === 429)).toBe(true);
+
+    await apagarUsuariosTeste([usuario.email]);
+  }, 60000);
+
   it("bloqueia /mfa/iniciar com 429 após muitas chamadas do mesmo IP", async () => {
     const usuario = await criarUsuarioTeste("mfa-rate-iniciar");
     const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);

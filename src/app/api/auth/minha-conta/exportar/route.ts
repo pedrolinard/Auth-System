@@ -6,14 +6,8 @@ import { obterCookieCsrf } from "@/lib/cookies";
 import { csrfValido } from "@/lib/csrf";
 import { classificarDispositivo } from "@/lib/dispositivo";
 import { formatarLocalizacao } from "@/lib/geo";
-import {
-  limiteExcedido,
-  limiteExcedidoPorEmail,
-  obterIp,
-  registrarTentativaEmail,
-  registrarTentativaIp,
-} from "@/lib/rateLimit";
-import { verificarSenha } from "@/lib/senha";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
+import { conferirSenhaAtual } from "@/lib/senhaAtual";
 import { esquemaExcluirConta } from "@/lib/validacao";
 
 // Export de dados pessoais (LGPD). Era um GET só com o cookie de acesso —
@@ -22,7 +16,6 @@ import { esquemaExcluirConta } from "@/lib/validacao";
 // de conta) + CSRF + rate limit. É POST em vez de GET porque carrega corpo
 // (a senha) e não deve ser cacheado/pré-carregado.
 const MAX_TENTATIVAS_SENHA_ATUAL = 5;
-const JANELA_SENHA_ATUAL_MS = 5 * 60 * 1000;
 
 export async function POST(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
@@ -62,36 +55,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
   }
 
-  if (
-    await limiteExcedidoPorEmail({
-      aplicacaoId: usuario.aplicacaoId,
-      email: usuario.email,
-      evento: "senha_atual_falha",
-      maximo: MAX_TENTATIVAS_SENHA_ATUAL,
-    })
-  ) {
-    return NextResponse.json(
-      { erro: "Muitas tentativas. Tente novamente mais tarde." },
-      { status: 429 },
-    );
-  }
-
-  if (!(await verificarSenha(dadosValidados.data.senha, usuario.senhaHash))) {
-    await registrarEvento({
-      req,
-      evento: "senha_atual_falha",
-      usuarioId: usuario.id,
-      email: usuario.email,
-    });
-    await registrarTentativaIp({ ip, evento: "senha_atual_falha", janelaMs: JANELA_SENHA_ATUAL_MS });
-    await registrarTentativaEmail({
-      aplicacaoId: usuario.aplicacaoId,
-      email: usuario.email,
-      evento: "senha_atual_falha",
-      janelaMs: JANELA_SENHA_ATUAL_MS,
-    });
-    return NextResponse.json({ erro: "Senha atual incorreta." }, { status: 401 });
-  }
+  const erroSenha = await conferirSenhaAtual(req, usuario, dadosValidados.data.senha, "Senha atual incorreta.");
+  if (erroSenha) return erroSenha;
 
   const [sessoes, dispositivosConfiaveis, codigosBackup, passkeys, logsAuditoria, membros, convitesCriados] =
     await Promise.all([

@@ -65,15 +65,27 @@ function chaveEmail(evento: string, aplicacaoId: string, email: string): string 
 // o que um SELECT-depois-UPDATE feito no código não garantiria sem
 // transação. Precisa de SQL puro porque um upsert comum do Prisma não
 // expressa "soma OU reseta dependendo do valor já gravado" em uma operação
-// só.
-async function incrementar(chave: string, janelaMs: number): Promise<void> {
+// só. Devolve a contagem JÁ incrementada, lida da mesma operação (RETURNING):
+// uma leitura separada depois veria incrementos de pedidos concorrentes.
+async function incrementar(chave: string, janelaMs: number): Promise<number> {
   const expiraEm = new Date(Date.now() + janelaMs);
-  await prisma.$executeRaw`
+  const [linha] = await prisma.$queryRaw<{ contagem: number }[]>`
     INSERT INTO "limites_taxa" AS lt (chave, contagem, "expiraEm")
     VALUES (${chave}, 1, ${expiraEm})
     ON CONFLICT (chave) DO UPDATE SET
       contagem = CASE WHEN lt."expiraEm" < now() THEN 1 ELSE lt.contagem + 1 END,
       "expiraEm" = CASE WHEN lt."expiraEm" < now() THEN excluded."expiraEm" ELSE lt."expiraEm" END
+    RETURNING contagem
+  `;
+  return Number(linha.contagem);
+}
+
+// Desfaz um incremento ainda dentro da janela. Numa janela que já virou, não
+// mexe: o incremento a desfazer era da janela anterior.
+async function decrementar(chave: string): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "limites_taxa" SET contagem = GREATEST(contagem - 1, 0)
+    WHERE chave = ${chave} AND "expiraEm" >= now()
   `;
 }
 
@@ -166,8 +178,48 @@ export async function consumirCota({
   maximo: number;
   janelaMs: number;
 }): Promise<boolean> {
-  await incrementar(chave, janelaMs);
-  return (await contar(chave)) <= maximo;
+  return (await incrementar(chave, janelaMs)) <= maximo;
+}
+
+export type LimiteTentativa =
+  | { ip: string | null; evento: string; maximo: number; janelaMs: number }
+  | { aplicacaoId: string; email: string; evento: string; maximo: number; janelaMs: number };
+
+export type ReservaTentativas = { liberar: () => Promise<void> };
+
+/**
+ * Reserva uma tentativa em cada limite ANTES de conferir a credencial (senha,
+ * código TOTP, código de backup). Conferir o contador e só somar depois da
+ * falha deixava pedidos simultâneos passarem todos pela checagem antes de
+ * qualquer um somar: com o mesmo desafio de MFA, centenas de códigos em
+ * paralelo contra um limite de 10.
+ *
+ * Devolve null quando algum limite estourou (e desfaz as reservas desta
+ * chamada). Senão, a reserva: quem chama mantém ela quando a credencial está
+ * ERRADA — a reserva vira a contagem da falha — e chama liberar() quando está
+ * CERTA, pra acerto não gastar o orçamento de quem erra.
+ */
+export async function reservarTentativas(limites: LimiteTentativa[]): Promise<ReservaTentativas | null> {
+  const alvos = limites.flatMap((limite): { chave: string; maximo: number; janelaMs: number }[] => {
+    const { maximo, janelaMs } = limite;
+    if ("ip" in limite) {
+      // Sem IP não dá pra limitar por IP (mesmo critério de contarEventosPorIp).
+      return limite.ip ? [{ chave: chaveIp(limite.evento, limite.ip), maximo, janelaMs }] : [];
+    }
+    return [{ chave: chaveEmail(limite.evento, limite.aplicacaoId, limite.email), maximo, janelaMs }];
+  });
+
+  const contagens = await Promise.all(alvos.map(({ chave, janelaMs }) => incrementar(chave, janelaMs)));
+  const reserva: ReservaTentativas = {
+    liberar: async () => {
+      await Promise.all(alvos.map(({ chave }) => decrementar(chave)));
+    },
+  };
+  if (contagens.some((contagem, i) => contagem > alvos[i].maximo)) {
+    await reserva.liberar();
+    return null;
+  }
+  return reserva;
 }
 
 export async function registrarTentativaEmail({
