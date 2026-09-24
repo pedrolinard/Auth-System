@@ -1,6 +1,7 @@
 import * as OTPAuth from "otpauth";
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
+import { hashToken } from "@/lib/token";
 import {
   apagarUsuariosTeste,
   BASE_URL,
@@ -45,6 +46,48 @@ async function adicionarComoMembro(
   papel: "dono" | "admin" | "membro" = "membro",
 ) {
   await prisma.membro.create({ data: { organizacaoId, usuarioId, papel } });
+}
+
+// Confere o status de uma renovação e, se vier outro, falha com o estado das
+// sessões e dos vínculos da conta na mensagem — lido ANTES da limpeza do fim
+// do teste, que apaga tudo. Em 2026-09-24 a renovação da sessão pessoal voltou
+// 401 onde devia ser 200, uma vez em cinco rodadas da suíte, e não se
+// reproduziu sob investigação; da próxima vez, a causa sai no próprio log.
+async function conferirRenovacao(
+  resposta: Response,
+  esperado: number,
+  usuarioId: string,
+  cookies: Record<string, string>,
+) {
+  if (resposta.status === esperado) return;
+  const apresentada = cookies.tokenAtualizacao ? hashToken(cookies.tokenAtualizacao) : null;
+  const sessoes = await prisma.tokenAtualizacao.findMany({
+    where: { usuarioId },
+    orderBy: { criadoEm: "asc" },
+    select: {
+      tokenHash: true,
+      organizacaoId: true,
+      criadoEm: true,
+      expiraEm: true,
+      revogadoEm: true,
+      revogadoMotivo: true,
+    },
+  });
+  const diagnostico = {
+    // Uma renovação que deu certo sem dever traz os tokens no corpo: fora do log.
+    corpo: (await resposta.text()).replace(/("token[A-Za-z]*":")[^"]+"/g, '$1[omitido]"'),
+    sessaoApresentada: apresentada?.slice(0, 12) ?? "sem cookie tokenAtualizacao",
+    sessoes: sessoes.map(({ tokenHash, ...resto }) => ({
+      tokenHash: tokenHash.slice(0, 12),
+      apresentada: tokenHash === apresentada,
+      ...resto,
+    })),
+    membros: await prisma.membro.findMany({
+      where: { usuarioId },
+      select: { organizacaoId: true, papel: true, suspenso: true, suspensoAte: true, criadoEm: true },
+    }),
+  };
+  expect(resposta.status, JSON.stringify(diagnostico, null, 2)).toBe(esperado);
 }
 
 // Suspensão é por organização: com a organização pessoal intacta, o alvo
@@ -189,9 +232,12 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
       headers: {
         Cookie: cabecalhoCookie(cookiesNaOrganizacaoDoDono),
         "X-CSRF-Token": cookiesNaOrganizacaoDoDono.csrfToken,
+        // O IP simulado do login: sem ele, o servidor de teste vê ::1, e o
+        // limite de falhas de renovação por IP é dividido com a suíte inteira.
+        "X-Forwarded-For": sessaoParaTrocar.cabecalhos["X-Forwarded-For"],
       },
     });
-    expect(atualizarNaOrganizacaoDoDono.status).toBe(401);
+    await conferirRenovacao(atualizarNaOrganizacaoDoDono, 401, alvoRegistro.id, cookiesNaOrganizacaoDoDono);
 
     const atualizarNaPessoal = await fetch(`${BASE_URL}/api/auth/atualizar`, {
       method: "POST",
@@ -200,7 +246,7 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     // Ordem importa: a renovação recusada acima reapresentou um token
     // revogado. Se isso fosse tratado como reuso de token roubado, teria
     // derrubado esta sessão também (e mandado alerta de invasão).
-    expect(atualizarNaPessoal.status).toBe(200);
+    await conferirRenovacao(atualizarNaPessoal, 200, alvoRegistro.id, sessaoPessoal.cookies);
     const alertaReuso = await prisma.logAuditoria.findFirst({
       where: { evento: "reuso_token_detectado", usuarioId: alvoRegistro.id },
     });
@@ -453,14 +499,16 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
       headers: {
         Cookie: cabecalhoCookie(cookiesNaOrganizacaoDoDono),
         "X-CSRF-Token": cookiesNaOrganizacaoDoDono.csrfToken,
+        // Mesmo motivo do teste de suspensão: o IP simulado, não ::1.
+        "X-Forwarded-For": sessaoParaTrocar.cabecalhos["X-Forwarded-For"],
       },
     });
-    expect(atualizarRemovida.status).toBe(401);
+    await conferirRenovacao(atualizarRemovida, 401, alvoRegistro.id, cookiesNaOrganizacaoDoDono);
     const atualizarPessoal = await fetch(`${BASE_URL}/api/auth/atualizar`, {
       method: "POST",
       headers: sessaoPessoalAlvo.cabecalhos,
     });
-    expect(atualizarPessoal.status).toBe(200);
+    await conferirRenovacao(atualizarPessoal, 200, alvoRegistro.id, sessaoPessoalAlvo.cookies);
 
     const membro = await prisma.membro.findUnique({
       where: {
