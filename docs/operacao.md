@@ -81,23 +81,60 @@ alerta em menos de 5 minutos.
 
 ## 6. Ambiente de Preview isolado
 
-**Hoje:** foi criado um projeto Supabase só para Preview
-(`mfpjqueyefqqzewksqgt`), com as migrations aplicadas. Mas o `DATABASE_URL`
-do Preview **ainda aponta para produção**, e o banco novo está sem a
-aplicação padrão e sem chave de assinatura.
+**Hoje:** existe um projeto Supabase só para Preview (`mfpjqueyefqqzewksqgt`),
+mas o `DATABASE_URL` do Preview **ainda aponta para produção**, e o Preview
+não tem os segredos JWT nem a `MFA_ENCRYPTION_KEY`. Resultado: todo deploy de
+Preview (inclusive o de cada PR) falha no `next build`, em
+`src/lib/token.ts`, com "As variáveis de ambiente JWT_... precisam estar
+definidas".
+
+**O que o Preview precisa:**
+
+| | Variáveis |
+|---|---|
+| Sem elas o build não termina | `JWT_ACCESS_PRIVATE_KEY_B64`, `JWT_ACCESS_PUBLIC_KEY_B64`, os 7 `JWT_*_SECRET`, `MFA_ENCRYPTION_KEY` |
+| Sem ela o servidor não sobe | `BASE_URL` |
+| Precisa apontar pro banco do Preview | `DATABASE_URL` |
+| Opcionais (só avisam) | `DJANGO_SERVICE_URL`, `CRON_SECRET`, Turnstile (as duas chaves ou nenhuma), `PASSKEY_*` (sem elas, passkey não funciona no Preview) |
+| **Não** criar no Preview | `RESEND_API_KEY` (um Preview mandaria e-mail de verdade), `DATABASE_CA_CERT` de produção |
+
+Nenhum valor de produção no Preview: um Preview roda código de qualquer
+branch, e com a chave de produção um token emitido lá valeria em produção.
 
 **Fazer, nesta ordem:**
-1. Rodar `scripts/backfill-aplicacoes.mjs` contra o banco do Preview. Isso cria
-   a aplicação padrão e importa um par de chaves **próprio do Preview**, nunca
-   o de produção.
-2. Vercel (Preview): trocar `DATABASE_URL` para o pooler do banco novo.
-3. Vercel (Preview): criar `JWT_CONVITE_ORGANIZACAO_SECRET`, `BASE_URL` e,
-   se quiser o Django no Preview, `DJANGO_SERVICE_URL`. Todos os segredos
-   devem ser diferentes dos de produção.
-4. A cada migration nova: aplicar primeiro no Preview, depois em produção.
 
-**Pronto quando:** um deploy de Preview sobe (Ready), cadastra e loga, e nenhuma
-linha nova aparece no banco de produção.
+1. **Gerar os segredos**, sem que passem pelo terminal:
+   ```
+   npm run gerar:segredos-preview
+   ```
+   Escreve `.env.preview` (ignorado pelo git) com as 10 variáveis de segredo
+   novas e `BASE_URL`, e **não** imprime nenhum valor. Recusa sobrescrever um
+   arquivo que já existe: os segredos dele podem já estar na Vercel e no banco.
+2. **Preencher `DATABASE_URL`** no `.env.preview` com a connection string do
+   projeto **do Preview** (Supabase → `mfpjqueyefqqzewksqgt` → Connect). Nunca a
+   de produção (`wrqlmjdssiszzkcsvzif`).
+3. **Preparar o banco do Preview**, com o próprio arquivo:
+   ```
+   node --env-file=.env.preview node_modules/prisma/build/index.js migrate deploy
+   node --env-file=.env.preview scripts/backfill-aplicacoes.mjs
+   ```
+   O primeiro traz o schema para a versão atual. O segundo cria a aplicação
+   padrão e grava a chave de assinatura do Preview cifrada com a
+   `MFA_ENCRYPTION_KEY` do arquivo; é idempotente. Com `DATABASE_URL` vazio os
+   dois falham, em vez de cair no `.env` local.
+4. **Cadastrar na Vercel** (auth-gateway → Settings → Environment Variables),
+   marcando **só "Preview"** em cada uma, todas as variáveis do `.env.preview`
+   (inclusive o `DATABASE_URL` do banco do Preview). Se o `DATABASE_URL` de
+   produção estiver marcado também para Preview, desmarque o Preview nele
+   antes. A `MFA_ENCRYPTION_KEY` tem que ser a MESMA do passo 3, senão a chave
+   de assinatura no banco fica ilegível.
+5. **Guardar o `.env.preview`** num gerenciador de senhas e apagar o arquivo
+   local (ou mantê-lo só nesta máquina: ele nunca vai pro git).
+6. A cada migration nova: aplicar primeiro no Preview (passo 3, primeiro
+   comando), depois em produção.
+
+**Pronto quando:** um Redeploy de Preview sobe (Ready), cadastra e loga, e
+nenhuma linha nova aparece no banco de produção.
 
 ## 7. Conexão com o banco verificando o certificado
 
