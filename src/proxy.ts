@@ -54,8 +54,8 @@ export async function proxy(req: NextRequest) {
 
   if (pathname.startsWith("/api/")) return tratarCors(req);
 
-  const rotaProtegida = ROTAS_PROTEGIDAS.some((rota) =>
-    pathname.startsWith(rota),
+  const rotaProtegida = ROTAS_PROTEGIDAS.some(
+    (rota) => pathname === rota || pathname.startsWith(`${rota}/`),
   );
   const rotaSomenteVisitante = ROTAS_SOMENTE_VISITANTE.includes(pathname);
 
