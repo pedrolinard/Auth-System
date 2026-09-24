@@ -10,6 +10,24 @@
 // Marketplace (`vercel integration add rollbar/error-tracking`) — o sufixo
 // numérico é gerado pela Vercel pra identificar o recurso, não é escolha
 // nossa (ver `vercel env ls`).
+// Somados à lista padrão do rollbar.js (que tem password/access_token, mas
+// não `token`): os links de e-mail (redefinir senha, verificar e trocar
+// e-mail, aceitar convite) trazem o token em `?token=`, e a URL da página
+// vai em todo erro e no rastro de navegação. O mascaramento vale pra chave de
+// objeto com esse nome e pra `nome=valor` dentro de qualquer string. A
+// instância do servidor (rollbarServidor.ts) usa a mesma lista e soma a dela.
+export const CAMPOS_MASCARADOS = [
+  "token",
+  "mfaToken",
+  "refreshToken",
+  "senha",
+  "senhaAtual",
+  "novaSenha",
+  "codigo",
+  "segredo",
+  "clientSecret",
+];
+
 export const configCliente = {
   accessToken: process.env.NEXT_PUBLIC_ROLLBAR_AUTH_GATEWAY_CLIENT_TOKEN_1787151157,
   captureUncaught: true,
@@ -17,12 +35,7 @@ export const configCliente = {
   // IP truncado (último octeto zerado): investigar um erro não precisa saber
   // exatamente quem o teve. LGPD, ver docs/juridico/registro-operacoes-tratamento.md.
   captureIp: "anonymize" as const,
-  // Somados à lista padrão do rollbar.js (que tem password/access_token, mas
-  // não `token`): os links de e-mail (redefinir senha, verificar e trocar
-  // e-mail, aceitar convite) trazem o token em `?token=`, e a URL da página
-  // vai em todo erro e no rastro de navegação. O mascaramento vale pra
-  // chave de objeto com esse nome e pra `nome=valor` dentro de qualquer string.
-  scrubFields: ["token", "mfaToken", "refreshToken", "senha", "senhaAtual", "novaSenha", "codigo", "segredo", "clientSecret"],
+  scrubFields: CAMPOS_MASCARADOS,
   // O rastro de telemetria guarda o que foi digitado nos campos (o rollbar.js
   // só esconde type="password"): código de MFA, código de backup e e-mail
   // iriam junto com o erro.
