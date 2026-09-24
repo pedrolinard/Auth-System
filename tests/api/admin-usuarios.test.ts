@@ -235,10 +235,6 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     );
     expect(respostaSuspender.status).toBe(200);
 
-    // A conta em si segue intacta — nada foi gravado em Usuario.
-    const contaAlvo = await prisma.usuario.findUniqueOrThrow({ where: { id: alvoRegistro.id } });
-    expect(contaAlvo.suspenso).toBe(false);
-
     const sessaoAlvo = await loginTeste(alvo.email, alvo.senha);
     const sessaoCriada = await prisma.tokenAtualizacao.findFirstOrThrow({
       where: { usuarioId: alvoRegistro.id, revogadoEm: null },
@@ -298,14 +294,22 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     const ativo = await criarUsuarioTeste("legado-susp-ativa");
     const expirado = await criarUsuarioTeste("legado-susp-expirada");
     emailsCriados.push(ativo.email, expirado.email);
-    const ativoRegistro = await prisma.usuario.update({
+    // As colunas legadas saíram do schema do Prisma (continuam na tabela até
+    // a migration que as derruba — e este teste sai junto com ela), então
+    // são escritas em SQL.
+    const ativoRegistro = await prisma.usuario.findUniqueOrThrow({
       where: { aplicacaoId_email: await chaveUsuario(ativo.email) },
-      data: { suspenso: true, suspensoMotivo: "legado" },
     });
-    const expiradoRegistro = await prisma.usuario.update({
+    const expiradoRegistro = await prisma.usuario.findUniqueOrThrow({
       where: { aplicacaoId_email: await chaveUsuario(expirado.email) },
-      data: { suspenso: true, suspensoAte: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
     });
+    await prisma.$executeRaw`
+      UPDATE "usuarios" SET suspenso = true, "suspensoMotivo" = 'legado' WHERE id = ${ativoRegistro.id}
+    `;
+    await prisma.$executeRaw`
+      UPDATE "usuarios" SET suspenso = true, "suspensoAte" = ${new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)}
+      WHERE id = ${expiradoRegistro.id}
+    `;
 
     const sql = readFileSync(
       path.join(process.cwd(), "prisma/migrations/20260914120000_suspensao_por_membro/migration.sql"),
