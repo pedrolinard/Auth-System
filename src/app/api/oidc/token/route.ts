@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarClienteOidc, trocarCodigoPorTokens, type ErroOAuth } from "@/lib/oidc";
-import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp, reservarTentativas } from "@/lib/rateLimit";
 import { rotacionarTokenAtualizacao } from "@/lib/rotacaoToken";
 import { DURACAO_TOKEN_ACESSO_SEGUNDOS } from "@/lib/token";
 
@@ -48,10 +48,17 @@ export async function POST(req: Request) {
   if (await limiteExcedido({ ip, evento: "oidc_token_falha", maximo: MAX_FALHAS })) {
     return respostaErro({ status: 429, error: "slow_down", error_description: "Muitas tentativas. Tente mais tarde." });
   }
-  const falhar = async (erro: ErroOAuth) => {
-    await registrarTentativaIp({ ip, evento: "oidc_token_falha", janelaMs: JANELA_FALHAS_MS });
-    return respostaErro(erro);
-  };
+  // Reservada ANTES de conferir client secret e código (ver
+  // reservarTentativas): o check acima só lê, e pedidos simultâneos passariam
+  // todos por ele. Falha mantém a reserva; os caminhos que dão certo — e a
+  // renovação, que tem limite próprio em rotacionarTokenAtualizacao — liberam.
+  const reserva = await reservarTentativas([
+    { ip, evento: "oidc_token_falha", maximo: MAX_FALHAS, janelaMs: JANELA_FALHAS_MS },
+  ]);
+  if (!reserva) {
+    return respostaErro({ status: 429, error: "slow_down", error_description: "Muitas tentativas. Tente mais tarde." });
+  }
+  const falhar = (erro: ErroOAuth) => respostaErro(erro);
 
   const campos = await lerCampos(req);
   const acesso = await autenticarClienteOidc(req, campos);
@@ -63,11 +70,13 @@ export async function POST(req: Request) {
   if (tipoConcessao === "authorization_code") {
     const resultado = await trocarCodigoPorTokens(req, cliente, campos);
     if (!resultado.ok) return falhar(resultado.erro);
+    await reserva.liberar();
     await registrarEvento({ req, evento: "oidc_codigo_trocado", aplicacaoId: cliente.aplicacaoId });
     return NextResponse.json(resultado.resposta, { headers: SEM_CACHE });
   }
 
   if (tipoConcessao === "refresh_token") {
+    await reserva.liberar();
     const resultado = await rotacionarTokenAtualizacao(req, campos.get("refresh_token") ?? undefined, {
       aplicacaoId: cliente.aplicacaoId,
     });

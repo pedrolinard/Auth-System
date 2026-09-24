@@ -3,16 +3,15 @@ import { prisma } from "@/lib/db";
 import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
+import { conferirCodigoMfaAtual } from "@/lib/codigoMfaAtual";
 import { invalidarCodigosBackup, persistirCodigosBackup } from "@/lib/backupMfa";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { enviarEmailCodigosBackupRegenerados } from "@/lib/email";
 import { csrfValido } from "@/lib/csrf";
-import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
-import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
 
 const MAX_TENTATIVAS_MFA = 5;
-const JANELA_MFA_MS = 5 * 60 * 1000;
 
 export async function POST(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
@@ -61,28 +60,13 @@ export async function POST(req: Request) {
   // atual) pra regenerar os códigos. Sem isso, uma sessão sequestrada
   // conseguiria rotacionar os códigos de backup silenciosamente e usá-los
   // depois — o dono legítimo nem ficaria sabendo que os códigos mudaram.
-  let codigoValido: boolean;
-  try {
-    codigoValido = await verificarCodigoMfaSemReplay(
-      usuario.id,
-      usuario.mfaSecret,
-      usuario.email,
-      dadosValidados.data.codigo,
-    );
-  } catch (erro) {
-    if (erro instanceof ErroSegredoMfaIlegivel) {
-      return NextResponse.json(
-        { erro: "Não foi possível verificar o código agora. Tente novamente mais tarde." },
-        { status: 500 },
-      );
-    }
-    throw erro;
-  }
-  if (!codigoValido) {
-    await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
-    await registrarTentativaIp({ ip, evento: "mfa_codigo_falha", janelaMs: JANELA_MFA_MS });
-    return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
-  }
+  // mfaSecret repetido só pra levar o estreitamento (já conferido acima) pro tipo.
+  const erroCodigo = await conferirCodigoMfaAtual(
+    req,
+    { ...usuario, mfaSecret: usuario.mfaSecret },
+    dadosValidados.data.codigo,
+  );
+  if (erroCodigo) return erroCodigo;
 
   // O conjunto antigo perde validade antes do novo existir: se algum código
   // antigo vazou, ele não deve continuar utilizável depois da regeneração.

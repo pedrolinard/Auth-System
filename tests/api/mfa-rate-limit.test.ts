@@ -115,6 +115,35 @@ describe("Rate limiting do código MFA", () => {
     await apagarUsuariosTeste([usuario.email]);
   }, 60000);
 
+  it("rotas de sessão que pedem o TOTP também não deixam furar em paralelo", async () => {
+    // Ativar/desativar o MFA e regenerar os códigos de backup usam o mesmo
+    // conferirCodigoMfaAtual; /mfa/confirmar é o mais simples de montar (não
+    // precisa do MFA já ativo). IPs diferentes: quem segura é o limite por
+    // conta (10), que antes nem existia nessas rotas.
+    const usuario = await criarUsuarioTeste("mfa-rate-sessao-paralelo");
+    const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);
+    const respostaIniciar = await fetch(`${BASE_URL}/api/auth/mfa/iniciar`, {
+      method: "POST",
+      headers: { ...cabecalhos, "X-Forwarded-For": ipFalso() },
+    });
+    expect(respostaIniciar.status).toBe(200);
+
+    const respostas = await Promise.all(
+      Array.from({ length: 30 }, () =>
+        fetch(`${BASE_URL}/api/auth/mfa/confirmar`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...cabecalhos, "X-Forwarded-For": ipFalso() },
+          body: JSON.stringify({ codigo: "000000" }),
+        }),
+      ),
+    );
+    const status = respostas.map((resposta) => resposta.status);
+    expect(status.filter((s) => s === 401).length).toBeLessThanOrEqual(10);
+    expect(status.filter((s) => s === 429).length).toBeGreaterThanOrEqual(20);
+
+    await apagarUsuariosTeste([usuario.email]);
+  }, 60000);
+
   it("bloqueia /mfa/iniciar com 429 após muitas chamadas do mesmo IP", async () => {
     const usuario = await criarUsuarioTeste("mfa-rate-iniciar");
     const { cabecalhos } = await loginTeste(usuario.email, usuario.senha);

@@ -97,7 +97,9 @@ async function finalizar(
 // Limites por IP e por conta de uma tentativa de código (autenticador ou
 // backup), reservados ANTES de conferir o código — ver reservarTentativas.
 // As chaves são as mesmas que os checks por IP do início das funções leem.
-function limitesMfa(
+// Também usados pelas rotas de sessão que pedem o TOTP (lib/codigoMfaAtual.ts):
+// o orçamento contra o autenticador de uma conta é um só.
+export function limitesMfa(
   ip: string | null,
   usuario: { aplicacaoId: string; email: string },
   evento: "mfa_codigo_falha" | "mfa_backup_falha",
