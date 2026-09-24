@@ -215,7 +215,7 @@ Em aberto:
 - **Pentest externo e revisão jurídica** — escopo em `docs/seguranca/escopo-pentest.md`, rascunhos em `docs/juridico/`.
 - **Ligar TLS verificado no banco e separar o usuário do Django** — o código aceita `DATABASE_CA_CERT`, mas ligar exige testar o certificado contra o pooler antes; SQL do usuário separado em `docs/operacao.md`, itens 7 e 8.
 - **Banco próprio pro ambiente Preview** — banco criado e migrado; falta semear, apontar o `DATABASE_URL` do Preview e criar as env vars (`docs/operacao.md`, item 6).
-- **Remover as colunas de suspensão legadas de `Usuario`** — fase 1 feita: os campos saíram do `schema.prisma` (sem migration), então o Prisma deixa de selecioná-los. Fase 2, numa publicação **seguinte** a essa estar no ar: migration com o `DROP COLUMN` e, junto, remover o teste "migration copia a suspensão legada" de `tests/api/admin-usuarios.test.ts` (ele escreve nessas colunas).
+- **Remover as colunas de suspensão legadas de `Usuario`** — fase 1 no ar em 2026-09-24 (`fbee4c0`); fase 2 = migration `20260924200000_remover_suspensao_legada_usuario`, aplicada no SQL Editor de produção ANTES do merge (roteiro em `docs/publicacao-fase2-suspensao.md`).
 - **Publicar o SDK no npm** — hoje é consumido direto da fonte.
 
 Itens fora de escopo intencional (rate limiting distribuído/Redis, envio real de e-mail) seguem documentados no `README.md`.

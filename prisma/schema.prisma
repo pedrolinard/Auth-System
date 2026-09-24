@@ -177,15 +177,9 @@ model Usuario {
   mfaUltimoTimestep Int?
   emailVerificado Boolean            @default(false)
   papel          Papel               @default(usuario)
-  // As colunas legadas "suspenso", "suspensoAte" e "suspensoMotivo" saíram do
-  // schema mas ainda existem na tabela: a suspensão passou a ser por
-  // organização (ver Membro.suspenso, migration
-  // 20260914120000_suspensao_por_membro). Remoção em DUAS publicações — (1)
-  // este schema sem os campos, pro Prisma do código novo parar de
-  // selecioná-los (colunas extras na tabela ele ignora); (2) só depois, a
-  // migration com o DROP COLUMN. Derrubar junto com a troca de código quebraria
-  // o login na janela entre a migration e o deploy, porque o código anterior
-  // ainda as seleciona.
+  // Suspensão não é mais da conta: é por organização (Membro.suspenso). As
+  // colunas antigas saíram em duas publicações — o schema primeiro, depois a
+  // migration 20260924200000_remover_suspensao_legada_usuario.
   // Marca a redefinição de senha mais recente: qualquer token de redefinição
   // emitido antes desse instante (comparado ao `iat` do JWT) deixa de valer.
   // É o que torna o token, que por si só é um JWT stateless reutilizável

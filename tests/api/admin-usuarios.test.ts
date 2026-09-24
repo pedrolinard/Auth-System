@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import * as OTPAuth from "otpauth";
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
@@ -11,11 +9,6 @@ import {
   extrairTodosCookies,
   loginTeste,
 } from "../helpers";
-
-async function chaveUsuario(email: string) {
-  const { aplicacaoId } = await prisma.usuario.findFirstOrThrow({ where: { email } });
-  return { aplicacaoId, email };
-}
 
 const emailsCriados: string[] = [];
 
@@ -285,46 +278,6 @@ describe("Admin de organização — suspender/reativar/remover membro", () => {
     });
     expect(sessaoAlvo.resposta.status).toBe(200);
     expect(sessao.organizacaoId).toBe(organizacaoPessoalDoAlvo);
-  });
-
-  it("migration copia a suspensão legada de conta para cada organização", async () => {
-    // Reproduz o UPDATE da migration 20260914120000_suspensao_por_membro
-    // sobre dados montados à mão: garante que suspensão ativa é copiada e
-    // expirada não. O SQL é o mesmo do arquivo — lido de lá, não duplicado.
-    const ativo = await criarUsuarioTeste("legado-susp-ativa");
-    const expirado = await criarUsuarioTeste("legado-susp-expirada");
-    emailsCriados.push(ativo.email, expirado.email);
-    // As colunas legadas saíram do schema do Prisma (continuam na tabela até
-    // a migration que as derruba — e este teste sai junto com ela), então
-    // são escritas em SQL.
-    const ativoRegistro = await prisma.usuario.findUniqueOrThrow({
-      where: { aplicacaoId_email: await chaveUsuario(ativo.email) },
-    });
-    const expiradoRegistro = await prisma.usuario.findUniqueOrThrow({
-      where: { aplicacaoId_email: await chaveUsuario(expirado.email) },
-    });
-    await prisma.$executeRaw`
-      UPDATE "usuarios" SET suspenso = true, "suspensoMotivo" = 'legado' WHERE id = ${ativoRegistro.id}
-    `;
-    await prisma.$executeRaw`
-      UPDATE "usuarios" SET suspenso = true, "suspensoAte" = ${new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)}
-      WHERE id = ${expiradoRegistro.id}
-    `;
-
-    const sql = readFileSync(
-      path.join(process.cwd(), "prisma/migrations/20260914120000_suspensao_por_membro/migration.sql"),
-      "utf8",
-    );
-    const update = sql.slice(sql.indexOf("UPDATE"));
-    await prisma.$executeRawUnsafe(update);
-
-    const membroAtivo = await prisma.membro.findFirstOrThrow({ where: { usuarioId: ativoRegistro.id } });
-    expect(membroAtivo.suspenso).toBe(true);
-    expect(membroAtivo.suspensoMotivo).toBe("legado");
-    const membroExpirado = await prisma.membro.findFirstOrThrow({
-      where: { usuarioId: expiradoRegistro.id },
-    });
-    expect(membroExpirado.suspenso).toBe(false);
   });
 
   it("dono não consegue suspender nem remover a si mesmo", async () => {
