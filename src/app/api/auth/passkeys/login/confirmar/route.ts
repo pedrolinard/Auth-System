@@ -1,11 +1,12 @@
 import type { AuthenticationResponseJSON } from "@simplewebauthn/server";
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { registrarEvento } from "@/lib/auditoria";
 import { consumirDesafioMfaJti } from "@/lib/desafioMfa";
 import { enviarEmailDispositivoNovo, enviarEmailViagemImpossivel } from "@/lib/email";
 import { formatarLocalizacao, obterGeo } from "@/lib/geo";
-import { autenticarAplicacao, contextoEmail } from "@/lib/aplicacao";
+import { autenticarAplicacao } from "@/lib/aplicacao";
+import { alertarDepoisDaResposta } from "@/lib/loginSenha";
 import { verificarLoginPasskey } from "@/lib/passkey";
 import {
   limiteExcedido,
@@ -212,24 +213,21 @@ export async function POST(req: Request) {
 
   await registrarEvento({ req, evento: "login_passkey_sucesso", usuarioId: usuario.id, email: usuario.email });
 
-  // Os alertas saem com a marca da aplicação dona da conta, depois da
-  // resposta (mesmo motivo de lib/loginSenha.ts).
+  // Os alertas saem depois da resposta (ver alertarDepoisDaResposta).
   const quando = new Date();
   if (viagemImpossivel) {
     await registrarEvento({ req, evento: "viagem_impossivel_detectada", usuarioId: usuario.id, email: usuario.email });
-    after(async () => {
-      const { marca } = await contextoEmail(usuario.aplicacaoId);
-      await enviarEmailViagemImpossivel(usuario.email, {
+    alertarDepoisDaResposta(usuario.aplicacaoId, "viagem impossível", (marca) =>
+      enviarEmailViagemImpossivel(usuario.email, {
         paisAnterior: formatarLocalizacao({ cidade: null, regiao: null, pais: ultimaSessao!.geoPais }) ?? ultimaSessao!.geoPais!,
         paisAtual: formatarLocalizacao({ cidade: null, regiao: null, pais: geoAtual.pais }) ?? geoAtual.pais!,
         quando,
-      }, marca);
-    });
+      }, marca),
+    );
   } else if (!loginAnteriorMesmoDispositivo) {
-    after(async () => {
-      const { marca } = await contextoEmail(usuario.aplicacaoId);
-      await enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando }, marca);
-    });
+    alertarDepoisDaResposta(usuario.aplicacaoId, "dispositivo novo", (marca) =>
+      enviarEmailDispositivoNovo(usuario.email, { ip, userAgent, quando }, marca),
+    );
   }
 
   // Login por passkey já é, por natureza, posse do authenticator + presença
