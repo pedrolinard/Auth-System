@@ -3,17 +3,16 @@ import { prisma } from "@/lib/db";
 import { contextoEmail } from "@/lib/aplicacao";
 import { registrarEvento } from "@/lib/auditoria";
 import { autenticarRequisicao } from "@/lib/autenticar";
+import { conferirCodigoMfaAtual } from "@/lib/codigoMfaAtual";
 import { persistirCodigosBackup } from "@/lib/backupMfa";
 import { obterCookieCsrf } from "@/lib/cookies";
 import { enviarEmailMfaAtivado } from "@/lib/email";
 import { csrfValido } from "@/lib/csrf";
-import { ErroSegredoMfaIlegivel, verificarCodigoMfaSemReplay } from "@/lib/mfa";
-import { limiteExcedido, obterIp, registrarTentativaIp } from "@/lib/rateLimit";
+import { limiteExcedido, obterIp } from "@/lib/rateLimit";
 import { esquemaCodigoMfa } from "@/lib/validacao";
 import { dadosDoUsuario, emitirEventoWebhook } from "@/lib/webhooks";
 
 const MAX_TENTATIVAS_MFA = 5;
-const JANELA_MFA_MS = 5 * 60 * 1000;
 
 export async function POST(req: Request) {
   if (!csrfValido(req, await obterCookieCsrf())) {
@@ -68,28 +67,13 @@ export async function POST(req: Request) {
     );
   }
 
-  let codigoValido: boolean;
-  try {
-    codigoValido = await verificarCodigoMfaSemReplay(
-      usuario.id,
-      usuario.mfaSecret,
-      usuario.email,
-      dadosValidados.data.codigo,
-    );
-  } catch (erro) {
-    if (erro instanceof ErroSegredoMfaIlegivel) {
-      return NextResponse.json(
-        { erro: "Não foi possível verificar o código agora. Tente novamente mais tarde." },
-        { status: 500 },
-      );
-    }
-    throw erro;
-  }
-  if (!codigoValido) {
-    await registrarEvento({ req, evento: "mfa_codigo_falha", usuarioId: usuario.id });
-    await registrarTentativaIp({ ip, evento: "mfa_codigo_falha", janelaMs: JANELA_MFA_MS });
-    return NextResponse.json({ erro: "Código inválido." }, { status: 401 });
-  }
+  // mfaSecret repetido só pra levar o estreitamento (já conferido acima) pro tipo.
+  const erroCodigo = await conferirCodigoMfaAtual(
+    req,
+    { ...usuario, mfaSecret: usuario.mfaSecret },
+    dadosValidados.data.codigo,
+  );
+  if (erroCodigo) return erroCodigo;
 
   await prisma.usuario.update({
     where: { id: usuario.id },
