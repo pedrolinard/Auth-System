@@ -1,13 +1,13 @@
 Django==5.2.17
-djangorestframework==3.18.2
+djangorestframework==3.18.3
 PyJWT==2.15.1
-cryptography==50.0.1
-python-dotenv==1.2.2
+cryptography==50.0.2
+python-dotenv==1.2.4
 dj-database-url==2.3.0
 # Observabilidade (erro 500 não tratado) — mesmo provedor do Next.js, ver
 # src/lib/rollbarServidor.ts; token próprio (ROLLBAR_..._DJANGO_SERVER_TOKEN_...)
-rollbar==1.4.0
+rollbar==1.5.0
 # Driver do Postgres (dev e produção — banco compartilhado local, ver DATABASE_URL no .env.example)
-psycopg[binary]==3.3.4
-pytest==9.0.3
+psycopg[binary]==3.3.6
+pytest==9.1.1
 pytest-django==4.14.0
