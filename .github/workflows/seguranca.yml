@@ -84,6 +84,9 @@ jobs:
           fetch-depth: 0
 
       # Regras padrão + exceções do .gitleaks.toml (segredos falsos do CI).
-      - uses: gitleaks/gitleaks-action@v2
+      # Fixada por SHA por ser a única action de terceiros aqui: uma tag
+      # pode ser movida para código malicioso, um commit não. O comentário
+      # com a versão é o que o Dependabot usa para propor a atualização.
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
