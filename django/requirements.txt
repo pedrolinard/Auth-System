@@ -3,7 +3,7 @@ djangorestframework==3.18.2
 PyJWT==2.15.1
 cryptography==50.0.1
 python-dotenv==1.2.2
-dj-database-url==2.3.0
+dj-database-url==3.1.2
 # Observabilidade (erro 500 não tratado) — mesmo provedor do Next.js, ver
 # src/lib/rollbarServidor.ts; token próprio (ROLLBAR_..._DJANGO_SERVER_TOKEN_...)
 rollbar==1.4.0
