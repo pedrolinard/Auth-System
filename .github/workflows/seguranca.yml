@@ -1,0 +1,92 @@
+name: Segurança
+
+# SAST (CodeQL), auditoria de dependências (npm audit + pip-audit) e
+# varredura de segredos (Gitleaks) — separado do ci.yml porque nada aqui
+# precisa de Postgres nem dos segredos gerados para os testes. O agendamento
+# semanal pega CVE publicado depois do último push: sem ele, uma dependência
+# que ficou vulnerável numa semana sem commits passaria despercebida.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL (${{ matrix.linguagem }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        linguagem: [javascript-typescript, python, actions]
+    steps:
+      - uses: actions/checkout@v4
+
+      # security-extended em vez do padrão: inclui as consultas de menor
+      # precisão (ex.: regex vulnerável a ReDoS, comparação de segredo sem
+      # tempo constante), que são justamente as que importam num provedor de
+      # identidade. build-mode none: JS/TS e Python não precisam compilar.
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.linguagem }}
+          build-mode: none
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - src/generated
+              - django/venv
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.linguagem }}
+
+  dependencias:
+    name: Dependências — npm audit e pip-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Lê só o package-lock.json, sem npm ci — inclui devDependencies de
+      # propósito, porque elas rodam no build e no CI (cadeia de suprimentos).
+      # sdk/ fica de fora: não tem lockfile e só tem devDependencies.
+      - name: npm audit
+        run: npm audit --audit-level=high
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r django/requirements.txt
+
+  segredos:
+    name: Segredos — Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      # Histórico completo: em PR o Gitleaks varre só os commits do PR, mas
+      # precisa deles todos disponíveis para montar o intervalo.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Regras padrão + exceções do .gitleaks.toml (segredos falsos do CI).
+      # Fixada por SHA por ser a única action de terceiros aqui: uma tag
+      # pode ser movida para código malicioso, um commit não. O comentário
+      # com a versão é o que o Dependabot usa para propor a atualização.
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
