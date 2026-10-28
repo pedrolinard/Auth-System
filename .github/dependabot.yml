@@ -1,0 +1,35 @@
+# Atualizações automáticas de dependências. Os PRs do Dependabot passam pelo
+# ci.yml e pelo seguranca.yml como qualquer outro, e só geram deploy de
+# Preview na Vercel — produção continua dependendo de merge manual na main.
+# Patch e minor vêm agrupados num PR só por ecossistema, para não afogar a
+# fila; major vem em PR próprio, porque costuma quebrar API.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-menores:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /django
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      pip-menores:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]

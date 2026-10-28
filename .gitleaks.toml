@@ -1,0 +1,12 @@
+# Configuração do Gitleaks usado em .github/workflows/seguranca.yml.
+# Mantém todas as regras padrão e só libera os valores fixos do ci.yml
+# (ci-...-secret-...-000000), que são públicos por definição e nunca
+# valem em produção — os reais ficam nas env vars da Vercel.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Segredos falsos do job de testes no CI"
+# Só regexes, sem paths: no [allowlist] as condições combinam por OU, e um
+# paths liberaria o ci.yml inteiro — inclusive um segredo real colado nele.
+regexes = ['''^ci-[a-z0-9-]+$''']
