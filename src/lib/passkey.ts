@@ -6,7 +6,6 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
   type AuthenticationResponseJSON,
-  type AuthenticatorTransportFuture,
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 
@@ -84,7 +83,7 @@ export async function gerarOpcoesRegistroPasskey(
     attestationType: "none",
     excludeCredentials: credenciaisExistentes.map((credencial) => ({
       id: credencial.credentialId,
-      transports: credencial.transportes as AuthenticatorTransportFuture[],
+      transports: credencial.transportes,
     })),
     authenticatorSelection: { residentKey: "required", userVerification: "required" },
   });
@@ -130,7 +129,7 @@ export async function verificarLoginPasskey(
       id: credencial.credentialId,
       publicKey: Buffer.from(credencial.publicKey, "base64"),
       counter: credencial.contador,
-      transports: credencial.transportes as AuthenticatorTransportFuture[],
+      transports: credencial.transportes,
     },
   });
 }
