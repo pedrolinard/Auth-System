@@ -39,6 +39,9 @@ export default defineConfig({
     // setup/limpeza (ex.: apagar usuários criados no teste).
     env: {
       ...envRaiz,
+      // O Vitest 5 põe o BASE_URL do Vite ("/") no process.env; sem fixar
+      // aqui, os testes calculam o emissor OIDC como "" em vez do servidor.
+      BASE_URL: envRaiz?.BASE_URL ?? "http://localhost:3000",
       DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/autenticacao_test",
     },
   },
